@@ -42,3 +42,5 @@ The following tables have been created in Supabase:
 
 - **project-assets** bucket for image uploads (50MB limit, public access)
 
+
+

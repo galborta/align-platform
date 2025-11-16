@@ -29,18 +29,11 @@ export default function CreatePage() {
     setTokenData(null)
 
     try {
-      // Try mainnet first (most tokens are on mainnet)
-      let metadata
-      try {
-        metadata = await getTokenMetadata(mintAddress.trim(), 'https://api.mainnet-beta.solana.com')
-      } catch (mainnetError) {
-        // If mainnet fails, try devnet
-        console.log('Mainnet failed, trying devnet...')
-        metadata = await getTokenMetadata(mintAddress.trim(), 'https://api.devnet.solana.com')
-      }
+      // Use the wallet's connection (devnet as configured in wallet-config.tsx)
+      const metadata = await getTokenMetadata(mintAddress.trim(), connection)
       setTokenData(metadata)
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to fetch token metadata. Token not found on mainnet or devnet.')
+      setError(err instanceof Error ? err.message : 'Failed to fetch token metadata. Please check the mint address.')
     } finally {
       setLoading(false)
     }
@@ -100,7 +93,7 @@ export default function CreatePage() {
             <div className="space-y-4">
               <TextField
                 label="Token Contract Address (Solana mint)"
-                placeholder="7xKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsU"
+                placeholder="GtDZKAqvMZMnti46ZewMiXCa4oXF4bZxwQPoKzXPFxZn"
                 fullWidth
                 value={mintAddress}
                 onChange={(e) => setMintAddress(e.target.value)}

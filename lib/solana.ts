@@ -11,15 +11,14 @@ export interface TokenMetadata {
 
 export async function getTokenMetadata(
   mintAddress: string,
-  endpoint: string = 'https://api.mainnet-beta.solana.com'
+  connection: Connection
 ): Promise<TokenMetadata> {
+  const mintPublicKey = new PublicKey(mintAddress)
+  
   try {
-    const connection = new Connection(endpoint, 'confirmed')
-    const mintPublicKey = new PublicKey(mintAddress)
-    
-    // Get mint account info
+    // Get mint account info using the provided connection (configured with Helius)
     const mintInfo = await getMint(connection, mintPublicKey)
-    
+  
     // Try to fetch metadata from Metaplex standard
     let name = 'Unknown Token'
     let symbol = 'UNKNOWN'
@@ -79,7 +78,7 @@ export async function getTokenMetadata(
       mintAddress,
     }
   } catch (error) {
-    console.error('Error fetching token metadata:', error)
+    console.error('Failed to fetch token metadata:', error)
     throw new Error('Failed to fetch token metadata. Please check the mint address.')
   }
 }
