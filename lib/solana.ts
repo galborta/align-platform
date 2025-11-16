@@ -11,7 +11,7 @@ export interface TokenMetadata {
 
 export async function getTokenMetadata(
   mintAddress: string,
-  endpoint: string = 'https://api.devnet.solana.com'
+  endpoint: string = 'https://api.mainnet-beta.solana.com'
 ): Promise<TokenMetadata> {
   try {
     const connection = new Connection(endpoint, 'confirmed')

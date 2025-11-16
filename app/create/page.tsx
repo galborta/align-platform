@@ -29,11 +29,18 @@ export default function CreatePage() {
     setTokenData(null)
 
     try {
-      const endpoint = connection.rpcEndpoint
-      const metadata = await getTokenMetadata(mintAddress.trim(), endpoint)
+      // Try mainnet first (most tokens are on mainnet)
+      let metadata
+      try {
+        metadata = await getTokenMetadata(mintAddress.trim(), 'https://api.mainnet-beta.solana.com')
+      } catch (mainnetError) {
+        // If mainnet fails, try devnet
+        console.log('Mainnet failed, trying devnet...')
+        metadata = await getTokenMetadata(mintAddress.trim(), 'https://api.devnet.solana.com')
+      }
       setTokenData(metadata)
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to fetch token metadata')
+      setError(err instanceof Error ? err.message : 'Failed to fetch token metadata. Token not found on mainnet or devnet.')
     } finally {
       setLoading(false)
     }
