@@ -6,9 +6,11 @@ import { WalletButton } from '@/components/WalletButton'
 import { Button } from '@/components/ui/Button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card'
 import { getTokenMetadata, TokenMetadata } from '@/lib/solana'
+import { supabase } from '@/lib/supabase'
 import TextField from '@mui/material/TextField'
 import CircularProgress from '@mui/material/CircularProgress'
 import Alert from '@mui/material/Alert'
+import Image from 'next/image'
 
 export default function CreatePage() {
   const { connected } = useWallet()
@@ -17,6 +19,9 @@ export default function CreatePage() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [tokenData, setTokenData] = useState<TokenMetadata | null>(null)
+  const [uploadingImage, setUploadingImage] = useState(false)
+  const [imageUrl, setImageUrl] = useState<string | null>(null)
+  const [imagePreview, setImagePreview] = useState<string | null>(null)
 
   const handleFetchMetadata = async () => {
     if (!mintAddress.trim()) {
@@ -39,9 +44,80 @@ export default function CreatePage() {
     }
   }
 
+  const handleImageUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]
+    if (!file) return
+
+    setUploadingImage(true)
+    setError(null)
+
+    try {
+      // 1. Validate: image only
+      if (!file.type.startsWith('image/')) {
+        throw new Error('Please upload an image file')
+      }
+
+      // 2. Validate: max 5MB
+      const maxSize = 5 * 1024 * 1024 // 5MB in bytes
+      if (file.size > maxSize) {
+        throw new Error('Image must be less than 5MB')
+      }
+
+      // 3. Validate: min 400x400px
+      const img = new window.Image()
+      const imageUrl = URL.createObjectURL(file)
+      
+      await new Promise((resolve, reject) => {
+        img.onload = () => {
+          if (img.width < 400 || img.height < 400) {
+            reject(new Error('Image must be at least 400x400 pixels'))
+          } else {
+            resolve(true)
+          }
+        }
+        img.onerror = () => reject(new Error('Failed to load image'))
+        img.src = imageUrl
+      })
+
+      // 4. Generate unique filename using mint address as projectId
+      const projectId = mintAddress.trim()
+      const fileExt = file.name.split('.').pop()
+      const fileName = `${projectId}-profile.${fileExt}`
+
+      // 5. Upload to Supabase Storage bucket "project-assets"
+      const { data: uploadData, error: uploadError } = await supabase.storage
+        .from('project-assets')
+        .upload(fileName, file, {
+          upsert: true,
+          contentType: file.type,
+        })
+
+      if (uploadError) {
+        throw new Error(`Upload failed: ${uploadError.message}`)
+      }
+
+      // 6. Get public URL
+      const { data: { publicUrl } } = supabase.storage
+        .from('project-assets')
+        .getPublicUrl(fileName)
+
+      // 7. Set the image URL and preview
+      setImageUrl(publicUrl)
+      setImagePreview(imageUrl)
+
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to upload image')
+      // Clear the file input
+      event.target.value = ''
+    } finally {
+      setUploadingImage(false)
+    }
+  }
+
   const handleContinue = () => {
     // TODO: Navigate to next step
     console.log('Continue with token data:', tokenData)
+    console.log('Image URL:', imageUrl)
   }
 
   // Step 1: Require wallet connection
@@ -144,7 +220,7 @@ export default function CreatePage() {
 
             {/* Token Data Preview */}
             {tokenData && (
-              <div className="space-y-4">
+              <div className="space-y-6">
                 <div className="border-t border-border-subtle pt-6">
                   <h3 className="font-display text-lg font-semibold text-text-primary mb-4">
                     Token Preview
@@ -180,12 +256,71 @@ export default function CreatePage() {
                   </div>
                 </div>
 
+                {/* Step 3: Profile Image Upload */}
+                <div className="border-t border-border-subtle pt-6">
+                  <h3 className="font-display text-lg font-semibold text-text-primary mb-2">
+                    Profile Image
+                  </h3>
+                  <p className="font-body text-text-secondary text-sm mb-4">
+                    Upload a profile image for your project (min 400x400px, max 5MB)
+                  </p>
+
+                  <div className="space-y-4">
+                    {/* File Input */}
+                    <div>
+                      <input
+                        type="file"
+                        accept="image/*"
+                        onChange={handleImageUpload}
+                        disabled={uploadingImage}
+                        className="block w-full text-sm text-text-secondary
+                          file:mr-4 file:py-2 file:px-4
+                          file:rounded-lg file:border-0
+                          file:text-sm file:font-semibold
+                          file:bg-primary file:text-white
+                          hover:file:bg-primary-hover
+                          file:cursor-pointer
+                          disabled:opacity-50 disabled:cursor-not-allowed"
+                      />
+                      {uploadingImage && (
+                        <div className="flex items-center mt-2">
+                          <CircularProgress size={16} className="mr-2" />
+                          <span className="font-body text-sm text-text-secondary">Uploading...</span>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Image Preview */}
+                    {imagePreview && imageUrl && (
+                      <div className="flex items-center gap-4 p-4 bg-subtle-bg rounded-lg">
+                        <div className="relative w-[200px] h-[200px] rounded-lg overflow-hidden border-2 border-border-subtle">
+                          <Image
+                            src={imagePreview}
+                            alt="Profile preview"
+                            fill
+                            className="object-cover"
+                          />
+                        </div>
+                        <div className="flex-1">
+                          <p className="font-body text-sm text-success font-medium mb-1">
+                            ✓ Image uploaded successfully
+                          </p>
+                          <p className="font-body text-xs text-text-muted break-all">
+                            {imageUrl}
+                          </p>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
                 {/* Continue Button */}
                 <div className="flex justify-end pt-4">
                   <Button
                     onClick={handleContinue}
                     variant="success"
                     size="lg"
+                    disabled={!imageUrl}
                   >
                     Continue
                   </Button>
