@@ -12,10 +12,10 @@ import { Database } from '@/types/database'
 import VerifiedIcon from '@mui/icons-material/Verified'
 import CheckCircleIcon from '@mui/icons-material/CheckCircle'
 import ArrowBackIcon from '@mui/icons-material/ArrowBack'
-import TwitterIcon from '@mui/icons-material/Twitter'
 import InstagramIcon from '@mui/icons-material/Instagram'
 import YouTubeIcon from '@mui/icons-material/YouTube'
 import OpenInNewIcon from '@mui/icons-material/OpenInNew'
+import XIcon from '@mui/icons-material/X'
 
 type Project = Database['public']['Tables']['projects']['Row']
 type SocialAsset = Database['public']['Tables']['social_assets']['Row']
@@ -31,11 +31,18 @@ interface ProjectDetails extends Project {
 }
 
 
+const TikTokIcon = () => (
+  <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+    <path d="M19.59 6.69a4.83 4.83 0 0 1-3.77-4.25V2h-3.45v13.67a2.89 2.89 0 0 1-5.2 1.74 2.89 2.89 0 0 1 2.31-4.64 2.93 2.93 0 0 1 .88.13V9.4a6.84 6.84 0 0 0-1-.05A6.33 6.33 0 0 0 5 20.1a6.34 6.34 0 0 0 10.86-4.43v-7a8.16 8.16 0 0 0 4.77 1.52v-3.4a4.85 4.85 0 0 1-1-.1z"/>
+  </svg>
+)
+
 const platformIcons: Record<string, React.ReactNode> = {
-  twitter: <TwitterIcon sx={{ fontSize: 20 }} />,
+  twitter: <XIcon sx={{ fontSize: 20 }} />,
+  x: <XIcon sx={{ fontSize: 20 }} />,
   instagram: <InstagramIcon sx={{ fontSize: 20 }} />,
   youtube: <YouTubeIcon sx={{ fontSize: 20 }} />,
-  tiktok: <span className="text-xl">🎵</span>,
+  tiktok: <TikTokIcon />,
 }
 
 const getPlatformUrl = (platform: string, handle: string): string => {
@@ -43,7 +50,8 @@ const getPlatformUrl = (platform: string, handle: string): string => {
   const cleanHandle = handle.startsWith('@') ? handle.slice(1) : handle
   
   const urls: Record<string, string> = {
-    twitter: `https://twitter.com/${cleanHandle}`,
+    twitter: `https://x.com/${cleanHandle}`,
+    x: `https://x.com/${cleanHandle}`,
     instagram: `https://instagram.com/${cleanHandle}`,
     youtube: `https://youtube.com/@${cleanHandle}`,
     tiktok: `https://tiktok.com/@${cleanHandle}`,
@@ -364,37 +372,30 @@ export default function ProjectDetailPage() {
               <ProjectChat projectId={project.id} tokenMint={project.token_mint} />
             )}
 
-            {/* Social Assets - Compact Cards */}
+            {/* Social Assets - Compact */}
             <Card>
               <CardHeader>
                 <CardTitle className="text-lg">Social Assets</CardTitle>
               </CardHeader>
               <CardContent>
                 {project.social_assets && project.social_assets.length > 0 ? (
-                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
+                  <div className="flex flex-wrap gap-2">
                     {project.social_assets.map((social) => (
                       <a
                         key={social.id}
                         href={getPlatformUrl(social.platform, social.handle)}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="flex flex-col items-center p-3 bg-white rounded-lg border border-border-subtle hover:border-accent-primary transition-colors relative"
+                        className="flex items-center gap-2 px-3 py-2 bg-white rounded-lg border border-border-subtle hover:border-accent-primary transition-colors"
                       >
-                        {social.verified && (
-                          <div className="absolute top-2 right-2">
-                            <CheckCircleIcon sx={{ color: '#7C4DFF', fontSize: 16 }} />
-                          </div>
-                        )}
-                        <div className="text-accent-primary mb-2">
+                        <div className="text-accent-primary">
                           {platformIcons[social.platform] || '🌐'}
                         </div>
-                        <p className="font-body font-medium text-text-primary text-sm text-center truncate w-full">
+                        <span className="font-body text-sm text-text-primary">
                           @{social.handle}
-                        </p>
-                        {social.follower_tier && (
-                          <p className="font-body text-xs text-text-muted">
-                            {social.follower_tier}
-                          </p>
+                        </span>
+                        {social.verified && (
+                          <CheckCircleIcon sx={{ color: '#7C4DFF', fontSize: 16 }} />
                         )}
                       </a>
                     ))}
