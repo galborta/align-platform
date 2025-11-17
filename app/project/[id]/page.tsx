@@ -6,6 +6,7 @@ import Link from 'next/link'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { WalletButton } from '@/components/WalletButton'
+import { ProjectChat } from '@/components/ProjectChat'
 import { supabase } from '@/lib/supabase'
 import { Database } from '@/types/database'
 import VerifiedIcon from '@mui/icons-material/Verified'
@@ -348,7 +349,7 @@ export default function ProjectDetailPage() {
               </CardHeader>
               <CardContent>
                 {project.social_assets && project.social_assets.length > 0 ? (
-                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
                     {project.social_assets.map((social) => (
                       <a
                         key={social.id}
@@ -588,6 +589,11 @@ export default function ProjectDetailPage() {
                 )}
               </CardContent>
             </Card>
+
+            {/* Chat Component */}
+            {project.status === 'live' && (
+              <ProjectChat projectId={project.id} tokenMint={project.token_mint} />
+            )}
           </div>
         </div>
       </main>

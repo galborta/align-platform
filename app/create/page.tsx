@@ -863,7 +863,7 @@ export default function CreatePage() {
 
                   {/* Social Asset Form */}
                   <div className="bg-subtle-bg rounded-lg p-4 space-y-4">
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                       <FormControl fullWidth>
                         <InputLabel>Platform</InputLabel>
                         <Select
@@ -1047,7 +1047,7 @@ export default function CreatePage() {
 
                   {/* Legal Asset Form */}
                   <div className="bg-subtle-bg rounded-lg p-4 space-y-4">
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <FormControl fullWidth>
                         <InputLabel>Asset Type</InputLabel>
                         <Select
@@ -1150,7 +1150,7 @@ export default function CreatePage() {
 
                   {/* Team Wallet Form */}
                   <div className="bg-subtle-bg rounded-lg p-4 space-y-4">
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <TextField
                         label="Wallet Address"
                         placeholder="Enter Solana wallet address"

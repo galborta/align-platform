@@ -166,6 +166,38 @@ export interface Database {
           created_at?: string
         }
       }
+      chat_messages: {
+        Row: {
+          id: string
+          project_id: string
+          wallet_address: string
+          message_text: string
+          token_balance: string
+          token_percentage: number
+          holding_tier: 'mega' | 'whale' | 'holder' | 'small'
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          project_id: string
+          wallet_address: string
+          message_text: string
+          token_balance: string
+          token_percentage: number
+          holding_tier: 'mega' | 'whale' | 'holder' | 'small'
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          project_id?: string
+          wallet_address?: string
+          message_text?: string
+          token_balance?: string
+          token_percentage?: number
+          holding_tier?: 'mega' | 'whale' | 'holder' | 'small'
+          created_at?: string
+        }
+      }
     }
     Views: {
       [_ in never]: never
@@ -178,6 +210,7 @@ export interface Database {
     }
   }
 }
+
 
 
 

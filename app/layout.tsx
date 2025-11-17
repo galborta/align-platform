@@ -1,4 +1,4 @@
-import type { Metadata } from 'next'
+import type { Metadata, Viewport } from 'next'
 import { Space_Grotesk, Inter } from 'next/font/google'
 import './globals.css'
 import ThemeProvider from '@/components/ThemeProvider'
@@ -10,6 +10,11 @@ const inter = Inter({ subsets: ['latin'], variable: '--font-body' })
 export const metadata: Metadata = {
   title: 'Align - Modular infrastructure for token projects on Solana',
   description: 'Modular infrastructure for token projects on Solana',
+}
+
+export const viewport: Viewport = {
+  width: 'device-width',
+  initialScale: 1,
 }
 
 export default function RootLayout({

@@ -26,7 +26,7 @@ export default function Home() {
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         {/* Hero Section */}
         <section className="py-16 sm:py-24 text-center">
-          <h1 className="font-display text-4xl sm:text-5xl md:text-6xl font-bold text-text-primary mb-6">
+          <h1 className="font-display text-[32px] sm:text-5xl md:text-6xl font-bold text-text-primary mb-6">
             Transparency for Token Projects
           </h1>
           <p className="font-body text-lg sm:text-xl text-text-secondary max-w-2xl mx-auto mb-8">
