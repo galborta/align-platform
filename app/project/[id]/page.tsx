@@ -118,13 +118,26 @@ export default function ProjectDetailPage() {
   const fetchTokenStats = async (tokenMint: string) => {
     setStatsLoading(true)
     try {
-      // Fetch price and market cap from Jupiter Price API
-      // Using the dedicated price.jup.ag domain (free, no key needed)
-      const priceRes = await fetch(`https://price.jup.ag/v6/price?ids=${tokenMint}`)
-      const priceData = await priceRes.json()
+      // Try DexScreener API for price/market cap (free, no key needed)
+      let priceData: any = null
+      let tokenData: any = null
       
-      console.log('Jupiter price response:', priceData)
-      const tokenData = priceData.data?.[tokenMint]
+      try {
+        const dexRes = await fetch(`https://api.dexscreener.com/latest/dex/tokens/${tokenMint}`)
+        const dexData = await dexRes.json()
+        console.log('DexScreener response:', dexData)
+        
+        // DexScreener returns pairs, we'll take the first one with most liquidity
+        if (dexData.pairs && dexData.pairs.length > 0) {
+          const mainPair = dexData.pairs[0]
+          tokenData = {
+            price: parseFloat(mainPair.priceUsd) || null,
+            marketCap: parseFloat(mainPair.fdv) || parseFloat(mainPair.marketCap) || null
+          }
+        }
+      } catch (e) {
+        console.error('DexScreener failed:', e)
+      }
       
       // Fetch top holders from Helius
       const heliusApiKey = process.env.NEXT_PUBLIC_HELIUS_API_KEY
