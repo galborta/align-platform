@@ -325,11 +325,28 @@ export default function ProjectDetailPage() {
                 <p className="font-body text-lg text-text-secondary mb-3">
                   ${project.token_symbol}
                 </p>
-                <div className="flex items-center gap-2 justify-center sm:justify-start">
+                <div className="flex flex-wrap items-center gap-2 justify-center sm:justify-start">
                   {getVerifiedSocialsCount() > 0 && (
                     <div className="flex items-center gap-1 px-3 py-1 bg-accent-primary-soft text-accent-primary rounded-full text-sm font-medium">
                       <VerifiedIcon sx={{ fontSize: 18 }} />
-                      <span>{getVerifiedSocialsCount()} Verified</span>
+                      <span>Verified</span>
+                    </div>
+                  )}
+                  {/* Price */}
+                  {!statsLoading && tokenStats.price && (
+                    <div className="px-3 py-1 bg-green-50 text-green-700 rounded-full text-sm font-medium">
+                      ${tokenStats.price.toFixed(8)}
+                    </div>
+                  )}
+                  {/* Market Cap */}
+                  {!statsLoading && tokenStats.marketCap && (
+                    <div className="px-3 py-1 bg-blue-50 text-blue-700 rounded-full text-sm font-medium">
+                      MC: {tokenStats.marketCap >= 1000000 
+                        ? `$${(tokenStats.marketCap / 1000000).toFixed(2)}M`
+                        : tokenStats.marketCap >= 1000
+                        ? `$${(tokenStats.marketCap / 1000).toFixed(2)}K`
+                        : `$${tokenStats.marketCap.toFixed(2)}`
+                      }
                     </div>
                   )}
                 </div>
@@ -340,8 +357,13 @@ export default function ProjectDetailPage() {
 
         {/* Main Content - Single Page */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* Left Column - IP Registry */}
+          {/* Left Column - Chat + IP Registry */}
           <div className="lg:col-span-2 space-y-6">
+            {/* Chat Component - Featured */}
+            {project.status === 'live' && (
+              <ProjectChat projectId={project.id} tokenMint={project.token_mint} />
+            )}
+
             {/* Social Assets - Compact Cards */}
             <Card>
               <CardHeader>
@@ -589,11 +611,6 @@ export default function ProjectDetailPage() {
                 )}
               </CardContent>
             </Card>
-
-            {/* Chat Component */}
-            {project.status === 'live' && (
-              <ProjectChat projectId={project.id} tokenMint={project.token_mint} />
-            )}
           </div>
         </div>
       </main>

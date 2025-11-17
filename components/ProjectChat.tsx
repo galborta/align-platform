@@ -198,18 +198,24 @@ export function ProjectChat({ projectId, tokenMint }: ProjectChatProps) {
   }
 
   return (
-    <Card className="h-[400px] md:h-[600px] flex flex-col relative">
-      <CardContent className="p-4 flex-1 flex flex-col">
-        {/* Header */}
-        <div className="border-b border-border-subtle pb-3 mb-4">
-          <h3 className="font-display text-lg font-semibold text-text-primary">
+    <Card className="h-[400px] md:h-[600px] flex flex-col relative overflow-hidden">
+      {/* Header - Enhanced */}
+      <div className="bg-gradient-to-r from-accent-primary to-purple-600 p-4 shadow-md">
+        <div className="flex items-center gap-3 mb-1">
+          <span className="text-2xl">💬</span>
+          <h3 className="font-display text-xl font-bold text-white">
             Holder Chat
           </h3>
-          <p className="font-body text-sm text-text-secondary">
-            {publicKey ? 'Any holder can chat' : 'Connect wallet to chat'}
-          </p>
+          <span className="ml-auto bg-white/20 backdrop-blur-sm text-white text-xs font-medium px-2 py-1 rounded-full">
+            Live
+          </span>
         </div>
-
+        <p className="font-body text-sm text-white/90 ml-11">
+          {publicKey ? 'Chat with other token holders in real-time' : 'Connect your wallet to join the conversation'}
+        </p>
+      </div>
+      
+      <CardContent className="p-4 flex-1 flex flex-col">
         {/* Messages Container */}
         <div 
           ref={messagesContainerRef}
