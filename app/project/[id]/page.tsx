@@ -118,8 +118,9 @@ export default function ProjectDetailPage() {
   const fetchTokenStats = async (tokenMint: string) => {
     setStatsLoading(true)
     try {
-      // Fetch price and market cap from Jupiter Lite API (free tier)
-      const priceRes = await fetch(`https://lite-api.jup.ag/price/v2?ids=${tokenMint}`)
+      // Fetch price and market cap from Jupiter Price API
+      // Using the dedicated price.jup.ag domain (free, no key needed)
+      const priceRes = await fetch(`https://price.jup.ag/v6/price?ids=${tokenMint}`)
       const priceData = await priceRes.json()
       
       console.log('Jupiter price response:', priceData)
