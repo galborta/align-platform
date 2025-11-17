@@ -147,20 +147,55 @@ export default function ProjectDetailPage() {
       
       if (heliusApiKey) {
         try {
-          const holdersUrl = `https://api.helius.xyz/v0/addresses/${tokenMint}/balances?api-key=${heliusApiKey}&limit=10`
-          console.log('Fetching holders from:', holdersUrl.replace(heliusApiKey, 'API_KEY_HIDDEN'))
+          // Use Helius DAS API to get token holders
+          const holdersUrl = `https://mainnet.helius-rpc.com/?api-key=${heliusApiKey}`
+          console.log('Fetching holders from Helius RPC')
           
-          const holdersRes = await fetch(holdersUrl)
+          const holdersRes = await fetch(holdersUrl, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              jsonrpc: '2.0',
+              id: 'top-holders',
+              method: 'getTokenLargestAccounts',
+              params: [tokenMint]
+            })
+          })
           const holdersData = await holdersRes.json()
           
-          console.log('Helius response:', holdersData)
+          console.log('Helius holders response:', holdersData)
           
-          if (holdersData && Array.isArray(holdersData)) {
-            holders = holdersData.map((holder: any) => ({
-              owner: holder.owner || holder.address,
-              amount: holder.amount || 0,
-              percentage: holder.share || holder.percentage || 0
-            }))
+          if (holdersData?.result?.value && Array.isArray(holdersData.result.value)) {
+            // Get total supply to calculate percentages
+            const supplyRes = await fetch(holdersUrl, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({
+                jsonrpc: '2.0',
+                id: 'supply',
+                method: 'getTokenSupply',
+                params: [tokenMint]
+              })
+            })
+            const supplyData = await supplyRes.json()
+            const totalSupply = parseFloat(supplyData?.result?.value?.amount || '0')
+            
+            console.log('Total supply:', totalSupply)
+            
+            holders = holdersData.result.value.slice(0, 5).map((holder: any) => {
+              const amount = parseFloat(holder.amount || '0')
+              const percentage = totalSupply > 0 ? (amount / totalSupply) * 100 : 0
+              
+              return {
+                owner: holder.address,
+                amount: amount,
+                percentage: percentage
+              }
+            })
           }
         } catch (holderError) {
           console.error('Error fetching holders:', holderError)
