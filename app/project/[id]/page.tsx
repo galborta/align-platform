@@ -50,12 +50,28 @@ const getPlatformUrl = (platform: string, handle: string): string => {
   return urls[platform] || `https://${platform}.com/${cleanHandle}`
 }
 
+interface TokenStats {
+  price: number | null
+  marketCap: number | null
+  topHolders: Array<{
+    owner: string
+    amount: number
+    percentage: number
+  }>
+}
+
 export default function ProjectDetailPage() {
   const params = useParams()
   const router = useRouter()
   const [project, setProject] = useState<ProjectDetails | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [tokenStats, setTokenStats] = useState<TokenStats>({
+    price: null,
+    marketCap: null,
+    topHolders: []
+  })
+  const [statsLoading, setStatsLoading] = useState(false)
 
   useEffect(() => {
     if (params.id) {
@@ -84,12 +100,62 @@ export default function ProjectDetailPage() {
         return
       }
 
-      setProject(data as ProjectDetails)
+      const projectData = data as ProjectDetails
+      setProject(projectData)
+      
+      // Fetch token stats after project loads
+      if (projectData.token_mint) {
+        fetchTokenStats(projectData.token_mint)
+      }
     } catch (error) {
       console.error('Error fetching project:', error)
       setError('Failed to load project')
     } finally {
       setLoading(false)
+    }
+  }
+
+  const fetchTokenStats = async (tokenMint: string) => {
+    setStatsLoading(true)
+    try {
+      // Fetch price and market cap from Jupiter
+      const priceRes = await fetch(`https://api.jup.ag/price/v2?ids=${tokenMint}`)
+      const priceData = await priceRes.json()
+      
+      const tokenData = priceData.data?.[tokenMint]
+      
+      // Fetch top holders from Helius
+      const heliusApiKey = process.env.NEXT_PUBLIC_HELIUS_API_KEY
+      let holders: Array<{owner: string, amount: number, percentage: number}> = []
+      
+      if (heliusApiKey) {
+        try {
+          const holdersRes = await fetch(
+            `https://api.helius.xyz/v0/addresses/${tokenMint}/holders?api-key=${heliusApiKey}&limit=10`
+          )
+          const holdersData = await holdersRes.json()
+          
+          if (holdersData && Array.isArray(holdersData)) {
+            holders = holdersData.map((holder: any) => ({
+              owner: holder.owner || holder.address,
+              amount: holder.amount || 0,
+              percentage: holder.share || holder.percentage || 0
+            }))
+          }
+        } catch (holderError) {
+          console.error('Error fetching holders:', holderError)
+        }
+      }
+      
+      setTokenStats({
+        price: tokenData?.price || null,
+        marketCap: tokenData?.marketCap || null,
+        topHolders: holders
+      })
+    } catch (error) {
+      console.error('Error fetching token stats:', error)
+    } finally {
+      setStatsLoading(false)
     }
   }
 
@@ -345,6 +411,89 @@ export default function ProjectDetailPage() {
 
           {/* Right Column - Team Transparency */}
           <div className="space-y-6">
+            {/* Token Stats Card */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-lg">Token Stats</CardTitle>
+              </CardHeader>
+              <CardContent>
+                {statsLoading ? (
+                  <p className="font-body text-text-muted text-center py-4 text-sm">
+                    Loading stats...
+                  </p>
+                ) : (
+                  <div className="space-y-3">
+                    <div className="flex justify-between items-center p-3 bg-white rounded-lg border border-border-subtle">
+                      <span className="font-body text-sm text-text-secondary">Price</span>
+                      <span className="font-body text-sm font-semibold text-text-primary">
+                        {tokenStats.price ? `$${tokenStats.price.toFixed(8)}` : 'N/A'}
+                      </span>
+                    </div>
+                    <div className="flex justify-between items-center p-3 bg-white rounded-lg border border-border-subtle">
+                      <span className="font-body text-sm text-text-secondary">Market Cap</span>
+                      <span className="font-body text-sm font-semibold text-text-primary">
+                        {tokenStats.marketCap 
+                          ? tokenStats.marketCap >= 1000000 
+                            ? `$${(tokenStats.marketCap / 1000000).toFixed(2)}M`
+                            : tokenStats.marketCap >= 1000
+                            ? `$${(tokenStats.marketCap / 1000).toFixed(2)}K`
+                            : `$${tokenStats.marketCap.toFixed(2)}`
+                          : 'N/A'
+                        }
+                      </span>
+                    </div>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
+            {/* Top Holders Card */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-lg">Top Holders</CardTitle>
+              </CardHeader>
+              <CardContent>
+                {statsLoading ? (
+                  <p className="font-body text-text-muted text-center py-4 text-sm">
+                    Loading holders...
+                  </p>
+                ) : tokenStats.topHolders.length > 0 ? (
+                  <div className="space-y-2">
+                    {tokenStats.topHolders.slice(0, 5).map((holder, index) => (
+                      <div
+                        key={holder.owner}
+                        className="flex items-center justify-between p-3 bg-white rounded-lg border border-border-subtle hover:border-accent-primary transition-colors"
+                      >
+                        <div className="flex items-center gap-2 flex-1 min-w-0">
+                          <span className="font-body text-xs font-semibold text-accent-primary flex-shrink-0">
+                            #{index + 1}
+                          </span>
+                          <a
+                            href={`https://solscan.io/account/${holder.owner}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="font-body text-xs text-text-primary font-mono hover:text-accent-primary truncate"
+                          >
+                            {shortenAddress(holder.owner)}
+                          </a>
+                        </div>
+                        <span className="font-body text-xs font-medium text-text-secondary ml-2 flex-shrink-0">
+                          {holder.percentage ? `${holder.percentage.toFixed(2)}%` : 'N/A'}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="font-body text-text-muted text-center py-4 text-sm">
+                    {process.env.NEXT_PUBLIC_HELIUS_API_KEY 
+                      ? 'No holder data available' 
+                      : 'Set NEXT_PUBLIC_HELIUS_API_KEY to view holders'}
+                  </p>
+                )}
+              </CardContent>
+            </Card>
+
+            {/* Team Wallets Card */}
             <Card>
               <CardHeader>
                 <CardTitle className="text-lg">Team Wallets</CardTitle>
