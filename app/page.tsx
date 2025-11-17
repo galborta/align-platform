@@ -33,12 +33,16 @@ export default function Home() {
             Build credibility with verifiable IP. Manage your treasury professionally.
           </p>
           <div className="flex flex-col sm:flex-row gap-4 justify-center items-center">
-            <Button variant="primary" size="lg">
-              Add Your Project
-            </Button>
-            <Button variant="outline" size="lg" className="bg-card-bg">
-              Explore Projects
-            </Button>
+            <a href="/create">
+              <Button variant="primary" size="lg">
+                Add Your Project
+              </Button>
+            </a>
+            <a href="/projects">
+              <Button variant="outline" size="lg" className="bg-card-bg">
+                Explore Projects
+              </Button>
+            </a>
           </div>
         </section>
 

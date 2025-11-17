@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import { useRouter } from 'next/navigation'
 import { useWallet, useConnection } from '@solana/wallet-adapter-react'
 import { WalletButton } from '@/components/WalletButton'
 import { Button } from '@/components/ui/Button'
@@ -61,6 +62,7 @@ interface TeamWallet {
 }
 
 export default function CreatePage() {
+  const router = useRouter()
   const { connected, publicKey } = useWallet()
   const { connection } = useConnection()
   const [mounted, setMounted] = useState(false)
@@ -72,18 +74,62 @@ export default function CreatePage() {
   const [imageUrl, setImageUrl] = useState<string | null>(null)
   const [imagePreview, setImagePreview] = useState<string | null>(null)
   const [currentStep, setCurrentStep] = useState<1 | 2 | 3 | 4>(1)
+  const [checkingExisting, setCheckingExisting] = useState(false)
 
   // Handle client-side mounting
   useEffect(() => {
     setMounted(true)
   }, [])
 
-  // Auto-advance to step 2 when wallet connects
+  // Auto-detect existing projects when wallet connects
   useEffect(() => {
-    if (mounted && connected && currentStep === 1) {
-      setCurrentStep(2)
+    if (mounted && connected && publicKey && !checkingExisting) {
+      checkForExistingProjects()
     }
-  }, [mounted, connected, currentStep])
+  }, [mounted, connected, publicKey])
+
+  const checkForExistingProjects = async () => {
+    if (!publicKey) return
+    
+    setCheckingExisting(true)
+    try {
+      const { data, error } = await supabase
+        .from('projects')
+        .select('id, status')
+        .eq('creator_wallet', publicKey.toString())
+        .order('created_at', { ascending: false })
+        .limit(1)
+
+      if (error) throw error
+
+      if (data && data.length > 0) {
+        const project = data[0]
+        
+        // Redirect based on status
+        if (project.status === 'pending') {
+          router.push(`/review/${project.id}`)
+          return
+        } else if (project.status === 'live') {
+          router.push(`/project/${project.id}`)
+          return
+        }
+        // If draft or rejected, let them continue creating
+      }
+
+      // No existing projects or draft/rejected - advance to step 2
+      if (currentStep === 1) {
+        setCurrentStep(2)
+      }
+    } catch (err) {
+      console.error('Error checking for existing projects:', err)
+      // On error, just advance to step 2
+      if (currentStep === 1) {
+        setCurrentStep(2)
+      }
+    } finally {
+      setCheckingExisting(false)
+    }
+  }
 
   // Step 4: IP Assets State
   // Social Assets
@@ -469,8 +515,8 @@ export default function CreatePage() {
         if (walletsError) throw walletsError
       }
 
-      alert('Project submitted for review successfully!')
-      // TODO: Redirect to projects page or show success message
+      // Redirect to review page
+      router.push(`/review/${projectId}`)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to submit project')
     } finally {
@@ -494,12 +540,14 @@ export default function CreatePage() {
   }
 
   // Show loading state during hydration to prevent mismatch
-  if (!mounted) {
+  if (!mounted || checkingExisting) {
     return (
       <div className="min-h-screen bg-page-bg flex items-center justify-center">
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto mb-4"></div>
-          <p className="font-body text-text-secondary">Loading...</p>
+          <p className="font-body text-text-secondary">
+            {checkingExisting ? 'Checking your projects...' : 'Loading...'}
+          </p>
         </div>
       </div>
     )
