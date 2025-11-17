@@ -118,22 +118,28 @@ export default function ProjectDetailPage() {
   const fetchTokenStats = async (tokenMint: string) => {
     setStatsLoading(true)
     try {
-      // Fetch price and market cap from Jupiter
-      const priceRes = await fetch(`https://api.jup.ag/price/v2?ids=${tokenMint}`)
+      // Fetch price and market cap from Jupiter Lite API
+      const priceRes = await fetch(`https://lite-api.jup.ag/price/v2?ids=${tokenMint}`)
       const priceData = await priceRes.json()
       
+      console.log('Jupiter price response:', priceData)
       const tokenData = priceData.data?.[tokenMint]
       
       // Fetch top holders from Helius
       const heliusApiKey = process.env.NEXT_PUBLIC_HELIUS_API_KEY
       let holders: Array<{owner: string, amount: number, percentage: number}> = []
       
+      console.log('Helius API Key present:', !!heliusApiKey)
+      
       if (heliusApiKey) {
         try {
-          const holdersRes = await fetch(
-            `https://api.helius.xyz/v0/addresses/${tokenMint}/holders?api-key=${heliusApiKey}&limit=10`
-          )
+          const holdersUrl = `https://api.helius.xyz/v0/addresses/${tokenMint}/balances?api-key=${heliusApiKey}&limit=10`
+          console.log('Fetching holders from:', holdersUrl.replace(heliusApiKey, 'API_KEY_HIDDEN'))
+          
+          const holdersRes = await fetch(holdersUrl)
           const holdersData = await holdersRes.json()
+          
+          console.log('Helius response:', holdersData)
           
           if (holdersData && Array.isArray(holdersData)) {
             holders = holdersData.map((holder: any) => ({
@@ -145,6 +151,8 @@ export default function ProjectDetailPage() {
         } catch (holderError) {
           console.error('Error fetching holders:', holderError)
         }
+      } else {
+        console.warn('NEXT_PUBLIC_HELIUS_API_KEY not found in environment')
       }
       
       setTokenStats({
