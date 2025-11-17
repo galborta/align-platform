@@ -1,5 +1,6 @@
 'use client'
 
+import Link from 'next/link'
 import { Button } from '@/components/ui/Button'
 import { Card, CardContent } from '@/components/ui/Card'
 import { WalletButton } from '@/components/WalletButton'
@@ -14,9 +15,11 @@ export default function Home() {
       <header className="sticky top-0 bg-page-bg/95 backdrop-blur-sm border-b border-border-subtle z-50">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
           <div className="flex items-center justify-between">
-            <h1 className="font-display text-2xl font-bold text-text-primary">
-              Align
-            </h1>
+            <Link href="/">
+              <h1 className="font-display text-2xl font-bold text-text-primary cursor-pointer hover:text-accent-primary transition-colors">
+                Align
+              </h1>
+            </Link>
             <WalletButton />
           </div>
         </div>
