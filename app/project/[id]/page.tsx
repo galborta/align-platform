@@ -9,10 +9,12 @@ import { WalletButton } from '@/components/WalletButton'
 import { supabase } from '@/lib/supabase'
 import { Database } from '@/types/database'
 import VerifiedIcon from '@mui/icons-material/Verified'
+import CheckCircleIcon from '@mui/icons-material/CheckCircle'
 import ArrowBackIcon from '@mui/icons-material/ArrowBack'
 import TwitterIcon from '@mui/icons-material/Twitter'
 import InstagramIcon from '@mui/icons-material/Instagram'
 import YouTubeIcon from '@mui/icons-material/YouTube'
+import OpenInNewIcon from '@mui/icons-material/OpenInNew'
 
 type Project = Database['public']['Tables']['projects']['Row']
 type SocialAsset = Database['public']['Tables']['social_assets']['Row']
@@ -27,11 +29,25 @@ interface ProjectDetails extends Project {
   team_wallets: TeamWallet[]
 }
 
+
 const platformIcons: Record<string, React.ReactNode> = {
-  twitter: <TwitterIcon />,
-  instagram: <InstagramIcon />,
-  youtube: <YouTubeIcon />,
+  twitter: <TwitterIcon sx={{ fontSize: 20 }} />,
+  instagram: <InstagramIcon sx={{ fontSize: 20 }} />,
+  youtube: <YouTubeIcon sx={{ fontSize: 20 }} />,
   tiktok: <span className="text-xl">🎵</span>,
+}
+
+const getPlatformUrl = (platform: string, handle: string): string => {
+  // Remove @ if user included it
+  const cleanHandle = handle.startsWith('@') ? handle.slice(1) : handle
+  
+  const urls: Record<string, string> = {
+    twitter: `https://twitter.com/${cleanHandle}`,
+    instagram: `https://instagram.com/${cleanHandle}`,
+    youtube: `https://youtube.com/@${cleanHandle}`,
+    tiktok: `https://tiktok.com/@${cleanHandle}`,
+  }
+  return urls[platform] || `https://${platform}.com/${cleanHandle}`
 }
 
 export default function ProjectDetailPage() {
@@ -159,184 +175,214 @@ export default function ProjectDetailPage() {
         </Link>
 
         {/* Project Header */}
-        <div className="flex flex-col sm:flex-row items-center sm:items-start gap-6 mb-8">
-          {/* Profile Image */}
-          <div className="w-32 h-32 rounded-full bg-accent-primary-soft flex items-center justify-center overflow-hidden flex-shrink-0">
-            {project.profile_image_url ? (
-              <img
-                src={project.profile_image_url}
-                alt={project.token_name}
-                className="w-full h-full object-cover"
-              />
-            ) : (
-              <span className="font-display text-4xl font-bold text-accent-primary">
-                {project.token_symbol.charAt(0)}
-              </span>
-            )}
-          </div>
+        <Card className="mb-8">
+          <CardContent className="pt-6">
+            <div className="flex flex-col sm:flex-row items-center sm:items-start gap-6">
+              {/* Profile Image */}
+              <div className="w-24 h-24 rounded-full bg-accent-primary-soft flex items-center justify-center overflow-hidden flex-shrink-0">
+                {project.profile_image_url ? (
+                  <img
+                    src={project.profile_image_url}
+                    alt={project.token_name}
+                    className="w-full h-full object-cover"
+                  />
+                ) : (
+                  <span className="font-display text-3xl font-bold text-accent-primary">
+                    {project.token_symbol.charAt(0)}
+                  </span>
+                )}
+              </div>
 
-          {/* Project Info */}
-          <div className="flex-1 text-center sm:text-left">
-            <h1 className="font-display text-4xl font-bold text-text-primary mb-2">
-              {project.token_name}
-            </h1>
-            <p className="font-body text-xl text-text-secondary mb-4">
-              ${project.token_symbol}
-            </p>
-            <div className="flex flex-wrap gap-2 justify-center sm:justify-start">
-              <span className="px-3 py-1 bg-accent-primary-soft text-accent-primary rounded-full text-sm font-medium">
-                {getVerifiedSocialsCount()} Verified Accounts
-              </span>
-              <span className="px-3 py-1 bg-card-bg border border-border-subtle text-text-secondary rounded-full text-sm">
-                Token Mint: {shortenAddress(project.token_mint)}
-              </span>
+              {/* Project Info */}
+              <div className="flex-1 text-center sm:text-left">
+                <h1 className="font-display text-3xl font-bold text-text-primary mb-1">
+                  {project.token_name}
+                </h1>
+                <p className="font-body text-lg text-text-secondary mb-3">
+                  ${project.token_symbol}
+                </p>
+                <div className="flex items-center gap-2 justify-center sm:justify-start">
+                  {getVerifiedSocialsCount() > 0 && (
+                    <div className="flex items-center gap-1 px-3 py-1 bg-accent-primary-soft text-accent-primary rounded-full text-sm font-medium">
+                      <VerifiedIcon sx={{ fontSize: 18 }} />
+                      <span>{getVerifiedSocialsCount()} Verified</span>
+                    </div>
+                  )}
+                </div>
+              </div>
             </div>
-          </div>
-        </div>
+          </CardContent>
+        </Card>
 
-        {/* Content Grid */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          {/* Social Assets */}
-          <Card>
-            <CardHeader>
-              <CardTitle>Social Accounts</CardTitle>
-            </CardHeader>
-            <CardContent>
-              {project.social_assets && project.social_assets.length > 0 ? (
-                <div className="space-y-3">
-                  {project.social_assets.map((social) => (
-                    <div
-                      key={social.id}
-                      className="flex items-center justify-between p-3 bg-page-bg rounded-lg"
-                    >
-                      <div className="flex items-center gap-3">
-                        <div className="text-accent-primary">
+        {/* Main Content - Single Page */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          {/* Left Column - IP Registry */}
+          <div className="lg:col-span-2 space-y-6">
+            {/* Social Assets - Compact Cards */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-lg">Social Assets</CardTitle>
+              </CardHeader>
+              <CardContent>
+                {project.social_assets && project.social_assets.length > 0 ? (
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                    {project.social_assets.map((social) => (
+                      <a
+                        key={social.id}
+                        href={getPlatformUrl(social.platform, social.handle)}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex flex-col items-center p-3 bg-white rounded-lg border border-border-subtle hover:border-accent-primary transition-colors relative"
+                      >
+                        {social.verified && (
+                          <div className="absolute top-2 right-2">
+                            <CheckCircleIcon sx={{ color: '#7C4DFF', fontSize: 16 }} />
+                          </div>
+                        )}
+                        <div className="text-accent-primary mb-2">
                           {platformIcons[social.platform] || '🌐'}
                         </div>
-                        <div>
-                          <p className="font-body font-medium text-text-primary">
-                            @{social.handle}
+                        <p className="font-body font-medium text-text-primary text-sm text-center truncate w-full">
+                          @{social.handle}
+                        </p>
+                        {social.follower_tier && (
+                          <p className="font-body text-xs text-text-muted">
+                            {social.follower_tier}
                           </p>
-                          <p className="font-body text-sm text-text-secondary capitalize">
-                            {social.platform}
+                        )}
+                      </a>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="font-body text-text-muted text-center py-4">
+                    No social accounts added
+                  </p>
+                )}
+              </CardContent>
+            </Card>
+
+            {/* Creative Assets - Album Style */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-lg">Creative Assets</CardTitle>
+              </CardHeader>
+              <CardContent>
+                {project.creative_assets && project.creative_assets.length > 0 ? (
+                  <div className="grid grid-cols-3 gap-2">
+                    {project.creative_assets.slice(0, 6).map((asset) => (
+                      <div
+                        key={asset.id}
+                        className="relative group cursor-pointer overflow-hidden rounded-lg"
+                      >
+                        {asset.media_url ? (
+                          <div className="aspect-square bg-subtle-bg flex items-center justify-center">
+                            <img
+                              src={asset.media_url}
+                              alt={asset.name || 'Creative asset'}
+                              className="w-full h-full object-cover group-hover:scale-110 transition-transform"
+                            />
+                          </div>
+                        ) : (
+                          <div className="aspect-square bg-subtle-bg flex items-center justify-center">
+                            <span className="text-3xl">🎨</span>
+                          </div>
+                        )}
+                        {asset.name && (
+                          <div className="absolute bottom-0 left-0 right-0 bg-black/70 p-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                            <p className="font-body text-xs text-white truncate">
+                              {asset.name}
+                            </p>
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="font-body text-text-muted text-center py-4">
+                    No creative assets added
+                  </p>
+                )}
+              </CardContent>
+            </Card>
+
+            {/* Legal Assets - Compact List */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-lg">Legal Assets</CardTitle>
+              </CardHeader>
+              <CardContent>
+                {project.legal_assets && project.legal_assets.length > 0 ? (
+                  <div className="space-y-2">
+                    {project.legal_assets.map((asset) => (
+                      <div
+                        key={asset.id}
+                        className="flex items-center justify-between p-3 bg-white rounded-lg border border-border-subtle"
+                      >
+                        <div className="flex-1">
+                          <p className="font-body font-medium text-text-primary text-sm capitalize">
+                            {asset.asset_type || 'Legal Asset'}
+                          </p>
+                          <p className="font-body text-xs text-text-secondary truncate">
+                            {asset.name || 'Unnamed asset'}
                           </p>
                         </div>
+                        {asset.status && (
+                          <span className="inline-block px-2 py-1 bg-accent-primary-soft text-accent-primary rounded text-xs font-medium ml-2">
+                            {asset.status}
+                          </span>
+                        )}
                       </div>
-                      {social.verified && (
-                        <VerifiedIcon className="text-accent-success" />
-                      )}
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <p className="font-body text-text-muted text-center py-4">
-                  No social accounts added
-                </p>
-              )}
-            </CardContent>
-          </Card>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="font-body text-text-muted text-center py-4">
+                    No legal assets added
+                  </p>
+                )}
+              </CardContent>
+            </Card>
+          </div>
 
-          {/* Team Wallets */}
-          <Card>
-            <CardHeader>
-              <CardTitle>Team Wallets</CardTitle>
-            </CardHeader>
-            <CardContent>
-              {project.team_wallets && project.team_wallets.length > 0 ? (
-                <div className="space-y-3">
-                  {project.team_wallets.map((wallet) => (
-                    <div
-                      key={wallet.id}
-                      className="flex items-center justify-between p-3 bg-page-bg rounded-lg"
-                    >
-                      <div>
-                        <p className="font-body font-medium text-text-primary">
+          {/* Right Column - Team Transparency */}
+          <div className="space-y-6">
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-lg">Team Wallets</CardTitle>
+              </CardHeader>
+              <CardContent>
+                {project.team_wallets && project.team_wallets.length > 0 ? (
+                  <div className="space-y-3">
+                    {project.team_wallets.map((wallet) => (
+                      <div
+                        key={wallet.id}
+                        className="p-3 bg-white rounded-lg border border-border-subtle"
+                      >
+                        <p className="font-body font-medium text-text-primary text-sm mb-1">
                           {wallet.label || 'Team Wallet'}
                         </p>
-                        <p className="font-body text-sm text-text-secondary font-mono">
+                        <p className="font-body text-xs text-text-secondary font-mono mb-2">
                           {shortenAddress(wallet.wallet_address)}
                         </p>
+                        <a
+                          href={`https://solscan.io/account/${wallet.wallet_address}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-1 text-accent-primary hover:text-accent-primary/80 font-body text-xs font-medium"
+                        >
+                          View on Solscan
+                          <OpenInNewIcon sx={{ fontSize: 12 }} />
+                        </a>
                       </div>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <p className="font-body text-text-muted text-center py-4">
-                  No team wallets added
-                </p>
-              )}
-            </CardContent>
-          </Card>
-
-          {/* Creative Assets */}
-          <Card>
-            <CardHeader>
-              <CardTitle>Creative Assets</CardTitle>
-            </CardHeader>
-            <CardContent>
-              {project.creative_assets && project.creative_assets.length > 0 ? (
-                <div className="space-y-3">
-                  {project.creative_assets.map((asset) => (
-                    <div
-                      key={asset.id}
-                      className="p-3 bg-page-bg rounded-lg"
-                    >
-                      <p className="font-body font-medium text-text-primary capitalize">
-                        {asset.asset_type || 'Asset'}
-                      </p>
-                      <p className="font-body text-sm text-text-secondary">
-                        {asset.name || 'Unnamed asset'}
-                      </p>
-                      {asset.description && (
-                        <p className="font-body text-sm text-text-muted mt-1">
-                          {asset.description}
-                        </p>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <p className="font-body text-text-muted text-center py-4">
-                  No creative assets added
-                </p>
-              )}
-            </CardContent>
-          </Card>
-
-          {/* Legal Assets */}
-          <Card>
-            <CardHeader>
-              <CardTitle>Legal Assets</CardTitle>
-            </CardHeader>
-            <CardContent>
-              {project.legal_assets && project.legal_assets.length > 0 ? (
-                <div className="space-y-3">
-                  {project.legal_assets.map((asset) => (
-                    <div
-                      key={asset.id}
-                      className="p-3 bg-page-bg rounded-lg"
-                    >
-                      <p className="font-body font-medium text-text-primary capitalize">
-                        {asset.asset_type || 'Legal Asset'}
-                      </p>
-                      <p className="font-body text-sm text-text-secondary">
-                        {asset.name || 'Unnamed asset'}
-                      </p>
-                      {asset.registration_id && (
-                        <p className="font-body text-sm text-text-muted mt-1">
-                          ID: {asset.registration_id}
-                        </p>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <p className="font-body text-text-muted text-center py-4">
-                  No legal assets added
-                </p>
-              )}
-            </CardContent>
-          </Card>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="font-body text-text-muted text-center py-4">
+                    No team wallets added
+                  </p>
+                )}
+              </CardContent>
+            </Card>
+          </div>
         </div>
       </main>
     </div>

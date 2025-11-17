@@ -24,6 +24,36 @@ export default function ProjectsPage() {
 
   useEffect(() => {
     fetchProjects()
+
+    // Set up real-time subscription for project updates
+    const channel = supabase
+      .channel('projects-changes')
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'projects',
+          filter: 'status=eq.live'
+        },
+        (payload) => {
+          console.log('Project change detected:', payload)
+          
+          if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
+            // Refetch all projects to get updated data with social_assets
+            fetchProjects()
+          } else if (payload.eventType === 'DELETE') {
+            // Remove deleted project from state
+            setProjects(prev => prev.filter(p => p.id !== payload.old.id))
+          }
+        }
+      )
+      .subscribe()
+
+    // Cleanup subscription on unmount
+    return () => {
+      supabase.removeChannel(channel)
+    }
   }, [])
 
   useEffect(() => {
@@ -32,6 +62,7 @@ export default function ProjectsPage() {
 
   const fetchProjects = async () => {
     try {
+      // Add timestamp to force fresh data (bypass cache)
       const { data, error } = await supabase
         .from('projects')
         .select(`
@@ -42,6 +73,8 @@ export default function ProjectsPage() {
         .order('created_at', { ascending: false })
 
       if (error) throw error
+      
+      console.log('Fetched live projects:', data?.length || 0)
       setProjects((data as Project[]) || [])
     } catch (error) {
       console.error('Error fetching projects:', error)
@@ -103,13 +136,24 @@ export default function ProjectsPage() {
       {/* Main Content */}
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
         {/* Page Header */}
-        <div className="mb-8">
-          <h1 className="font-display text-4xl font-bold text-text-primary mb-2">
-            Verified Projects
-          </h1>
-          <p className="font-body text-text-secondary">
-            Browse token projects with verified social accounts and transparent teams
-          </p>
+        <div className="mb-8 flex items-start justify-between">
+          <div>
+            <h1 className="font-display text-4xl font-bold text-text-primary mb-2">
+              Verified Projects
+            </h1>
+            <p className="font-body text-text-secondary">
+              Browse token projects with verified social accounts and transparent teams
+            </p>
+          </div>
+          <button
+            onClick={() => {
+              setLoading(true)
+              fetchProjects()
+            }}
+            className="px-4 py-2 bg-accent-primary text-white rounded-lg hover:bg-accent-primary/90 transition-colors font-body text-sm font-medium"
+          >
+            🔄 Refresh
+          </button>
         </div>
 
         {/* Filters */}
