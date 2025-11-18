@@ -16,6 +16,7 @@ export interface Database {
           token_mint: string
           token_name: string
           token_symbol: string
+          description: string | null
           profile_image_url: string | null
           status: 'draft' | 'pending' | 'live' | 'rejected'
           created_at: string
@@ -27,6 +28,7 @@ export interface Database {
           token_mint: string
           token_name: string
           token_symbol: string
+          description?: string | null
           profile_image_url?: string | null
           status?: 'draft' | 'pending' | 'live' | 'rejected'
           created_at?: string
@@ -38,6 +40,7 @@ export interface Database {
           token_mint?: string
           token_name?: string
           token_symbol?: string
+          description?: string | null
           profile_image_url?: string | null
           status?: 'draft' | 'pending' | 'live' | 'rejected'
           created_at?: string

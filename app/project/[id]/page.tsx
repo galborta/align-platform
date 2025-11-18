@@ -333,7 +333,7 @@ export default function ProjectDetailPage() {
                 <p className="font-body text-lg text-text-secondary mb-3">
                   ${project.token_symbol}
                 </p>
-                <div className="flex flex-wrap items-center gap-2 justify-center sm:justify-start">
+                <div className="flex flex-wrap items-center gap-2 justify-center sm:justify-start mb-4">
                   {getVerifiedSocialsCount() > 0 && (
                     <div className="flex items-center gap-1 px-3 py-1 bg-accent-primary-soft text-accent-primary rounded-full text-sm font-medium">
                       <VerifiedIcon sx={{ fontSize: 18 }} />
@@ -358,6 +358,12 @@ export default function ProjectDetailPage() {
                     </div>
                   )}
                 </div>
+                {/* Description */}
+                {project.description && (
+                  <p className="font-body text-base text-text-secondary leading-relaxed">
+                    {project.description}
+                  </p>
+                )}
               </div>
             </div>
           </CardContent>

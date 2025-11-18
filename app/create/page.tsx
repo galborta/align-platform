@@ -73,6 +73,7 @@ export default function CreatePage() {
   const [uploadingImage, setUploadingImage] = useState(false)
   const [imageUrl, setImageUrl] = useState<string | null>(null)
   const [imagePreview, setImagePreview] = useState<string | null>(null)
+  const [description, setDescription] = useState('')
   const [currentStep, setCurrentStep] = useState<1 | 2 | 3 | 4>(1)
   const [checkingExisting, setCheckingExisting] = useState(false)
 
@@ -441,6 +442,7 @@ export default function CreatePage() {
           token_mint: mintAddress,
           token_name: tokenData?.name || '',
           token_symbol: tokenData?.symbol || '',
+          description: description.trim() || null,
           profile_image_url: imageUrl,
           status: 'pending'
         }])
@@ -808,6 +810,20 @@ export default function CreatePage() {
                         </div>
                       </div>
                     )}
+
+                    {/* Description Field */}
+                    <div>
+                      <TextField
+                        label="Project Description (Optional)"
+                        placeholder="Tell holders about your project..."
+                        value={description}
+                        onChange={(e) => setDescription(e.target.value.slice(0, 500))}
+                        multiline
+                        rows={4}
+                        fullWidth
+                        helperText={`${description.length}/500 characters`}
+                      />
+                    </div>
 
               {/* Navigation Buttons */}
               <div className="flex justify-between pt-4">
