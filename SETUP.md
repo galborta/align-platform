@@ -9,6 +9,7 @@ NEXT_PUBLIC_SUPABASE_URL=https://szunhbkqmfbbcrefycxh.supabase.co
 NEXT_PUBLIC_SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InN6dW5oYmtxbWZiYmNyZWZ5Y3hoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjMyMzI0NjAsImV4cCI6MjA3ODgwODQ2MH0.sokDZz4GN9nLCh9Y5Q-ODbSPfLxZdNC9vGeZ-M48Ceg
 NEXT_PUBLIC_SOLANA_NETWORK=devnet
 NEXT_PUBLIC_RPC_ENDPOINT=https://api.devnet.solana.com
+NEXT_PUBLIC_HELIUS_API_URL=https://mainnet.helius-rpc.com/?api-key=YOUR_HELIUS_API_KEY
 ```
 
 ## Quick Setup Command
@@ -21,6 +22,7 @@ NEXT_PUBLIC_SUPABASE_URL=https://szunhbkqmfbbcrefycxh.supabase.co
 NEXT_PUBLIC_SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InN6dW5oYmtxbWZiYmNyZWZ5Y3hoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjMyMzI0NjAsImV4cCI6MjA3ODgwODQ2MH0.sokDZz4GN9nLCh9Y5Q-ODbSPfLxZdNC9vGeZ-M48Ceg
 NEXT_PUBLIC_SOLANA_NETWORK=devnet
 NEXT_PUBLIC_RPC_ENDPOINT=https://api.devnet.solana.com
+NEXT_PUBLIC_HELIUS_API_URL=https://mainnet.helius-rpc.com/?api-key=YOUR_HELIUS_API_KEY
 EOF
 ```
 
@@ -41,6 +43,9 @@ The following tables have been created in Supabase:
 ### Storage
 
 - **project-assets** bucket for image uploads (50MB limit, public access)
+
+
+
 
 
 

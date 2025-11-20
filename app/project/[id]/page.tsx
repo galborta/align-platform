@@ -7,8 +7,12 @@ import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { WalletButton } from '@/components/WalletButton'
 import { ProjectChat } from '@/components/ProjectChat'
+import { AddAssetModal } from '@/components/AddAssetModal'
+import { CurationChatFeed } from '@/components/CurationChatFeed'
+import { KarmaLeaderboard } from '@/components/KarmaLeaderboard'
 import { supabase } from '@/lib/supabase'
 import { Database } from '@/types/database'
+import { useWallet } from '@solana/wallet-adapter-react'
 import VerifiedIcon from '@mui/icons-material/Verified'
 import CheckCircleIcon from '@mui/icons-material/CheckCircle'
 import ArrowBackIcon from '@mui/icons-material/ArrowBack'
@@ -72,9 +76,11 @@ interface TokenStats {
 export default function ProjectDetailPage() {
   const params = useParams()
   const router = useRouter()
+  const wallet = useWallet()
   const [project, setProject] = useState<ProjectDetails | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [showAddAssetModal, setShowAddAssetModal] = useState(false)
   const [tokenStats, setTokenStats] = useState<TokenStats>({
     price: null,
     marketCap: null,
@@ -376,6 +382,45 @@ export default function ProjectDetailPage() {
             {/* Chat Component - Featured */}
             {project.status === 'live' && (
               <ProjectChat projectId={project.id} tokenMint={project.token_mint} />
+            )}
+
+            {/* Community Curation Section */}
+            {project.status === 'live' && (
+              <Card>
+                <CardHeader>
+                  <div className="flex justify-between items-center">
+                    <CardTitle className="text-2xl">Community Curation</CardTitle>
+                    <Button
+                      onClick={() => setShowAddAssetModal(true)}
+                      disabled={!wallet.publicKey}
+                      variant="contained"
+                      className="bg-purple-600 hover:bg-purple-700"
+                    >
+                      + Add Asset
+                    </Button>
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                    <div className="lg:col-span-2">
+                      <CurationChatFeed projectId={project.id} />
+                    </div>
+                    
+                    <div className="lg:col-span-1">
+                      <KarmaLeaderboard projectId={project.id} />
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+
+            {/* Add Asset Modal */}
+            {showAddAssetModal && (
+              <AddAssetModal
+                projectId={project.id}
+                tokenMint={project.token_mint}
+                onClose={() => setShowAddAssetModal(false)}
+              />
             )}
 
             {/* Social Assets - Compact */}

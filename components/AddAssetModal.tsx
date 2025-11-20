@@ -1,0 +1,333 @@
+'use client'
+
+import { useState } from 'react'
+import { useWallet } from '@solana/wallet-adapter-react'
+import {
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  Button,
+  TextField,
+  Select,
+  MenuItem,
+  FormControl,
+  InputLabel,
+  Alert
+} from '@mui/material'
+import { supabase } from '@/lib/supabase'
+import { getWalletTokenData } from '@/lib/token-balance'
+import { calculateKarma } from '@/lib/karma'
+import { toast } from 'react-hot-toast'
+
+interface AddAssetModalProps {
+  projectId: string
+  tokenMint: string
+  onClose: () => void
+}
+
+export function AddAssetModal({ projectId, tokenMint, onClose }: AddAssetModalProps) {
+  const wallet = useWallet()
+  const [assetType, setAssetType] = useState<'social' | 'creative' | 'legal'>('social')
+  const [loading, setLoading] = useState(false)
+  
+  // Social asset fields
+  const [platform, setPlatform] = useState('')
+  const [handle, setHandle] = useState('')
+  const [followerTier, setFollowerTier] = useState('')
+  const [profileUrl, setProfileUrl] = useState('')
+  
+  // Creative asset fields
+  const [creativeName, setCreativeName] = useState('')
+  const [creativeDescription, setCreativeDescription] = useState('')
+  const [mediaUrl, setMediaUrl] = useState('')
+  
+  // Legal asset fields
+  const [legalType, setLegalType] = useState('')
+  const [legalName, setLegalName] = useState('')
+  const [status, setStatus] = useState('')
+  const [jurisdiction, setJurisdiction] = useState('')
+  
+  const handleSubmit = async () => {
+    if (!wallet.publicKey) {
+      toast.error('Please connect your wallet')
+      return
+    }
+    
+    setLoading(true)
+    
+    try {
+      // 1. Check wallet has tokens
+      const tokenData = await getWalletTokenData(
+        wallet.publicKey.toString(),
+        tokenMint
+      )
+      
+      if (!tokenData || tokenData.balance === 0) {
+        toast.error('You must hold tokens to submit assets')
+        setLoading(false)
+        return
+      }
+      
+      // 2. Check not banned
+      const { data: karma } = await supabase
+        .from('wallet_karma')
+        .select('is_banned')
+        .eq('wallet_address', wallet.publicKey.toString())
+        .eq('project_id', projectId)
+        .single()
+      
+      if (karma?.is_banned) {
+        toast.error('Your wallet is banned from submitting')
+        setLoading(false)
+        return
+      }
+      
+      // 3. Prepare asset data based on type
+      let assetData: any = {}
+      
+      if (assetType === 'social') {
+        if (!platform || !handle) {
+          toast.error('Please fill in all required fields')
+          setLoading(false)
+          return
+        }
+        assetData = { platform, handle, followerTier, profileUrl }
+      } else if (assetType === 'creative') {
+        if (!creativeName) {
+          toast.error('Please provide an asset name')
+          setLoading(false)
+          return
+        }
+        assetData = { name: creativeName, description: creativeDescription, mediaUrl }
+      } else if (assetType === 'legal') {
+        if (!legalType || !legalName) {
+          toast.error('Please fill in all required fields')
+          setLoading(false)
+          return
+        }
+        assetData = { assetType: legalType, name: legalName, status, jurisdiction }
+      }
+      
+      // 4. Insert pending asset
+      const { data: asset, error } = await supabase
+        .from('pending_assets')
+        .insert({
+          project_id: projectId,
+          asset_type: assetType,
+          asset_data: assetData,
+          submitter_wallet: wallet.publicKey.toString(),
+          submission_token_balance: tokenData.balance,
+          submission_token_percentage: tokenData.percentage,
+          verification_status: 'pending'
+        })
+        .select()
+        .single()
+      
+      if (error) {
+        console.error('Failed to submit asset:', error)
+        toast.error('Failed to submit asset')
+        setLoading(false)
+        return
+      }
+      
+      // 5. Award immediate karma (25%)
+      const immediateKarma = calculateKarma('add', tokenData.percentage, true)
+      
+      await supabase.rpc('add_karma', {
+        p_wallet: wallet.publicKey.toString(),
+        p_project_id: projectId,
+        p_karma_delta: immediateKarma
+      })
+      
+      // 6. Post to curation chat
+      const assetSummary = 
+        assetType === 'social' 
+          ? `${platform} @${handle}`
+          : assetType === 'creative'
+          ? creativeName
+          : legalName
+      
+      await supabase
+        .from('curation_chat_messages')
+        .insert({
+          project_id: projectId,
+          message_type: 'asset_added',
+          wallet_address: wallet.publicKey.toString(),
+          token_percentage: tokenData.percentage,
+          pending_asset_id: asset.id,
+          asset_type: assetType,
+          asset_summary: assetSummary
+        })
+      
+      toast.success(`Asset submitted! Earned ${immediateKarma.toFixed(1)} karma. Earn more when verified.`)
+      onClose()
+      
+    } catch (error) {
+      console.error('Error submitting asset:', error)
+      toast.error('An error occurred')
+    } finally {
+      setLoading(false)
+    }
+  }
+  
+  return (
+    <Dialog open onClose={onClose} maxWidth="md" fullWidth>
+      <DialogTitle>Add Asset for Community Verification</DialogTitle>
+      
+      <DialogContent>
+        <Alert severity="info" className="mb-4">
+          Submit assets for community review. Earn karma when verified!
+        </Alert>
+        
+        <FormControl fullWidth className="mb-4">
+          <InputLabel>Asset Type</InputLabel>
+          <Select
+            value={assetType}
+            onChange={(e) => setAssetType(e.target.value as any)}
+          >
+            <MenuItem value="social">Social Account</MenuItem>
+            <MenuItem value="creative">Creative Asset</MenuItem>
+            <MenuItem value="legal">Legal Asset</MenuItem>
+          </Select>
+        </FormControl>
+        
+        {assetType === 'social' && (
+          <>
+            <FormControl fullWidth className="mb-3">
+              <InputLabel>Platform</InputLabel>
+              <Select
+                value={platform}
+                onChange={(e) => setPlatform(e.target.value)}
+              >
+                <MenuItem value="instagram">Instagram</MenuItem>
+                <MenuItem value="twitter">Twitter</MenuItem>
+                <MenuItem value="tiktok">TikTok</MenuItem>
+                <MenuItem value="youtube">YouTube</MenuItem>
+              </Select>
+            </FormControl>
+            
+            <TextField
+              fullWidth
+              label="Handle"
+              placeholder="@username"
+              value={handle}
+              onChange={(e) => setHandle(e.target.value)}
+              className="mb-3"
+            />
+            
+            <FormControl fullWidth className="mb-3">
+              <InputLabel>Follower Tier</InputLabel>
+              <Select
+                value={followerTier}
+                onChange={(e) => setFollowerTier(e.target.value)}
+              >
+                <MenuItem value="<10k">{'< 10k'}</MenuItem>
+                <MenuItem value="10k-50k">10k - 50k</MenuItem>
+                <MenuItem value="50k-100k">50k - 100k</MenuItem>
+                <MenuItem value="100k-500k">100k - 500k</MenuItem>
+                <MenuItem value="500k-1m">500k - 1M</MenuItem>
+                <MenuItem value="1m-5m">1M - 5M</MenuItem>
+                <MenuItem value="5m+">5M+</MenuItem>
+              </Select>
+            </FormControl>
+            
+            <TextField
+              fullWidth
+              label="Profile URL (optional)"
+              placeholder="https://..."
+              value={profileUrl}
+              onChange={(e) => setProfileUrl(e.target.value)}
+            />
+          </>
+        )}
+        
+        {assetType === 'creative' && (
+          <>
+            <TextField
+              fullWidth
+              label="Asset Name"
+              value={creativeName}
+              onChange={(e) => setCreativeName(e.target.value)}
+              className="mb-3"
+            />
+            
+            <TextField
+              fullWidth
+              label="Description"
+              multiline
+              rows={3}
+              value={creativeDescription}
+              onChange={(e) => setCreativeDescription(e.target.value)}
+              className="mb-3"
+            />
+            
+            <TextField
+              fullWidth
+              label="Media URL (optional)"
+              placeholder="https://..."
+              value={mediaUrl}
+              onChange={(e) => setMediaUrl(e.target.value)}
+            />
+          </>
+        )}
+        
+        {assetType === 'legal' && (
+          <>
+            <FormControl fullWidth className="mb-3">
+              <InputLabel>Asset Type</InputLabel>
+              <Select
+                value={legalType}
+                onChange={(e) => setLegalType(e.target.value)}
+              >
+                <MenuItem value="domain">Domain</MenuItem>
+                <MenuItem value="trademark">Trademark</MenuItem>
+                <MenuItem value="copyright">Copyright</MenuItem>
+              </Select>
+            </FormControl>
+            
+            <TextField
+              fullWidth
+              label="Name"
+              value={legalName}
+              onChange={(e) => setLegalName(e.target.value)}
+              className="mb-3"
+            />
+            
+            <TextField
+              fullWidth
+              label="Status"
+              placeholder="e.g., Registered, Pending"
+              value={status}
+              onChange={(e) => setStatus(e.target.value)}
+              className="mb-3"
+            />
+            
+            <TextField
+              fullWidth
+              label="Jurisdiction (optional)"
+              placeholder="e.g., USPTO, EU"
+              value={jurisdiction}
+              onChange={(e) => setJurisdiction(e.target.value)}
+            />
+          </>
+        )}
+      </DialogContent>
+      
+      <DialogActions>
+        <Button onClick={onClose} disabled={loading}>
+          Cancel
+        </Button>
+        <Button
+          onClick={handleSubmit}
+          variant="contained"
+          disabled={loading}
+          className="bg-purple-600"
+        >
+          {loading ? 'Submitting...' : 'Submit for Verification'}
+        </Button>
+      </DialogActions>
+    </Dialog>
+  )
+}
+

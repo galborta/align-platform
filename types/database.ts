@@ -201,6 +201,185 @@ export interface Database {
           created_at?: string
         }
       }
+      pending_assets: {
+        Row: {
+          id: string
+          project_id: string
+          asset_type: 'social' | 'creative' | 'legal'
+          asset_data: Record<string, any>
+          submitter_wallet: string
+          submission_token_balance: number
+          submission_token_percentage: number
+          total_upvote_weight: number
+          unique_upvoters_count: number
+          total_report_weight: number
+          unique_reporters_count: number
+          verification_status: 'pending' | 'backed' | 'verified' | 'hidden'
+          verified_at: string | null
+          hidden_at: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          project_id: string
+          asset_type: 'social' | 'creative' | 'legal'
+          asset_data: Record<string, any>
+          submitter_wallet: string
+          submission_token_balance: number
+          submission_token_percentage: number
+          total_upvote_weight?: number
+          unique_upvoters_count?: number
+          total_report_weight?: number
+          unique_reporters_count?: number
+          verification_status?: 'pending' | 'backed' | 'verified' | 'hidden'
+          verified_at?: string | null
+          hidden_at?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          project_id?: string
+          asset_type?: 'social' | 'creative' | 'legal'
+          asset_data?: Record<string, any>
+          submitter_wallet?: string
+          submission_token_balance?: number
+          submission_token_percentage?: number
+          total_upvote_weight?: number
+          unique_upvoters_count?: number
+          total_report_weight?: number
+          unique_reporters_count?: number
+          verification_status?: 'pending' | 'backed' | 'verified' | 'hidden'
+          verified_at?: string | null
+          hidden_at?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+      }
+      asset_votes: {
+        Row: {
+          id: string
+          pending_asset_id: string
+          voter_wallet: string
+          vote_type: 'upvote' | 'report'
+          token_balance_snapshot: number
+          token_percentage_snapshot: number
+          karma_earned: number
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          pending_asset_id: string
+          voter_wallet: string
+          vote_type: 'upvote' | 'report'
+          token_balance_snapshot: number
+          token_percentage_snapshot: number
+          karma_earned?: number
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          pending_asset_id?: string
+          voter_wallet?: string
+          vote_type?: 'upvote' | 'report'
+          token_balance_snapshot?: number
+          token_percentage_snapshot?: number
+          karma_earned?: number
+          created_at?: string
+        }
+      }
+      wallet_karma: {
+        Row: {
+          id: string
+          wallet_address: string
+          project_id: string
+          total_karma_points: number
+          assets_added_count: number
+          upvotes_given_count: number
+          reports_given_count: number
+          warning_count: number
+          is_banned: boolean
+          banned_at: string | null
+          ban_expires_at: string | null
+          warnings: Array<{ timestamp: string; reason: string }>
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          wallet_address: string
+          project_id: string
+          total_karma_points?: number
+          assets_added_count?: number
+          upvotes_given_count?: number
+          reports_given_count?: number
+          warning_count?: number
+          is_banned?: boolean
+          banned_at?: string | null
+          ban_expires_at?: string | null
+          warnings?: Array<{ timestamp: string; reason: string }>
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          wallet_address?: string
+          project_id?: string
+          total_karma_points?: number
+          assets_added_count?: number
+          upvotes_given_count?: number
+          reports_given_count?: number
+          warning_count?: number
+          is_banned?: boolean
+          banned_at?: string | null
+          ban_expires_at?: string | null
+          warnings?: Array<{ timestamp: string; reason: string }>
+          created_at?: string
+          updated_at?: string
+        }
+      }
+      curation_chat_messages: {
+        Row: {
+          id: string
+          project_id: string
+          message_type: 'asset_added' | 'asset_backed' | 'asset_verified' | 'asset_hidden' | 'wallet_banned'
+          wallet_address: string | null
+          token_percentage: number | null
+          pending_asset_id: string | null
+          asset_type: string | null
+          asset_summary: string | null
+          vote_count: number | null
+          supply_percentage: number | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          project_id: string
+          message_type: 'asset_added' | 'asset_backed' | 'asset_verified' | 'asset_hidden' | 'wallet_banned'
+          wallet_address?: string | null
+          token_percentage?: number | null
+          pending_asset_id?: string | null
+          asset_type?: string | null
+          asset_summary?: string | null
+          vote_count?: number | null
+          supply_percentage?: number | null
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          project_id?: string
+          message_type?: 'asset_added' | 'asset_backed' | 'asset_verified' | 'asset_hidden' | 'wallet_banned'
+          wallet_address?: string | null
+          token_percentage?: number | null
+          pending_asset_id?: string | null
+          asset_type?: string | null
+          asset_summary?: string | null
+          vote_count?: number | null
+          supply_percentage?: number | null
+          created_at?: string
+        }
+      }
     }
     Views: {
       [_ in never]: never

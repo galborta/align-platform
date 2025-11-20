@@ -3,6 +3,7 @@ import { Space_Grotesk, Inter } from 'next/font/google'
 import './globals.css'
 import ThemeProvider from '@/components/ThemeProvider'
 import { WalletConfigProvider } from '@/lib/wallet-config'
+import { Toaster } from 'react-hot-toast'
 
 const spaceGrotesk = Space_Grotesk({ subsets: ['latin'], variable: '--font-display' })
 const inter = Inter({ subsets: ['latin'], variable: '--font-body' })
@@ -30,6 +31,30 @@ export default function RootLayout({
             {children}
           </WalletConfigProvider>
         </ThemeProvider>
+        <Toaster 
+          position="top-right"
+          toastOptions={{
+            duration: 4000,
+            style: {
+              background: '#363636',
+              color: '#fff',
+            },
+            success: {
+              duration: 3000,
+              iconTheme: {
+                primary: '#7C4DFF',
+                secondary: '#fff',
+              },
+            },
+            error: {
+              duration: 4000,
+              iconTheme: {
+                primary: '#EF4444',
+                secondary: '#fff',
+              },
+            },
+          }}
+        />
       </body>
     </html>
   )
