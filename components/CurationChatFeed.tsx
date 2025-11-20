@@ -130,7 +130,10 @@ function CurationChatMessage({
           </div>
           
           <span className="text-xs text-gray-400 whitespace-nowrap">
-            {formatDistanceToNow(new Date(message.created_at), { addSuffix: true })}
+            {formatDistanceToNow(
+              new Date(Math.min(new Date(message.created_at).getTime(), Date.now())),
+              { addSuffix: true }
+            )}
           </span>
         </div>
       </div>

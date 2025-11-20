@@ -388,28 +388,20 @@ export default function ProjectDetailPage() {
             {project.status === 'live' && (
               <Card>
                 <CardHeader>
-                  <div className="flex justify-between items-center">
+                  <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
                     <CardTitle className="text-2xl">Community Curation</CardTitle>
                     <Button
                       onClick={() => setShowAddAssetModal(true)}
                       disabled={!wallet.publicKey}
                       variant="contained"
-                      className="bg-purple-600 hover:bg-purple-700"
+                      className="bg-purple-600 hover:bg-purple-700 w-full sm:w-auto"
                     >
                       + Add Asset
                     </Button>
                   </div>
                 </CardHeader>
                 <CardContent>
-                  <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                    <div className="lg:col-span-2">
-                      <CurationChatFeed projectId={project.id} />
-                    </div>
-                    
-                    <div className="lg:col-span-1">
-                      <KarmaLeaderboard projectId={project.id} />
-                    </div>
-                  </div>
+                  <CurationChatFeed projectId={project.id} />
                 </CardContent>
               </Card>
             )}
@@ -543,6 +535,18 @@ export default function ProjectDetailPage() {
 
           {/* Right Column - Team Transparency */}
           <div className="space-y-6">
+            {/* Top Contributors Section */}
+            {project.status === 'live' && (
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-lg">Top Contributors 🏆</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <KarmaLeaderboard projectId={project.id} />
+                </CardContent>
+              </Card>
+            )}
+
             {/* Token Stats Card */}
             <Card>
               <CardHeader>

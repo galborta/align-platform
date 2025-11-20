@@ -147,13 +147,12 @@ export function AssetVotingCard({ asset, currentWallet, projectId }: AssetVoting
   }
 
   return (
-    <div className="mt-3 border border-gray-200 rounded-lg p-3 bg-gray-50">
-      <div className="flex items-center justify-between">
-        <div className="text-sm">
-          <div className="mb-2">
-            <StatusBadge status={asset.verification_status} />
-          </div>
-          <div className="text-gray-600">
+    <div className="mt-3 border border-gray-200 rounded-lg p-4 bg-gray-50">
+      <div className="flex flex-col gap-3">
+        {/* Status and Stats */}
+        <div>
+          <StatusBadge status={asset.verification_status} />
+          <div className="text-sm text-gray-600 mt-2">
             <strong>{asset.total_upvote_weight.toFixed(2)}%</strong> supply,{' '}
             <strong>{asset.unique_upvoters_count}</strong> votes
           </div>
@@ -162,48 +161,55 @@ export function AssetVotingCard({ asset, currentWallet, projectId }: AssetVoting
           </div>
         </div>
         
-        {!hasVoted && currentWallet && (
-          <div className="flex gap-2">
-            <Button
-              size="small"
-              onClick={() => handleVote('upvote')}
-              disabled={voting}
-              sx={{ 
-                bgcolor: 'rgb(34, 197, 94)',
-                color: 'white',
-                '&:hover': { bgcolor: 'rgb(22, 163, 74)' }
-              }}
-            >
-              ↑ Upvote
-            </Button>
-            <Button
-              size="small"
-              onClick={() => handleVote('report')}
-              disabled={voting}
-              sx={{ 
-                bgcolor: 'rgb(239, 68, 68)',
-                color: 'white',
-                '&:hover': { bgcolor: 'rgb(220, 38, 38)' }
-              }}
-            >
-              ↓ Report
-            </Button>
-          </div>
-        )}
-        
-        {hasVoted && (
-          <Chip 
-            label={`You ${voteType}d ✓`}
-            size="small"
-            color={voteType === 'upvote' ? 'success' : 'error'}
-          />
-        )}
-        
-        {!currentWallet && (
-          <div className="text-xs text-gray-500">
-            Connect wallet to vote
-          </div>
-        )}
+        {/* Voting Actions */}
+        <div className="flex items-center justify-end gap-3 pt-2 border-t border-gray-200">
+          {!hasVoted && currentWallet && (
+            <>
+              <Button
+                size="medium"
+                onClick={() => handleVote('upvote')}
+                disabled={voting}
+                sx={{ 
+                  bgcolor: 'rgb(34, 197, 94)',
+                  color: 'white',
+                  minWidth: '110px',
+                  '&:hover': { bgcolor: 'rgb(22, 163, 74)' },
+                  '&:disabled': { bgcolor: 'rgb(209, 213, 219)' }
+                }}
+              >
+                ↑ Upvote
+              </Button>
+              <Button
+                size="medium"
+                onClick={() => handleVote('report')}
+                disabled={voting}
+                sx={{ 
+                  bgcolor: 'rgb(239, 68, 68)',
+                  color: 'white',
+                  minWidth: '110px',
+                  '&:hover': { bgcolor: 'rgb(220, 38, 38)' },
+                  '&:disabled': { bgcolor: 'rgb(209, 213, 219)' }
+                }}
+              >
+                ↓ Report
+              </Button>
+            </>
+          )}
+          
+          {hasVoted && (
+            <Chip 
+              label={`You ${voteType}d ✓`}
+              size="medium"
+              color={voteType === 'upvote' ? 'success' : 'error'}
+            />
+          )}
+          
+          {!currentWallet && (
+            <div className="text-sm text-gray-500">
+              Connect wallet to vote
+            </div>
+          )}
+        </div>
       </div>
     </div>
   )

@@ -69,11 +69,7 @@ export function KarmaLeaderboard({ projectId }: { projectId: string }) {
   }
   
   return (
-    <div className="bg-white rounded-lg shadow p-6">
-      <h3 className="text-xl font-display font-bold mb-4">
-        Top Contributors 🏆
-      </h3>
-      
+    <div>
       {currentWallet && currentRank > 0 && (
         <div className="mb-4 p-3 bg-purple-50 rounded-lg">
           <p className="text-sm text-purple-900">
