@@ -119,6 +119,14 @@ export default function AdminPage() {
     try {
       setLoading(true)
 
+      // Fetch ALL projects (not just pending)
+      const { data: allProjects, error: projectsError } = await supabase
+        .from('projects')
+        .select('*')
+        .order('created_at', { ascending: false })
+
+      if (projectsError) throw projectsError
+
       // Fetch ALL unverified social assets with project info
       const { data: allSocials, error: socialsError } = await supabase
         .from('social_assets')
@@ -128,33 +136,41 @@ export default function AdminPage() {
 
       if (socialsError) throw socialsError
 
-      // Organize into project groups
+      // Create map of all projects with their unverified socials
       const projectMap = new Map<string, ProjectWithSocials>()
       const orphaned: SocialAssetWithProject[] = []
       
+      // First, add all projects to the map (with empty social_assets arrays)
+      allProjects?.forEach((project) => {
+        projectMap.set(project.id, {
+          ...project,
+          social_assets: []
+        })
+      })
+
+      // Then, add unverified socials to their respective projects
       allSocials?.forEach((social: SocialAssetWithProject) => {
-        if (social.project_id && social.projects) {
-          // Has a project - group with it
-          if (!projectMap.has(social.project_id)) {
-            projectMap.set(social.project_id, { 
-              ...social.projects, 
-              social_assets: [social] 
-            })
-          } else {
-            projectMap.get(social.project_id)!.social_assets.push(social)
-          }
+        if (social.project_id && projectMap.has(social.project_id)) {
+          // Add to existing project
+          projectMap.get(social.project_id)!.social_assets.push(social)
+        } else if (social.project_id && social.projects) {
+          // Project not in main list but social exists - add it
+          projectMap.set(social.project_id, { 
+            ...social.projects, 
+            social_assets: [social] 
+          })
         } else {
           // No project - orphaned
           orphaned.push(social)
         }
       })
 
-      // Sort by status (pending first) and then by created date
+      // Sort projects: pending first, then by creation date
       const sortedProjects = Array.from(projectMap.values()).sort((a, b) => {
         // Pending projects first
         if (a.status === 'pending' && b.status !== 'pending') return -1
         if (a.status !== 'pending' && b.status === 'pending') return 1
-        // Then by creation date
+        // Then by creation date (newest first)
         return new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
       })
 
@@ -259,7 +275,7 @@ export default function AdminPage() {
 
       if (error) throw error
 
-      // Update local state - remove verified social
+      // Update local state - remove verified social from project
       if (projectId) {
         setPendingProjects(prev => prev.map(p => {
           if (p.id === projectId) {
@@ -270,7 +286,7 @@ export default function AdminPage() {
             }
           }
           return p
-        }).filter(p => p.social_assets.length > 0 || p.status === 'pending')) // Remove if no socials AND approved/rejected
+        }))
       } else {
         setOrphanedSocials(prev => prev.filter(s => s.id !== socialAssetId))
       }
@@ -294,7 +310,7 @@ export default function AdminPage() {
 
       if (error) throw error
 
-      // Update local state - remove rejected social
+      // Update local state - remove rejected social from project
       if (projectId) {
         setPendingProjects(prev => prev.map(p => {
           if (p.id === projectId) {
@@ -305,7 +321,7 @@ export default function AdminPage() {
             }
           }
           return p
-        }).filter(p => p.social_assets.length > 0 || p.status === 'pending')) // Remove if no socials AND approved/rejected
+        }))
       } else {
         setOrphanedSocials(prev => prev.filter(s => s.id !== socialAssetId))
       }
@@ -495,17 +511,17 @@ export default function AdminPage() {
             Admin Dashboard
           </h1>
           <p className="font-body text-text-secondary">
-            Review and approve pending projects and social verifications
+            Manage all projects, review pending approvals, and verify social accounts
           </p>
         </div>
 
         <div className="space-y-6">
-          {/* Pending Projects with Social Verifications */}
+          {/* All Projects with Moderation Tools */}
           {pendingProjects.length === 0 && orphanedSocials.length === 0 ? (
             <Card>
               <CardContent className="text-center py-12">
                 <p className="font-body text-text-muted">
-                  No pending items to review
+                  No projects found
                 </p>
               </CardContent>
             </Card>
@@ -539,12 +555,17 @@ export default function AdminPage() {
                       </div>
                     </div>
                     <div className="flex gap-2">
+                      <Link href={`/admin/projects/${project.id}`}>
+                        <Button variant="outline" size="sm">
+                          Moderate
+                        </Button>
+                      </Link>
                       <Link 
                         href={`/project/${project.id}`}
                         target="_blank"
                       >
                         <Button variant="ghost" size="sm">
-                          View Details
+                          View Public
                           <OpenInNewIcon className="ml-2" sx={{ fontSize: 16 }} />
                         </Button>
                       </Link>
@@ -585,7 +606,7 @@ export default function AdminPage() {
 
                 <CardContent>
                   {/* Social Verifications for this Project */}
-                  {project.social_assets && project.social_assets.length > 0 && (
+                  {project.social_assets && project.social_assets.length > 0 ? (
                     <div className="space-y-3">
                       <h3 className="font-display text-sm font-semibold text-text-muted uppercase tracking-wide mb-3">
                         Social Verifications ({project.social_assets.length} pending)
@@ -666,7 +687,13 @@ export default function AdminPage() {
                       </div>
                     ))}
                   </div>
-                )}
+                  ) : (
+                    <div className="text-center py-4">
+                      <p className="text-sm text-text-muted">
+                        ✓ No pending social verifications
+                      </p>
+                    </div>
+                  )}
               </CardContent>
             </Card>
           ))
