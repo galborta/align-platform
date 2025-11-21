@@ -102,6 +102,43 @@ export function AddAssetModal({ projectId, tokenMint, onClose }: AddAssetModalPr
         
         // Strip @ from handle if user included it
         const cleanHandle = handle.startsWith('@') ? handle.slice(1) : handle
+        
+        // Check if this social account already exists in verified assets
+        const { data: existingVerified } = await supabase
+          .from('social_assets')
+          .select('id')
+          .eq('project_id', projectId)
+          .eq('platform', platform.toLowerCase())
+          .ilike('handle', cleanHandle)
+          .maybeSingle()
+        
+        if (existingVerified) {
+          toast.error(`This ${platform} account is already verified for this project`)
+          setLoading(false)
+          return
+        }
+        
+        // Check if this social account already exists in pending assets
+        const { data: existingPending } = await supabase
+          .from('pending_assets')
+          .select('asset_data')
+          .eq('project_id', projectId)
+          .eq('asset_type', 'social')
+          .neq('verification_status', 'hidden')
+        
+        if (existingPending && existingPending.length > 0) {
+          // Check if any pending asset has the same platform and handle
+          for (const pending of existingPending) {
+            const data = pending.asset_data as any
+            if (data?.platform?.toLowerCase() === platform.toLowerCase() && 
+                data?.handle?.toLowerCase() === cleanHandle.toLowerCase()) {
+              toast.error(`This ${platform} account has already been submitted and is pending verification`)
+              setLoading(false)
+              return
+            }
+          }
+        }
+        
         assetData = { platform, handle: cleanHandle, followerTier }
       } else if (assetType === 'creative') {
         const newErrors: Record<string, boolean> = {}
@@ -150,7 +187,13 @@ export function AddAssetModal({ projectId, tokenMint, onClose }: AddAssetModalPr
         return
       }
       
-      // 5. Award immediate karma (25%)
+      // 5. Increment assets added count
+      await supabase.rpc('increment_assets_added', {
+        p_wallet: wallet.publicKey.toString(),
+        p_project_id: projectId
+      })
+      
+      // 6. Award immediate karma (25%)
       const immediateKarma = calculateKarma('add', tokenData.percentage, true)
       
       await supabase.rpc('add_karma', {
@@ -159,7 +202,7 @@ export function AddAssetModal({ projectId, tokenMint, onClose }: AddAssetModalPr
         p_karma_delta: immediateKarma
       })
       
-      // 6. Post to curation chat
+      // 7. Post to curation chat
       const assetSummary = 
         assetType === 'social' 
           ? `${platform}:${assetData.handle}`

@@ -20,25 +20,76 @@ export function AssetVotingCard({ asset, currentWallet, projectId }: AssetVoting
   const [voteType, setVoteType] = useState<'upvote' | 'report' | null>(null)
   const [voting, setVoting] = useState(false)
   
+  // Local state for optimistic UI updates
+  const [localUpvoteWeight, setLocalUpvoteWeight] = useState(asset.total_upvote_weight)
+  const [localUpvoterCount, setLocalUpvoterCount] = useState(asset.unique_upvoters_count)
+  
+  // Update local state when asset prop changes
+  useEffect(() => {
+    setLocalUpvoteWeight(asset.total_upvote_weight)
+    setLocalUpvoterCount(asset.unique_upvoters_count)
+  }, [asset.total_upvote_weight, asset.unique_upvoters_count])
+  
   // Check if current wallet already voted
   useEffect(() => {
-    if (!currentWallet) return
+    if (!currentWallet || !asset.id) {
+      setHasVoted(false)
+      setVoteType(null)
+      return
+    }
     
     async function checkVote() {
-      const { data } = await supabase
+      console.log('Checking vote for:', { assetId: asset.id, wallet: currentWallet })
+      const { data, error } = await supabase
         .from('asset_votes')
         .select('vote_type')
         .eq('pending_asset_id', asset.id)
         .eq('voter_wallet', currentWallet)
         .maybeSingle()
       
+      if (error) {
+        console.error('Error checking vote:', error)
+        return
+      }
+      
+      console.log('Vote check result:', data)
+      
       if (data) {
         setHasVoted(true)
         setVoteType(data.vote_type)
+      } else {
+        // Reset state if no vote found (e.g., after refresh)
+        setHasVoted(false)
+        setVoteType(null)
       }
     }
     
     checkVote()
+    
+    // Subscribe to real-time updates for this asset's votes
+    const channel = supabase
+      .channel(`asset-votes-${asset.id}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'asset_votes',
+          filter: `pending_asset_id=eq.${asset.id}`
+        },
+        (payload) => {
+          console.log('Vote insert detected:', payload)
+          // Re-check vote status if this wallet voted
+          if (payload.new && payload.new.voter_wallet === currentWallet) {
+            checkVote()
+          }
+        }
+      )
+      .subscribe()
+    
+    return () => {
+      supabase.removeChannel(channel)
+    }
   }, [asset.id, currentWallet])
 
   const handleVote = async (type: 'upvote' | 'report') => {
@@ -86,8 +137,24 @@ export function AssetVotingCard({ asset, currentWallet, projectId }: AssetVoting
         return
       }
       
+      // Optimistic UI update - update immediately before API calls
+      if (type === 'upvote') {
+        setLocalUpvoteWeight(prev => prev + tokenData.percentage)
+        setLocalUpvoterCount(prev => prev + 1)
+      }
+      setHasVoted(true)
+      setVoteType(type)
+      
       // 4. Record vote
-      const { error: voteError } = await supabase
+      console.log('Attempting to record vote:', {
+        pending_asset_id: asset.id,
+        voter_wallet: currentWallet,
+        vote_type: type,
+        token_balance_snapshot: tokenData.balance,
+        token_percentage_snapshot: tokenData.percentage
+      })
+      
+      const { data: voteData, error: voteError } = await supabase
         .from('asset_votes')
         .insert({
           pending_asset_id: asset.id,
@@ -96,13 +163,29 @@ export function AssetVotingCard({ asset, currentWallet, projectId }: AssetVoting
           token_balance_snapshot: tokenData.balance,
           token_percentage_snapshot: tokenData.percentage
         })
+        .select()
       
       if (voteError) {
-        console.error('Vote error:', voteError)
-        toast.error('Vote failed. You may have already voted.')
+        console.error('Vote error details:', {
+          error: voteError,
+          message: voteError.message,
+          details: voteError.details,
+          hint: voteError.hint,
+          code: voteError.code
+        })
+        // Rollback optimistic update on error
+        if (type === 'upvote') {
+          setLocalUpvoteWeight(asset.total_upvote_weight)
+          setLocalUpvoterCount(asset.unique_upvoters_count)
+        }
+        setHasVoted(false)
+        setVoteType(null)
+        toast.error(`Vote failed: ${voteError.message || 'You may have already voted'}`)
         setVoting(false)
         return
       }
+      
+      console.log('Vote recorded successfully:', voteData)
       
       // 5. Update pending asset totals
       if (type === 'upvote') {
@@ -117,7 +200,20 @@ export function AssetVotingCard({ asset, currentWallet, projectId }: AssetVoting
         })
       }
       
-      // 6. Award immediate karma (25%)
+      // 6. Update vote count in wallet_karma
+      if (type === 'upvote') {
+        await supabase.rpc('increment_upvotes_given', {
+          p_wallet: currentWallet,
+          p_project_id: projectId
+        })
+      } else {
+        await supabase.rpc('increment_reports_given', {
+          p_wallet: currentWallet,
+          p_project_id: projectId
+        })
+      }
+      
+      // 7. Award immediate karma (25%)
       const immediateKarma = calculateKarma(
         type === 'upvote' ? 'upvote' : 'report',
         tokenData.percentage,
@@ -129,10 +225,6 @@ export function AssetVotingCard({ asset, currentWallet, projectId }: AssetVoting
         p_project_id: projectId,
         p_karma_delta: immediateKarma
       })
-      
-      // Update local state
-      setHasVoted(true)
-      setVoteType(type)
       
       toast.success(
         `${type === 'upvote' ? 'Upvoted' : 'Reported'}! Earned ${immediateKarma.toFixed(1)} karma`
@@ -153,11 +245,11 @@ export function AssetVotingCard({ asset, currentWallet, projectId }: AssetVoting
         <div>
           <StatusBadge status={asset.verification_status} />
           <div className="text-sm text-gray-600 mt-2">
-            <strong>{asset.total_upvote_weight.toFixed(2)}%</strong> supply,{' '}
-            <strong>{asset.unique_upvoters_count}</strong> votes
+            <strong>{localUpvoteWeight.toFixed(2)}%</strong> supply,{' '}
+            <strong>{localUpvoterCount}</strong> votes
           </div>
           <div className="text-xs text-gray-500 mt-1">
-            {getNextThreshold(asset)}
+            {getNextThreshold({ ...asset, total_upvote_weight: localUpvoteWeight, unique_upvoters_count: localUpvoterCount })}
           </div>
         </div>
         
@@ -198,7 +290,7 @@ export function AssetVotingCard({ asset, currentWallet, projectId }: AssetVoting
           
           {hasVoted && (
             <Chip 
-              label={`You ${voteType}d ✓`}
+              label={voteType === 'upvote' ? 'You upvoted ✓' : 'You reported ✓'}
               size="medium"
               color={voteType === 'upvote' ? 'success' : 'error'}
             />
