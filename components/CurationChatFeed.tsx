@@ -1,11 +1,22 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useWallet } from '@solana/wallet-adapter-react'
 import { supabase } from '@/lib/supabase'
 import { formatDistanceToNow } from 'date-fns'
 import { AssetVotingCard } from './AssetVotingCard'
 import { Database } from '@/types/database'
+
+const getPlatformUrl = (platform: string, handle: string): string => {
+  const urls: Record<string, string> = {
+    twitter: `https://x.com/${handle}`,
+    x: `https://x.com/${handle}`,
+    instagram: `https://instagram.com/${handle}`,
+    youtube: `https://youtube.com/@${handle}`,
+    tiktok: `https://tiktok.com/@${handle}`,
+  }
+  return urls[platform.toLowerCase()] || `https://${platform}.com/${handle}`
+}
 
 type CurationMessage = Database['public']['Tables']['curation_chat_messages']['Row'] & {
   pending_assets?: Database['public']['Tables']['pending_assets']['Row']
@@ -20,6 +31,23 @@ export function CurationChatFeed({ projectId }: CurationChatFeedProps) {
   const [messages, setMessages] = useState<CurationMessage[]>([])
   const [loading, setLoading] = useState(true)
   
+  // Fetch messages function
+  const fetchMessages = useCallback(async () => {
+    const { data, error } = await supabase
+      .from('curation_chat_messages')
+      .select(`
+        *,
+        pending_assets(*)
+      `)
+      .eq('project_id', projectId)
+      .order('created_at', { ascending: false })
+      .limit(50)
+    
+    if (!error && data) {
+      setMessages(data)
+    }
+  }, [projectId])
+  
   // Subscribe to realtime updates
   useEffect(() => {
     const channel = supabase
@@ -32,8 +60,9 @@ export function CurationChatFeed({ projectId }: CurationChatFeedProps) {
           table: 'curation_chat_messages',
           filter: `project_id=eq.${projectId}`
         },
-        (payload) => {
-          setMessages(prev => [payload.new as CurationMessage, ...prev])
+        () => {
+          // Refetch all messages to get complete data with relations
+          fetchMessages()
         }
       )
       .subscribe()
@@ -41,29 +70,12 @@ export function CurationChatFeed({ projectId }: CurationChatFeedProps) {
     return () => {
       channel.unsubscribe()
     }
-  }, [projectId])
+  }, [projectId, fetchMessages])
   
   // Fetch initial messages
   useEffect(() => {
-    async function fetchMessages() {
-      const { data, error } = await supabase
-        .from('curation_chat_messages')
-        .select(`
-          *,
-          pending_assets(*)
-        `)
-        .eq('project_id', projectId)
-        .order('created_at', { ascending: false })
-        .limit(50)
-      
-      if (!error && data) {
-        setMessages(data)
-      }
-      setLoading(false)
-    }
-    
-    fetchMessages()
-  }, [projectId])
+    fetchMessages().then(() => setLoading(false))
+  }, [fetchMessages])
   
   if (loading) {
     return <div className="text-center py-8 text-gray-500">Loading...</div>
@@ -103,9 +115,20 @@ function CurationChatMessage({
   const { pending_assets: asset } = message
   
   if (message.message_type === 'asset_added') {
+    // Parse asset summary for social accounts (format: "platform:handle")
+    const isSocial = message.asset_type === 'social' && message.asset_summary?.includes(':')
+    let displayText = message.asset_summary
+    let socialUrl = ''
+    
+    if (isSocial) {
+      const [platform, handle] = message.asset_summary!.split(':')
+      displayText = `${platform} @${handle}`
+      socialUrl = getPlatformUrl(platform, handle)
+    }
+    
     return (
       <div className="bg-white rounded-lg p-4 shadow-sm border border-gray-100">
-        <div className="flex items-start gap-3">
+        <div className="flex flex-col sm:flex-row sm:items-start gap-2 sm:gap-3">
           <div className="flex-1">
             <p className="text-sm">
               <span className="font-mono text-purple-600 font-medium">
@@ -116,7 +139,18 @@ function CurationChatMessage({
                 {message.token_percentage?.toFixed(3)}%
               </span>
               <span className="text-gray-700 ml-2">
-                added <strong>{message.asset_summary}</strong>
+                added {isSocial ? (
+                  <a 
+                    href={socialUrl} 
+                    target="_blank" 
+                    rel="noopener noreferrer"
+                    className="font-semibold text-purple-600 hover:text-purple-800 hover:underline"
+                  >
+                    {displayText}
+                  </a>
+                ) : (
+                  <strong>{displayText}</strong>
+                )}
               </span>
             </p>
             
@@ -129,7 +163,7 @@ function CurationChatMessage({
             )}
           </div>
           
-          <span className="text-xs text-gray-400 whitespace-nowrap">
+          <span className="text-xs text-gray-400 whitespace-nowrap sm:mt-0 -mt-1">
             {formatDistanceToNow(
               new Date(Math.min(new Date(message.created_at).getTime(), Date.now())),
               { addSuffix: true }

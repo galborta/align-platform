@@ -35,7 +35,6 @@ export function AddAssetModal({ projectId, tokenMint, onClose }: AddAssetModalPr
   const [platform, setPlatform] = useState('')
   const [handle, setHandle] = useState('')
   const [followerTier, setFollowerTier] = useState('')
-  const [profileUrl, setProfileUrl] = useState('')
   
   // Creative asset fields
   const [creativeName, setCreativeName] = useState('')
@@ -47,6 +46,9 @@ export function AddAssetModal({ projectId, tokenMint, onClose }: AddAssetModalPr
   const [legalName, setLegalName] = useState('')
   const [status, setStatus] = useState('')
   const [jurisdiction, setJurisdiction] = useState('')
+  
+  // Error states
+  const [errors, setErrors] = useState<Record<string, boolean>>({})
   
   const handleSubmit = async () => {
     if (!wallet.publicKey) {
@@ -87,21 +89,38 @@ export function AddAssetModal({ projectId, tokenMint, onClose }: AddAssetModalPr
       let assetData: any = {}
       
       if (assetType === 'social') {
-        if (!platform || !handle) {
+        const newErrors: Record<string, boolean> = {}
+        if (!platform) newErrors.platform = true
+        if (!handle) newErrors.handle = true
+        
+        if (Object.keys(newErrors).length > 0) {
+          setErrors(newErrors)
           toast.error('Please fill in all required fields')
           setLoading(false)
           return
         }
-        assetData = { platform, handle, followerTier, profileUrl }
+        
+        // Strip @ from handle if user included it
+        const cleanHandle = handle.startsWith('@') ? handle.slice(1) : handle
+        assetData = { platform, handle: cleanHandle, followerTier }
       } else if (assetType === 'creative') {
-        if (!creativeName) {
+        const newErrors: Record<string, boolean> = {}
+        if (!creativeName) newErrors.creativeName = true
+        
+        if (Object.keys(newErrors).length > 0) {
+          setErrors(newErrors)
           toast.error('Please provide an asset name')
           setLoading(false)
           return
         }
         assetData = { name: creativeName, description: creativeDescription, mediaUrl }
       } else if (assetType === 'legal') {
-        if (!legalType || !legalName) {
+        const newErrors: Record<string, boolean> = {}
+        if (!legalType) newErrors.legalType = true
+        if (!legalName) newErrors.legalName = true
+        
+        if (Object.keys(newErrors).length > 0) {
+          setErrors(newErrors)
           toast.error('Please fill in all required fields')
           setLoading(false)
           return
@@ -143,7 +162,7 @@ export function AddAssetModal({ projectId, tokenMint, onClose }: AddAssetModalPr
       // 6. Post to curation chat
       const assetSummary = 
         assetType === 'social' 
-          ? `${platform} @${handle}`
+          ? `${platform}:${assetData.handle}`
           : assetType === 'creative'
           ? creativeName
           : legalName
@@ -175,16 +194,20 @@ export function AddAssetModal({ projectId, tokenMint, onClose }: AddAssetModalPr
     <Dialog open onClose={onClose} maxWidth="md" fullWidth>
       <DialogTitle>Add Asset for Community Verification</DialogTitle>
       
-      <DialogContent>
-        <Alert severity="info" className="mb-4">
+      <DialogContent sx={{ pt: 2 }}>
+        <Alert severity="info" sx={{ mb: 3 }}>
           Submit assets for community review. Earn karma when verified!
         </Alert>
         
-        <FormControl fullWidth className="mb-4">
+        <FormControl fullWidth sx={{ mt: 3, mb: 3 }}>
           <InputLabel>Asset Type</InputLabel>
           <Select
             value={assetType}
-            onChange={(e) => setAssetType(e.target.value as any)}
+            onChange={(e) => {
+              setAssetType(e.target.value as any)
+              setErrors({}) // Clear errors when changing asset type
+            }}
+            label="Asset Type"
           >
             <MenuItem value="social">Social Account</MenuItem>
             <MenuItem value="creative">Creative Asset</MenuItem>
@@ -194,11 +217,15 @@ export function AddAssetModal({ projectId, tokenMint, onClose }: AddAssetModalPr
         
         {assetType === 'social' && (
           <>
-            <FormControl fullWidth className="mb-3">
+            <FormControl fullWidth sx={{ mb: 3 }} error={errors.platform}>
               <InputLabel>Platform</InputLabel>
               <Select
                 value={platform}
-                onChange={(e) => setPlatform(e.target.value)}
+                onChange={(e) => {
+                  setPlatform(e.target.value)
+                  setErrors(prev => ({ ...prev, platform: false }))
+                }}
+                label="Platform"
               >
                 <MenuItem value="instagram">Instagram</MenuItem>
                 <MenuItem value="twitter">Twitter</MenuItem>
@@ -212,15 +239,21 @@ export function AddAssetModal({ projectId, tokenMint, onClose }: AddAssetModalPr
               label="Handle"
               placeholder="@username"
               value={handle}
-              onChange={(e) => setHandle(e.target.value)}
-              className="mb-3"
+              onChange={(e) => {
+                setHandle(e.target.value)
+                setErrors(prev => ({ ...prev, handle: false }))
+              }}
+              error={errors.handle}
+              helperText={errors.handle ? 'Handle is required' : ''}
+              sx={{ mb: 3 }}
             />
             
-            <FormControl fullWidth className="mb-3">
+            <FormControl fullWidth>
               <InputLabel>Follower Tier</InputLabel>
               <Select
                 value={followerTier}
                 onChange={(e) => setFollowerTier(e.target.value)}
+                label="Follower Tier"
               >
                 <MenuItem value="<10k">{'< 10k'}</MenuItem>
                 <MenuItem value="10k-50k">10k - 50k</MenuItem>
@@ -231,14 +264,6 @@ export function AddAssetModal({ projectId, tokenMint, onClose }: AddAssetModalPr
                 <MenuItem value="5m+">5M+</MenuItem>
               </Select>
             </FormControl>
-            
-            <TextField
-              fullWidth
-              label="Profile URL (optional)"
-              placeholder="https://..."
-              value={profileUrl}
-              onChange={(e) => setProfileUrl(e.target.value)}
-            />
           </>
         )}
         
@@ -248,8 +273,13 @@ export function AddAssetModal({ projectId, tokenMint, onClose }: AddAssetModalPr
               fullWidth
               label="Asset Name"
               value={creativeName}
-              onChange={(e) => setCreativeName(e.target.value)}
-              className="mb-3"
+              onChange={(e) => {
+                setCreativeName(e.target.value)
+                setErrors(prev => ({ ...prev, creativeName: false }))
+              }}
+              error={errors.creativeName}
+              helperText={errors.creativeName ? 'Asset name is required' : ''}
+              sx={{ mb: 3 }}
             />
             
             <TextField
@@ -259,7 +289,7 @@ export function AddAssetModal({ projectId, tokenMint, onClose }: AddAssetModalPr
               rows={3}
               value={creativeDescription}
               onChange={(e) => setCreativeDescription(e.target.value)}
-              className="mb-3"
+              sx={{ mb: 3 }}
             />
             
             <TextField
@@ -274,11 +304,15 @@ export function AddAssetModal({ projectId, tokenMint, onClose }: AddAssetModalPr
         
         {assetType === 'legal' && (
           <>
-            <FormControl fullWidth className="mb-3">
-              <InputLabel>Asset Type</InputLabel>
+            <FormControl fullWidth sx={{ mb: 3 }} error={errors.legalType}>
+              <InputLabel>Legal Asset Type</InputLabel>
               <Select
                 value={legalType}
-                onChange={(e) => setLegalType(e.target.value)}
+                onChange={(e) => {
+                  setLegalType(e.target.value)
+                  setErrors(prev => ({ ...prev, legalType: false }))
+                }}
+                label="Legal Asset Type"
               >
                 <MenuItem value="domain">Domain</MenuItem>
                 <MenuItem value="trademark">Trademark</MenuItem>
@@ -290,8 +324,13 @@ export function AddAssetModal({ projectId, tokenMint, onClose }: AddAssetModalPr
               fullWidth
               label="Name"
               value={legalName}
-              onChange={(e) => setLegalName(e.target.value)}
-              className="mb-3"
+              onChange={(e) => {
+                setLegalName(e.target.value)
+                setErrors(prev => ({ ...prev, legalName: false }))
+              }}
+              error={errors.legalName}
+              helperText={errors.legalName ? 'Name is required' : ''}
+              sx={{ mb: 3 }}
             />
             
             <TextField
@@ -300,7 +339,7 @@ export function AddAssetModal({ projectId, tokenMint, onClose }: AddAssetModalPr
               placeholder="e.g., Registered, Pending"
               value={status}
               onChange={(e) => setStatus(e.target.value)}
-              className="mb-3"
+              sx={{ mb: 3 }}
             />
             
             <TextField
@@ -314,7 +353,7 @@ export function AddAssetModal({ projectId, tokenMint, onClose }: AddAssetModalPr
         )}
       </DialogContent>
       
-      <DialogActions>
+      <DialogActions sx={{ px: 3, pb: 3 }}>
         <Button onClick={onClose} disabled={loading}>
           Cancel
         </Button>
@@ -322,7 +361,7 @@ export function AddAssetModal({ projectId, tokenMint, onClose }: AddAssetModalPr
           onClick={handleSubmit}
           variant="contained"
           disabled={loading}
-          className="bg-purple-600"
+          sx={{ bgcolor: 'rgb(124, 77, 255)', '&:hover': { bgcolor: 'rgb(109, 67, 224)' } }}
         >
           {loading ? 'Submitting...' : 'Submit for Verification'}
         </Button>
