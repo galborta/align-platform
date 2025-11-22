@@ -68,7 +68,9 @@ interface OverviewStats {
   bannedWalletsCount: number
 }
 
-type TabValue = 'overview' | 'profile' | 'chat' | 'pending-assets' | 'verified-assets' | 'karma' | 'team' | 'danger'
+type TabValue = 'overview' | 'profile' | 'chat' | 'pending-assets' | 'verified-assets' | 'karma' | 'team' | 'activity' | 'danger'
+
+type AdminLog = Database['public']['Tables']['admin_logs']['Row']
 
 export default function AdminProjectPage() {
   const params = useParams()
@@ -184,6 +186,24 @@ export default function AdminProjectPage() {
   const [showSuspiciousModal, setShowSuspiciousModal] = useState(false)
   const [loadingVotes, setLoadingVotes] = useState(false)
 
+  // Activity Log tab state
+  interface AdminLogWithProject extends AdminLog {
+    projects?: { name: string; token_symbol: string } | null
+  }
+  const [activityLogs, setActivityLogs] = useState<AdminLogWithProject[]>([])
+  const [filteredLogs, setFilteredLogs] = useState<AdminLogWithProject[]>([])
+  const [logAdminFilter, setLogAdminFilter] = useState<string>('all')
+  const [logActionFilter, setLogActionFilter] = useState<string[]>([])
+  const [logProjectFilter, setLogProjectFilter] = useState<string>('all')
+  const [logDateFrom, setLogDateFrom] = useState('')
+  const [logDateTo, setLogDateTo] = useState('')
+  const [logEntitySearch, setLogEntitySearch] = useState('')
+  const [logsPage, setLogsPage] = useState(0)
+  const [logsPerPage] = useState(50)
+  const [viewingLogDetails, setViewingLogDetails] = useState<AdminLogWithProject | null>(null)
+  const [logStats, setLogStats] = useState<any>(null)
+  const [loadingLogs, setLoadingLogs] = useState(false)
+
   // Danger Zone tab state
   const [resetConfirmDialog, setResetConfirmDialog] = useState<string | null>(null)
   const [resetConfirmText, setResetConfirmText] = useState('')
@@ -295,6 +315,30 @@ export default function AdminProjectPage() {
     }
   }
 
+  // Helper function to log admin actions
+  const logAdminAction = async (
+    action: string,
+    entityType: string | null,
+    entityId: string | null,
+    details: any
+  ) => {
+    if (!publicKey || !project) return
+
+    try {
+      await supabase.from('admin_logs').insert({
+        admin_wallet: publicKey.toBase58(),
+        action,
+        project_id: project.id,
+        entity_type: entityType,
+        entity_id: entityId,
+        details
+      })
+    } catch (error) {
+      console.error('Error logging admin action:', error)
+      // Don't throw - logging failure shouldn't break the main action
+    }
+  }
+
   const loadTabData = async (tab: TabValue) => {
     if (!project) return
 
@@ -315,6 +359,9 @@ export default function AdminProjectPage() {
           break
         case 'karma':
           await loadKarmaData()
+          break
+        case 'activity':
+          await loadActivityLogs()
           break
         default:
           // Other tabs use data already loaded in project
@@ -559,6 +606,83 @@ export default function AdminProjectPage() {
     }
   }
 
+  const loadActivityLogs = async () => {
+    if (!project) return
+
+    try {
+      setLoadingLogs(true)
+      
+      // Fetch logs with project info
+      const { data: logs } = await supabase
+        .from('admin_logs')
+        .select(`
+          *,
+          projects (name, token_symbol)
+        `)
+        .eq('project_id', project.id)
+        .order('created_at', { ascending: false })
+
+      setActivityLogs(logs || [])
+      setFilteredLogs(logs || [])
+      
+      // Calculate stats
+      await calculateLogStats(logs || [])
+    } catch (error) {
+      console.error('Error loading activity logs:', error)
+      toast.error('Failed to load activity logs')
+    } finally {
+      setLoadingLogs(false)
+    }
+  }
+
+  const calculateLogStats = async (logs: AdminLogWithProject[]) => {
+    if (!project) return
+
+    try {
+      // Total actions
+      const totalActions = logs.length
+
+      // Actions today
+      const today = new Date().toISOString().split('T')[0]
+      const actionsToday = logs.filter(log => 
+        log.created_at.startsWith(today)
+      ).length
+
+      // Most active admin
+      const adminCounts = logs.reduce((acc, log) => {
+        acc[log.admin_wallet] = (acc[log.admin_wallet] || 0) + 1
+        return acc
+      }, {} as Record<string, number>)
+      
+      const mostActiveAdmin = Object.entries(adminCounts)
+        .sort((a, b) => b[1] - a[1])[0]
+
+      // Most common action
+      const actionCounts = logs.reduce((acc, log) => {
+        acc[log.action] = (acc[log.action] || 0) + 1
+        return acc
+      }, {} as Record<string, number>)
+      
+      const mostCommonAction = Object.entries(actionCounts)
+        .sort((a, b) => b[1] - a[1])[0]
+
+      setLogStats({
+        totalActions,
+        actionsToday,
+        mostActiveAdmin: mostActiveAdmin ? {
+          wallet: mostActiveAdmin[0],
+          count: mostActiveAdmin[1]
+        } : null,
+        mostCommonAction: mostCommonAction ? {
+          action: mostCommonAction[0],
+          count: mostCommonAction[1]
+        } : null
+      })
+    } catch (error) {
+      console.error('Error calculating log stats:', error)
+    }
+  }
+
   const handleUpdateProject = async () => {
     if (!project) return
 
@@ -586,6 +710,21 @@ export default function AdminProjectPage() {
         .eq('id', project.id)
 
       if (error) throw error
+
+      // Log the action
+      await logAdminAction(
+        'project_edited',
+        'project',
+        project.id,
+        {
+          changes: {
+            token_name: { old: project.token_name, new: editFormData.token_name },
+            token_symbol: { old: project.token_symbol, new: editFormData.token_symbol },
+            description: { old: project.description, new: editFormData.description },
+            profile_image_url: { old: project.profile_image_url, new: editFormData.profile_image_url }
+          }
+        }
+      )
 
       toast.success('Project updated successfully')
     } catch (error) {
@@ -617,6 +756,17 @@ export default function AdminProjectPage() {
         .eq('id', project.id)
 
       if (error) throw error
+
+      // Log the action
+      await logAdminAction(
+        'status_changed',
+        'project',
+        project.id,
+        {
+          old_status: project.status,
+          new_status: newStatus
+        }
+      )
 
       toast.success(`Project status changed to ${newStatus}`)
     } catch (error) {
@@ -1200,6 +1350,9 @@ export default function AdminProjectPage() {
   const handleDeleteCreativeAsset = async (assetId: string) => {
     if (!confirm('Delete this creative asset permanently? This cannot be undone.')) return
 
+    // Get asset data before deleting for logging
+    const assetToDelete = verifiedCreativeAssets.find(a => a.id === assetId)
+
     try {
       // OPTIMISTIC UPDATE: Remove from UI immediately
       setVerifiedCreativeAssets(prev => prev.filter(asset => asset.id !== assetId))
@@ -1210,6 +1363,23 @@ export default function AdminProjectPage() {
         .eq('id', assetId)
 
       if (error) throw error
+
+      // Log the action
+      if (assetToDelete) {
+        await logAdminAction(
+          'asset_deleted',
+          'asset',
+          assetId,
+          {
+            assetType: 'creative',
+            assetData: {
+              asset_type: assetToDelete.asset_type,
+              name: assetToDelete.name,
+              description: assetToDelete.description
+            }
+          }
+        )
+      }
 
       toast.success('Creative asset deleted')
     } catch (error) {
@@ -3365,6 +3535,7 @@ export default function AdminProjectPage() {
               <Tab label="Verified Assets" value="verified-assets" />
               <Tab label="Karma & Votes" value="karma" />
               <Tab label="Team & Wallets" value="team" />
+              <Tab label="Activity Log" value="activity" />
               <Tab label="Danger Zone" value="danger" />
             </Tabs>
           </Box>
@@ -4889,6 +5060,328 @@ export default function AdminProjectPage() {
                     )}
                   </div>
                 )}
+
+                {/* Activity Log Tab */}
+                {currentTab === 'activity' && (
+                  <div className="space-y-6">
+                    {/* Quick Stats */}
+                    {logStats && (
+                      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                        <Card>
+                          <CardContent className="p-4">
+                            <p className="text-sm text-text-muted mb-1">Total Actions</p>
+                            <p className="text-2xl font-bold">{logStats.totalActions}</p>
+                          </CardContent>
+                        </Card>
+                        <Card>
+                          <CardContent className="p-4">
+                            <p className="text-sm text-text-muted mb-1">Actions Today</p>
+                            <p className="text-2xl font-bold text-blue-600">{logStats.actionsToday}</p>
+                          </CardContent>
+                        </Card>
+                        <Card>
+                          <CardContent className="p-4">
+                            <p className="text-sm text-text-muted mb-1">Most Active Admin</p>
+                            <p className="text-sm font-mono truncate">
+                              {logStats.mostActiveAdmin ? 
+                                `${logStats.mostActiveAdmin.wallet.slice(0, 8)}... (${logStats.mostActiveAdmin.count})` 
+                                : 'N/A'}
+                            </p>
+                          </CardContent>
+                        </Card>
+                        <Card>
+                          <CardContent className="p-4">
+                            <p className="text-sm text-text-muted mb-1">Most Common Action</p>
+                            <p className="text-sm font-medium">
+                              {logStats.mostCommonAction ? 
+                                `${logStats.mostCommonAction.action} (${logStats.mostCommonAction.count})` 
+                                : 'N/A'}
+                            </p>
+                          </CardContent>
+                        </Card>
+                      </div>
+                    )}
+
+                    {/* Filters */}
+                    <Card>
+                      <CardContent className="p-4">
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                          <div>
+                            <label className="block text-sm font-medium mb-2">Admin Wallet</label>
+                            <Select
+                              value={logAdminFilter}
+                              onChange={(e) => setLogAdminFilter(e.target.value as string)}
+                              size="small"
+                              fullWidth
+                            >
+                              <MenuItem value="all">All Admins</MenuItem>
+                              {Array.from(new Set(activityLogs.map(log => log.admin_wallet))).map(wallet => (
+                                <MenuItem key={wallet} value={wallet}>
+                                  {wallet.slice(0, 8)}...{wallet.slice(-4)}
+                                </MenuItem>
+                              ))}
+                            </Select>
+                          </div>
+                          
+                          <div>
+                            <label className="block text-sm font-medium mb-2">Date From</label>
+                            <TextField
+                              type="date"
+                              value={logDateFrom}
+                              onChange={(e) => setLogDateFrom(e.target.value)}
+                              size="small"
+                              fullWidth
+                            />
+                          </div>
+                          
+                          <div>
+                            <label className="block text-sm font-medium mb-2">Date To</label>
+                            <TextField
+                              type="date"
+                              value={logDateTo}
+                              onChange={(e) => setLogDateTo(e.target.value)}
+                              size="small"
+                              fullWidth
+                            />
+                          </div>
+                        </div>
+                        
+                        <div className="mt-4">
+                          <label className="block text-sm font-medium mb-2">Search Entity</label>
+                          <TextField
+                            placeholder="Search by entity ID..."
+                            value={logEntitySearch}
+                            onChange={(e) => setLogEntitySearch(e.target.value)}
+                            size="small"
+                            fullWidth
+                          />
+                        </div>
+
+                        <div className="mt-4 flex gap-2">
+                          <MuiButton
+                            variant="outlined"
+                            size="small"
+                            onClick={() => {
+                              setLogAdminFilter('all')
+                              setLogDateFrom('')
+                              setLogDateTo('')
+                              setLogEntitySearch('')
+                              setFilteredLogs(activityLogs)
+                            }}
+                          >
+                            Clear Filters
+                          </MuiButton>
+                        </div>
+                      </CardContent>
+                    </Card>
+
+                    {/* Activity Log Table */}
+                    <Card>
+                      <CardHeader>
+                        <div className="flex items-center justify-between">
+                          <CardTitle>Activity History</CardTitle>
+                          <MuiButton
+                            variant="outlined"
+                            size="small"
+                            onClick={() => {
+                              // Export logs to CSV functionality
+                              const csvContent = [
+                                ['Timestamp', 'Admin', 'Action', 'Entity Type', 'Entity ID', 'Details'],
+                                ...filteredLogs.map(log => [
+                                  log.created_at,
+                                  log.admin_wallet,
+                                  log.action,
+                                  log.entity_type || '',
+                                  log.entity_id || '',
+                                  JSON.stringify(log.details)
+                                ])
+                              ].map(row => row.join(',')).join('\n')
+                              
+                              const blob = new Blob([csvContent], { type: 'text/csv' })
+                              const url = URL.createObjectURL(blob)
+                              const a = document.createElement('a')
+                              a.href = url
+                              a.download = `activity-log-${project?.token_symbol}-${new Date().toISOString().split('T')[0]}.csv`
+                              a.click()
+                              URL.revokeObjectURL(url)
+                            }}
+                          >
+                            Export as CSV
+                          </MuiButton>
+                        </div>
+                      </CardHeader>
+                      <CardContent>
+                        {loadingLogs ? (
+                          <div className="text-center py-12">
+                            <CircularProgress />
+                          </div>
+                        ) : filteredLogs.length === 0 ? (
+                          <p className="text-center py-12 text-text-muted">No activity logs found</p>
+                        ) : (
+                          <div className="space-y-2">
+                            {filteredLogs
+                              .slice(logsPage * logsPerPage, (logsPage + 1) * logsPerPage)
+                              .map((log) => (
+                                <div
+                                  key={log.id}
+                                  className="p-4 border border-border-subtle rounded-lg hover:bg-gray-50 transition-colors"
+                                >
+                                  <div className="flex items-start justify-between gap-4">
+                                    <div className="flex-1 min-w-0">
+                                      <div className="flex items-center gap-2 mb-2">
+                                        <Chip
+                                          label={log.action.replace(/_/g, ' ').toUpperCase()}
+                                          size="small"
+                                          color={
+                                            log.action.includes('delete') || log.action.includes('ban') || log.action.includes('reset')
+                                              ? 'error'
+                                              : log.action.includes('edit') || log.action.includes('adjust')
+                                              ? 'primary'
+                                              : log.action.includes('approve') || log.action.includes('unban')
+                                              ? 'success'
+                                              : 'default'
+                                          }
+                                        />
+                                        <span className="text-xs text-text-muted">
+                                          {new Date(log.created_at).toLocaleString('en-US', {
+                                            month: 'short',
+                                            day: 'numeric',
+                                            year: 'numeric',
+                                            hour: '2-digit',
+                                            minute: '2-digit'
+                                          })}
+                                        </span>
+                                      </div>
+                                      
+                                      <div className="flex items-center gap-2 text-sm mb-1">
+                                        <span className="font-medium">Admin:</span>
+                                        <span className="font-mono text-xs">
+                                          {log.admin_wallet.slice(0, 8)}...{log.admin_wallet.slice(-4)}
+                                        </span>
+                                        <button
+                                          onClick={() => copyToClipboard(log.admin_wallet)}
+                                          className="text-accent-primary hover:text-accent-primary-hover"
+                                        >
+                                          <ContentCopyIcon sx={{ fontSize: 14 }} />
+                                        </button>
+                                      </div>
+                                      
+                                      {log.entity_type && (
+                                        <div className="text-sm text-text-muted">
+                                          {log.entity_type}: {log.entity_id}
+                                        </div>
+                                      )}
+                                      
+                                      {log.details && (
+                                        <div className="mt-2 text-xs text-text-muted font-mono truncate">
+                                          {JSON.stringify(log.details).slice(0, 100)}
+                                          {JSON.stringify(log.details).length > 100 && '...'}
+                                        </div>
+                                      )}
+                                    </div>
+                                    
+                                    <MuiButton
+                                      variant="outlined"
+                                      size="small"
+                                      onClick={() => setViewingLogDetails(log)}
+                                    >
+                                      View Details
+                                    </MuiButton>
+                                  </div>
+                                </div>
+                              ))}
+                          </div>
+                        )}
+                        
+                        {/* Pagination */}
+                        {filteredLogs.length > logsPerPage && (
+                          <div className="flex items-center justify-between mt-4 pt-4 border-t">
+                            <p className="text-sm text-text-muted">
+                              Showing {logsPage * logsPerPage + 1} to {Math.min((logsPage + 1) * logsPerPage, filteredLogs.length)} of {filteredLogs.length}
+                            </p>
+                            <div className="flex gap-2">
+                              <MuiButton
+                                size="small"
+                                disabled={logsPage === 0}
+                                onClick={() => setLogsPage(logsPage - 1)}
+                              >
+                                Previous
+                              </MuiButton>
+                              <MuiButton
+                                size="small"
+                                disabled={(logsPage + 1) * logsPerPage >= filteredLogs.length}
+                                onClick={() => setLogsPage(logsPage + 1)}
+                              >
+                                Next
+                              </MuiButton>
+                            </div>
+                          </div>
+                        )}
+                      </CardContent>
+                    </Card>
+                  </div>
+                )}
+
+                {/* Log Details Modal */}
+                <Dialog
+                  open={!!viewingLogDetails}
+                  onClose={() => setViewingLogDetails(null)}
+                  maxWidth="md"
+                  fullWidth
+                >
+                  <DialogTitle>Activity Log Details</DialogTitle>
+                  <DialogContent>
+                    {viewingLogDetails && (
+                      <div className="space-y-4">
+                        <div>
+                          <p className="text-sm font-medium text-text-muted mb-1">Action</p>
+                          <Chip label={viewingLogDetails.action.replace(/_/g, ' ').toUpperCase()} />
+                        </div>
+                        
+                        <div>
+                          <p className="text-sm font-medium text-text-muted mb-1">Admin Wallet</p>
+                          <div className="flex items-center gap-2">
+                            <code className="text-sm bg-gray-100 px-2 py-1 rounded">
+                              {viewingLogDetails.admin_wallet}
+                            </code>
+                            <button onClick={() => copyToClipboard(viewingLogDetails.admin_wallet)}>
+                              <ContentCopyIcon sx={{ fontSize: 16 }} />
+                            </button>
+                          </div>
+                        </div>
+                        
+                        <div>
+                          <p className="text-sm font-medium text-text-muted mb-1">Timestamp</p>
+                          <p className="text-sm">
+                            {new Date(viewingLogDetails.created_at).toLocaleString()}
+                          </p>
+                        </div>
+                        
+                        {viewingLogDetails.entity_type && (
+                          <div>
+                            <p className="text-sm font-medium text-text-muted mb-1">Entity</p>
+                            <p className="text-sm">
+                              Type: {viewingLogDetails.entity_type}<br />
+                              ID: {viewingLogDetails.entity_id}
+                            </p>
+                          </div>
+                        )}
+                        
+                        {viewingLogDetails.details && (
+                          <div>
+                            <p className="text-sm font-medium text-text-muted mb-2">Details</p>
+                            <pre className="bg-gray-100 p-4 rounded text-xs overflow-auto max-h-96">
+                              {JSON.stringify(viewingLogDetails.details, null, 2)}
+                            </pre>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </DialogContent>
+                  <DialogActions>
+                    <MuiButton onClick={() => setViewingLogDetails(null)}>Close</MuiButton>
+                  </DialogActions>
+                </Dialog>
 
                 {/* Danger Zone Tab */}
                 {currentTab === 'danger' && (
