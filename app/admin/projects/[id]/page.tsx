@@ -588,8 +588,6 @@ export default function AdminProjectPage() {
       if (error) throw error
 
       toast.success('Project updated successfully')
-      // CONFIRM: Reload to verify update persisted
-      fetchProject()
     } catch (error) {
       console.error('Error updating project:', error)
       toast.error('Failed to update project')
@@ -621,8 +619,6 @@ export default function AdminProjectPage() {
       if (error) throw error
 
       toast.success(`Project status changed to ${newStatus}`)
-      // CONFIRM: Reload to verify update persisted
-      fetchProject()
     } catch (error) {
       console.error('Error changing status:', error)
       toast.error('Failed to change status')
@@ -812,8 +808,6 @@ export default function AdminProjectPage() {
       if (error) throw error
 
       toast.success('Profile updated successfully!')
-      // CONFIRM: Reload to verify update persisted
-      await fetchProject()
     } catch (error) {
       console.error('Error saving profile:', error)
       toast.error('Failed to save profile changes')
@@ -931,8 +925,6 @@ export default function AdminProjectPage() {
       }
 
       toast.success('Message deleted')
-      // CONFIRM: Reload to verify deletion persisted
-      await loadChatMessages()
     } catch (error) {
       console.error('Error deleting message:', error)
       toast.error('Failed to delete message')
@@ -993,8 +985,6 @@ export default function AdminProjectPage() {
       }
 
       toast.success(`${count} message${count > 1 ? 's' : ''} deleted`)
-      // CONFIRM: Reload to verify deletions persisted
-      await loadChatMessages()
     } catch (error) {
       console.error('Error deleting messages:', error)
       toast.error('Failed to delete messages')
@@ -1094,8 +1084,6 @@ export default function AdminProjectPage() {
 
       toast.success('Social asset updated')
       setEditingSocialAsset(null)
-      // CONFIRM: Reload to verify update persisted
-      await loadVerifiedAssets()
     } catch (error) {
       console.error('Error updating social asset:', error)
       toast.error('Failed to update social asset')
@@ -1124,8 +1112,6 @@ export default function AdminProjectPage() {
       if (error) throw error
 
       toast.success('Social asset unverified')
-      // CONFIRM: Reload to verify update persisted
-      await loadVerifiedAssets()
     } catch (error) {
       console.error('Error unverifying social asset:', error)
       toast.error('Failed to unverify social asset')
@@ -1149,8 +1135,6 @@ export default function AdminProjectPage() {
       if (error) throw error
 
       toast.success('Social asset deleted')
-      // CONFIRM: Reload to verify deletion persisted
-      await loadVerifiedAssets()
     } catch (error) {
       console.error('Error deleting social asset:', error)
       toast.error('Failed to delete social asset')
@@ -1203,8 +1187,6 @@ export default function AdminProjectPage() {
 
       toast.success('Creative asset updated')
       setEditingCreativeAsset(null)
-      // CONFIRM: Reload to verify update persisted
-      await loadVerifiedAssets()
     } catch (error) {
       console.error('Error updating creative asset:', error)
       toast.error('Failed to update creative asset')
@@ -1219,58 +1201,19 @@ export default function AdminProjectPage() {
     if (!confirm('Delete this creative asset permanently? This cannot be undone.')) return
 
     try {
-      console.log('🗑️ DELETING CREATIVE ASSET:', assetId)
-      
       // OPTIMISTIC UPDATE: Remove from UI immediately
       setVerifiedCreativeAssets(prev => prev.filter(asset => asset.id !== assetId))
       
-      const { error, data, count } = await supabase
+      const { error } = await supabase
         .from('creative_assets')
         .delete()
         .eq('id', assetId)
-        .select()
 
-      console.log('✅ DELETE RESPONSE:', { error, data, count, assetId })
+      if (error) throw error
 
-      if (error) {
-        console.error('❌ DELETE FAILED:', error)
-        throw error
-      }
-
-      if (!data || data.length === 0) {
-        console.warn('⚠️ NO ROWS DELETED - Asset might not exist or RLS is blocking')
-        throw new Error('No asset was deleted. It may not exist or you lack permissions.')
-      }
-
-      console.log('✅ SUCCESSFULLY DELETED:', data)
-      
-      // Verify the asset is really gone
-      const { data: checkData, error: checkError } = await supabase
-        .from('creative_assets')
-        .select('*')
-        .eq('id', assetId)
-      
-      console.log('🔍 VERIFICATION CHECK:', { 
-        assetId, 
-        stillExists: checkData && checkData.length > 0,
-        checkData,
-        checkError
-      })
-      
-      if (checkData && checkData.length > 0) {
-        console.error('❌ ASSET STILL EXISTS IN DATABASE AFTER DELETE!')
-        throw new Error('Asset was not deleted from database')
-      }
-      
       toast.success('Creative asset deleted')
-      
-      // Wait a bit for database to fully commit
-      await new Promise(resolve => setTimeout(resolve, 300))
-      
-      // Reload to confirm
-      await loadVerifiedAssets()
     } catch (error) {
-      console.error('❌ Error deleting creative asset:', error)
+      console.error('Error deleting creative asset:', error)
       toast.error('Failed to delete creative asset')
       // ROLLBACK: Reload on error
       await loadVerifiedAssets()
@@ -1324,8 +1267,6 @@ export default function AdminProjectPage() {
 
       toast.success('Legal asset updated')
       setEditingLegalAsset(null)
-      // CONFIRM: Reload to verify update persisted
-      await loadVerifiedAssets()
     } catch (error) {
       console.error('Error updating legal asset:', error)
       toast.error('Failed to update legal asset')
@@ -1351,8 +1292,6 @@ export default function AdminProjectPage() {
       if (error) throw error
 
       toast.success('Legal asset deleted')
-      // CONFIRM: Reload to verify deletion persisted
-      await loadVerifiedAssets()
     } catch (error) {
       console.error('Error deleting legal asset:', error)
       toast.error('Failed to delete legal asset')
@@ -1381,8 +1320,6 @@ export default function AdminProjectPage() {
       if (error) throw error
 
       toast.success(`${idsToDelete.length} social assets deleted`)
-      // CONFIRM: Reload to verify deletions persisted
-      await loadVerifiedAssets()
     } catch (error) {
       console.error('Error deleting social assets:', error)
       toast.error('Failed to delete social assets')
@@ -1410,8 +1347,6 @@ export default function AdminProjectPage() {
       if (error) throw error
 
       toast.success(`${idsToDelete.length} creative assets deleted`)
-      // CONFIRM: Reload to verify deletions persisted
-      await loadVerifiedAssets()
     } catch (error) {
       console.error('Error deleting creative assets:', error)
       toast.error('Failed to delete creative assets')
@@ -1439,8 +1374,6 @@ export default function AdminProjectPage() {
       if (error) throw error
 
       toast.success(`${idsToDelete.length} legal assets deleted`)
-      // CONFIRM: Reload to verify deletions persisted
-      await loadVerifiedAssets()
     } catch (error) {
       console.error('Error deleting legal assets:', error)
       toast.error('Failed to delete legal assets')
@@ -1854,8 +1787,6 @@ export default function AdminProjectPage() {
       if (error) throw error
 
       toast.success(`${idsToDelete.length} assets deleted`)
-      // CONFIRM: Reload to verify deletions persisted
-      await loadPendingAssets()
     } catch (error) {
       console.error('Error bulk deleting:', error)
       toast.error('Failed to delete assets')
@@ -2013,8 +1944,6 @@ export default function AdminProjectPage() {
       })
 
       toast.success(`Karma adjusted: ${oldKarma} → ${newKarma}`)
-      // CONFIRM: Reload to verify adjustment persisted
-      await loadKarmaData()
     } catch (error) {
       console.error('Error adjusting karma:', error)
       toast.error('Failed to adjust karma')
@@ -2056,8 +1985,6 @@ export default function AdminProjectPage() {
       if (error) throw error
 
       toast.success('Warnings cleared')
-      // CONFIRM: Reload to verify update persisted
-      await loadKarmaData()
     } catch (error) {
       console.error('Error clearing warnings:', error)
       toast.error('Failed to clear warnings')
@@ -2145,8 +2072,6 @@ export default function AdminProjectPage() {
       })
 
       toast.success('Wallet banned')
-      // CONFIRM: Reload to verify ban persisted
-      await loadKarmaData()
     } catch (error) {
       console.error('Error banning wallet:', error)
       toast.error('Failed to ban wallet')
@@ -2199,8 +2124,6 @@ export default function AdminProjectPage() {
       if (error) throw error
 
       toast.success('Wallet unbanned')
-      // CONFIRM: Reload to verify unban persisted
-      await loadKarmaData()
     } catch (error) {
       console.error('Error unbanning wallet:', error)
       toast.error('Failed to unban wallet')

@@ -380,6 +380,38 @@ export interface Database {
           created_at?: string
         }
       }
+      admin_logs: {
+        Row: {
+          id: string
+          admin_wallet: string
+          action: string
+          project_id: string | null
+          entity_type: string | null
+          entity_id: string | null
+          details: Json | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          admin_wallet: string
+          action: string
+          project_id?: string | null
+          entity_type?: string | null
+          entity_id?: string | null
+          details?: Json | null
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          admin_wallet?: string
+          action?: string
+          project_id?: string | null
+          entity_type?: string | null
+          entity_id?: string | null
+          details?: Json | null
+          created_at?: string
+        }
+      }
     }
     Views: {
       [_ in never]: never
