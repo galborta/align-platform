@@ -1074,6 +1074,18 @@ export default function AdminProjectPage() {
         if (error) throw error
       }
 
+      // Log the action
+      await logAdminAction(
+        'message_deleted',
+        'message',
+        message.id,
+        {
+          messageType: message.type,
+          walletAddress: message.wallet,
+          messageContent: message.content.slice(0, 100)
+        }
+      )
+
       toast.success('Message deleted')
     } catch (error) {
       console.error('Error deleting message:', error)
@@ -1273,6 +1285,8 @@ export default function AdminProjectPage() {
   const handleDeleteSocialAsset = async (assetId: string) => {
     if (!confirm('Delete this social asset permanently? This cannot be undone.')) return
 
+    const assetToDelete = verifiedSocialAssets.find(a => a.id === assetId)
+
     try {
       // OPTIMISTIC UPDATE: Remove from UI immediately
       setVerifiedSocialAssets(prev => prev.filter(asset => asset.id !== assetId))
@@ -1283,6 +1297,23 @@ export default function AdminProjectPage() {
         .eq('id', assetId)
 
       if (error) throw error
+
+      // Log the action
+      if (assetToDelete) {
+        await logAdminAction(
+          'asset_deleted',
+          'asset',
+          assetId,
+          {
+            assetType: 'social',
+            assetData: {
+              platform: assetToDelete.platform,
+              handle: assetToDelete.handle,
+              follower_tier: assetToDelete.follower_tier
+            }
+          }
+        )
+      }
 
       toast.success('Social asset deleted')
     } catch (error) {
@@ -1450,6 +1481,8 @@ export default function AdminProjectPage() {
   const handleDeleteLegalAsset = async (assetId: string) => {
     if (!confirm('Delete this legal asset permanently? This cannot be undone.')) return
 
+    const assetToDelete = verifiedLegalAssets.find(a => a.id === assetId)
+
     try {
       // OPTIMISTIC UPDATE: Remove from UI immediately
       setVerifiedLegalAssets(prev => prev.filter(asset => asset.id !== assetId))
@@ -1460,6 +1493,23 @@ export default function AdminProjectPage() {
         .eq('id', assetId)
 
       if (error) throw error
+
+      // Log the action
+      if (assetToDelete) {
+        await logAdminAction(
+          'asset_deleted',
+          'asset',
+          assetId,
+          {
+            assetType: 'legal',
+            assetData: {
+              asset_type: assetToDelete.asset_type,
+              name: assetToDelete.name,
+              status: assetToDelete.status
+            }
+          }
+        )
+      }
 
       toast.success('Legal asset deleted')
     } catch (error) {
@@ -2113,6 +2163,20 @@ export default function AdminProjectPage() {
         p_amount: karmaAdjustAmount
       })
 
+      // Log the action
+      await logAdminAction(
+        'karma_adjusted',
+        'karma',
+        adjustingKarmaWallet.id,
+        {
+          wallet: adjustingKarmaWallet.wallet_address,
+          amount: karmaAdjustAmount,
+          reason: karmaAdjustReason,
+          oldKarma,
+          newKarma
+        }
+      )
+
       toast.success(`Karma adjusted: ${oldKarma} → ${newKarma}`)
     } catch (error) {
       console.error('Error adjusting karma:', error)
@@ -2241,6 +2305,19 @@ export default function AdminProjectPage() {
         asset_summary: banReason
       })
 
+      // Log the action
+      await logAdminAction(
+        'user_banned',
+        'karma',
+        banningWallet.id,
+        {
+          wallet: banningWallet.wallet_address,
+          duration: banDuration,
+          reason: banReason,
+          expiresAt: expiryDate
+        }
+      )
+
       toast.success('Wallet banned')
     } catch (error) {
       console.error('Error banning wallet:', error)
@@ -2292,6 +2369,16 @@ export default function AdminProjectPage() {
         .eq('project_id', wallet.project_id)
 
       if (error) throw error
+
+      // Log the action
+      await logAdminAction(
+        'user_unbanned',
+        'karma',
+        wallet.id,
+        {
+          wallet: wallet.wallet_address
+        }
+      )
 
       toast.success('Wallet unbanned')
     } catch (error) {
