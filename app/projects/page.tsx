@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import Link from 'next/link'
 import { Card } from '@/components/ui/Card'
 import { AppHeader } from '@/components/AppHeader'
 import { supabase } from '@/lib/supabase'
@@ -251,4 +252,3 @@ export default function ProjectsPage() {
     </div>
   )
 }
-

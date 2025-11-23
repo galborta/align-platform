@@ -423,6 +423,9 @@ export interface Database {
           allow_messages_from: 'everyone' | 'holders_only' | 'nobody'
           last_seen_at: string | null
           is_online: boolean
+          notification_enabled: boolean
+          notification_sound: boolean
+          notification_preview: 'full' | 'sender' | 'none'
           created_at: string
           updated_at: string
         }
@@ -436,6 +439,9 @@ export interface Database {
           allow_messages_from?: 'everyone' | 'holders_only' | 'nobody'
           last_seen_at?: string | null
           is_online?: boolean
+          notification_enabled?: boolean
+          notification_sound?: boolean
+          notification_preview?: 'full' | 'sender' | 'none'
           created_at?: string
           updated_at?: string
         }
@@ -449,6 +455,9 @@ export interface Database {
           allow_messages_from?: 'everyone' | 'holders_only' | 'nobody'
           last_seen_at?: string | null
           is_online?: boolean
+          notification_enabled?: boolean
+          notification_sound?: boolean
+          notification_preview?: 'full' | 'sender' | 'none'
           created_at?: string
           updated_at?: string
         }

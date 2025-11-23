@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { useWallet, useConnection } from '@solana/wallet-adapter-react'
 import { AppHeader } from '@/components/AppHeader'
+import { WalletButton } from '@/components/WalletButton'
 import { Button } from '@/components/ui/Button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card'
 import { getTokenMetadata, TokenMetadata } from '@/lib/solana'
@@ -1245,4 +1246,3 @@ export default function CreatePage() {
     </div>
   )
 }
-

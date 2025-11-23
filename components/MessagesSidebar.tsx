@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import { getUnreadCount, getOrCreateConversation } from '@/lib/messaging'
@@ -20,16 +20,33 @@ import {
   Button,
   CircularProgress,
   Divider,
-  Tooltip
+  Tooltip,
+  List,
+  ListItem,
+  ListItemText,
+  Chip,
+  Alert
 } from '@mui/material'
 import CloseIcon from '@mui/icons-material/Close'
 import AddIcon from '@mui/icons-material/Add'
 import SettingsIcon from '@mui/icons-material/Settings'
 import SearchIcon from '@mui/icons-material/Search'
 import ArrowBackIcon from '@mui/icons-material/ArrowBack'
+import ClearIcon from '@mui/icons-material/Clear'
+import HistoryIcon from '@mui/icons-material/History'
 import { toast } from 'react-hot-toast'
+import { formatDistanceToNow } from 'date-fns'
 
 type SidebarView = 'list' | 'thread' | 'new'
+
+interface SearchResult {
+  message_id: string
+  conversation_id: string
+  sender_wallet: string
+  content: string
+  created_at: string
+  sender_display_name?: string
+}
 
 interface MessagesSidebarProps {
   isOpen: boolean
@@ -53,6 +70,142 @@ export function MessagesSidebar({
   const [filterTab, setFilterTab] = useState<'all' | 'unread'>('all')
   const [newMessageInput, setNewMessageInput] = useState('')
   const [creatingConversation, setCreatingConversation] = useState(false)
+  
+  // Message search state
+  const [isSearching, setIsSearching] = useState(false)
+  const [searchResults, setSearchResults] = useState<SearchResult[]>([])
+  const [searchHistory, setSearchHistory] = useState<string[]>([])
+  const [showSearchHistory, setShowSearchHistory] = useState(false)
+
+  // Load search history from localStorage
+  useEffect(() => {
+    const history = localStorage.getItem('message_search_history')
+    if (history) {
+      try {
+        setSearchHistory(JSON.parse(history))
+      } catch (e) {
+        console.error('Failed to parse search history:', e)
+      }
+    }
+  }, [])
+
+  // Save search to history
+  const saveSearchToHistory = useCallback((query: string) => {
+    const trimmed = query.trim()
+    if (!trimmed) return
+
+    setSearchHistory(prev => {
+      // Remove duplicates and add to front
+      const filtered = prev.filter(q => q !== trimmed)
+      const newHistory = [trimmed, ...filtered].slice(0, 5)
+      localStorage.setItem('message_search_history', JSON.stringify(newHistory))
+      return newHistory
+    })
+  }, [])
+
+  // Perform message search
+  const performSearch = useCallback(async (query: string) => {
+    const trimmed = query.trim()
+    
+    if (!trimmed) {
+      setSearchResults([])
+      setIsSearching(false)
+      return
+    }
+
+    // Check minimum length
+    if (trimmed.length < 3) {
+      return // Don't search for very short queries
+    }
+
+    setIsSearching(true)
+
+    try {
+      // Search messages where content matches and conversation includes current wallet
+      const { data: conversations, error: convError } = await supabase
+        .from('conversations')
+        .select('id')
+        .or(`participant_1.eq.${currentWallet},participant_2.eq.${currentWallet}`)
+
+      if (convError) throw convError
+
+      const conversationIds = conversations?.map(c => c.id) || []
+
+      if (conversationIds.length === 0) {
+        setSearchResults([])
+        setIsSearching(false)
+        return
+      }
+
+      // Search messages in these conversations
+      const { data: messages, error: msgError } = await supabase
+        .from('messages')
+        .select('id, conversation_id, sender_wallet, content, created_at')
+        .in('conversation_id', conversationIds)
+        .ilike('content', `%${trimmed}%`)
+        .order('created_at', { ascending: false })
+        .limit(50)
+
+      if (msgError) throw msgError
+
+      // Get sender profiles
+      const senderWallets = [...new Set(messages?.map(m => m.sender_wallet) || [])]
+      
+      const { data: profiles } = await supabase
+        .from('user_profiles')
+        .select('wallet_address, display_name')
+        .in('wallet_address', senderWallets)
+
+      const profileMap = new Map(
+        profiles?.map(p => [p.wallet_address, p.display_name]) || []
+      )
+
+      // Map results with sender names
+      const results: SearchResult[] = messages?.map(msg => ({
+        message_id: msg.id,
+        conversation_id: msg.conversation_id,
+        sender_wallet: msg.sender_wallet,
+        content: msg.content,
+        created_at: msg.created_at,
+        sender_display_name: profileMap.get(msg.sender_wallet)
+      })) || []
+
+      setSearchResults(results)
+      saveSearchToHistory(trimmed)
+    } catch (error) {
+      console.error('Search error:', error)
+      toast.error('Failed to search messages')
+    } finally {
+      setIsSearching(false)
+    }
+  }, [currentWallet, saveSearchToHistory])
+
+  // Debounced search
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      if (searchQuery.trim().length >= 3) {
+        performSearch(searchQuery)
+      } else if (searchQuery.trim().length === 0) {
+        setSearchResults([])
+      }
+    }, 300)
+
+    return () => clearTimeout(timer)
+  }, [searchQuery, performSearch])
+
+  // Highlight search matches in text
+  const highlightMatches = useCallback((text: string, query: string) => {
+    if (!query.trim()) return text
+
+    const parts = text.split(new RegExp(`(${query.trim()})`, 'gi'))
+    
+    return parts.map((part, index) => {
+      if (part.toLowerCase() === query.trim().toLowerCase()) {
+        return `<mark style="background-color: #FEF08A; padding: 0 2px; border-radius: 2px;">${part}</mark>`
+      }
+      return part
+    }).join('')
+  }, [])
 
   // Load unread count
   const loadUnreadCount = useCallback(async () => {
@@ -143,12 +296,58 @@ export function MessagesSidebar({
     }
   }
 
+  // Handle search result click
+  const handleSearchResultClick = async (result: SearchResult) => {
+    try {
+      // Get conversation details
+      const { data: conversation } = await supabase
+        .from('conversations')
+        .select('*')
+        .eq('id', result.conversation_id)
+        .single()
+
+      if (conversation) {
+        const recipient = 
+          conversation.participant_1 === currentWallet
+            ? conversation.participant_2
+            : conversation.participant_1
+        
+        setSelectedConversationId(result.conversation_id)
+        setRecipientWallet(recipient)
+        setView('thread')
+        
+        // Clear search after opening
+        setSearchQuery('')
+        setSearchResults([])
+      }
+    } catch (error) {
+      console.error('Error opening search result:', error)
+      toast.error('Failed to open conversation')
+    }
+  }
+
   // Handle back to list
   const handleBackToList = () => {
     setView('list')
     setSelectedConversationId(null)
     setRecipientWallet('')
     setSearchQuery('')
+    setSearchResults([])
+    setShowSearchHistory(false)
+  }
+
+  // Clear search
+  const handleClearSearch = () => {
+    setSearchQuery('')
+    setSearchResults([])
+    setShowSearchHistory(false)
+  }
+
+  // Use search history suggestion
+  const handleSearchHistoryClick = (query: string) => {
+    setSearchQuery(query)
+    setShowSearchHistory(false)
+    performSearch(query)
   }
 
   // Handle new message
@@ -340,17 +539,31 @@ export function MessagesSidebar({
         {view === 'list' && (
           <Box sx={{ display: 'flex', flexDirection: 'column', flex: 1, overflow: 'hidden' }}>
             {/* Search Bar */}
-            <Box sx={{ p: 2 }}>
+            <Box sx={{ p: 2, position: 'relative' }}>
               <TextField
                 fullWidth
                 size="small"
-                placeholder="Search conversations..."
+                placeholder="Search messages..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
+                onFocus={() => setShowSearchHistory(searchQuery.length === 0 && searchHistory.length > 0)}
+                onBlur={() => setTimeout(() => setShowSearchHistory(false), 200)}
                 InputProps={{
                   startAdornment: (
                     <InputAdornment position="start">
                       <SearchIcon fontSize="small" />
+                    </InputAdornment>
+                  ),
+                  endAdornment: searchQuery && (
+                    <InputAdornment position="end">
+                      <IconButton
+                        size="small"
+                        onClick={handleClearSearch}
+                        edge="end"
+                        sx={{ color: 'text.secondary' }}
+                      >
+                        <ClearIcon fontSize="small" />
+                      </IconButton>
                     </InputAdornment>
                   )
                 }}
@@ -366,69 +579,226 @@ export function MessagesSidebar({
                   }
                 }}
               />
-            </Box>
 
-            {/* Filter Tabs */}
-            <Box sx={{ px: 2, borderBottom: '1px solid', borderColor: 'divider' }}>
-              <Tabs
-                value={filterTab}
-                onChange={(_, newValue) => setFilterTab(newValue)}
-                sx={{
-                  minHeight: 40,
-                  '& .MuiTab-root': {
-                    minHeight: 40,
-                    textTransform: 'none',
-                    fontWeight: 500
-                  },
-                  '& .Mui-selected': {
-                    color: '#7C4DFF'
-                  },
-                  '& .MuiTabs-indicator': {
-                    bgcolor: '#7C4DFF'
-                  }
-                }}
-              >
-                <Tab label="All" value="all" />
-                <Tab 
-                  label={
-                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                      Unread
-                      {unreadCount > 0 && (
-                        <Badge
-                          badgeContent={unreadCount}
-                          sx={{
-                            '& .MuiBadge-badge': {
-                              bgcolor: '#7C4DFF',
-                              color: 'white',
-                              fontSize: 10,
-                              minWidth: 16,
-                              height: 16
-                            }
+              {/* Search History Dropdown */}
+              {showSearchHistory && searchHistory.length > 0 && (
+                <Box
+                  sx={{
+                    position: 'absolute',
+                    top: '100%',
+                    left: 16,
+                    right: 16,
+                    bgcolor: 'background.paper',
+                    border: '1px solid',
+                    borderColor: 'divider',
+                    borderRadius: 1,
+                    mt: 0.5,
+                    boxShadow: 2,
+                    zIndex: 1000,
+                    maxHeight: 200,
+                    overflow: 'auto'
+                  }}
+                >
+                  <List dense>
+                    {searchHistory.map((query, index) => (
+                      <ListItem
+                        key={index}
+                        button
+                        onClick={() => handleSearchHistoryClick(query)}
+                        sx={{
+                          '&:hover': {
+                            bgcolor: 'rgba(124, 77, 255, 0.04)'
+                          }
+                        }}
+                      >
+                        <HistoryIcon
+                          fontSize="small"
+                          sx={{ mr: 1, color: 'text.secondary' }}
+                        />
+                        <ListItemText
+                          primary={query}
+                          primaryTypographyProps={{
+                            fontSize: 14,
+                            color: 'text.primary'
                           }}
                         />
-                      )}
-                    </Box>
-                  }
-                  value="unread" 
-                />
-              </Tabs>
-            </Box>
-
-            {/* Conversation List */}
-            <Box sx={{ flex: 1, overflow: 'auto' }}>
-              {currentWallet ? (
-                <ConversationList
-                  currentWallet={currentWallet}
-                  onSelectConversation={handleSelectConversation}
-                />
-              ) : (
-                <Box sx={{ p: 4, textAlign: 'center' }}>
-                  <Typography variant="body2" color="text.secondary">
-                    Connect your wallet to view messages
-                  </Typography>
+                      </ListItem>
+                    ))}
+                  </List>
                 </Box>
               )}
+
+              {/* Search warning for short queries */}
+              {searchQuery.length > 0 && searchQuery.length < 3 && (
+                <Typography
+                  variant="caption"
+                  sx={{ 
+                    display: 'block', 
+                    mt: 1, 
+                    color: 'warning.main',
+                    fontSize: 11
+                  }}
+                >
+                  Type at least 3 characters to search
+                </Typography>
+              )}
             </Box>
+
+            {/* Conditional Content: Search Results or Conversation List */}
+            {searchQuery.trim().length >= 3 ? (
+              /* Search Results View */
+              <Box sx={{ flex: 1, overflow: 'auto' }}>
+                {isSearching ? (
+                  <Box sx={{ p: 4, textAlign: 'center' }}>
+                    <CircularProgress size={32} sx={{ color: '#7C4DFF' }} />
+                    <Typography variant="body2" color="text.secondary" sx={{ mt: 2 }}>
+                      Searching messages...
+                    </Typography>
+                  </Box>
+                ) : searchResults.length === 0 ? (
+                  <Box sx={{ p: 4, textAlign: 'center' }}>
+                    <SearchIcon sx={{ fontSize: 48, color: 'text.disabled', mb: 2 }} />
+                    <Typography variant="body2" color="text.secondary">
+                      No messages found for '{searchQuery}'
+                    </Typography>
+                    <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: 'block' }}>
+                      Try different keywords or check spelling
+                    </Typography>
+                  </Box>
+                ) : (
+                  <Box>
+                    {/* Results header */}
+                    <Box sx={{ p: 2, bgcolor: 'background.default', borderBottom: '1px solid', borderColor: 'divider' }}>
+                      <Typography variant="body2" color="text.secondary">
+                        {searchResults.length} {searchResults.length === 1 ? 'result' : 'results'} found
+                      </Typography>
+                    </Box>
+
+                    {/* Results list */}
+                    <List sx={{ p: 0 }}>
+                      {searchResults.map((result) => {
+                        const highlightedContent = highlightMatches(result.content, searchQuery)
+                        const snippet = result.content.length > 100 
+                          ? result.content.substring(0, 100) + '...' 
+                          : result.content
+                        const highlightedSnippet = highlightMatches(snippet, searchQuery)
+
+                        return (
+                          <ListItem
+                            key={result.message_id}
+                            button
+                            onClick={() => handleSearchResultClick(result)}
+                            sx={{
+                              flexDirection: 'column',
+                              alignItems: 'flex-start',
+                              borderBottom: '1px solid',
+                              borderColor: 'divider',
+                              py: 2,
+                              '&:hover': {
+                                bgcolor: 'rgba(124, 77, 255, 0.04)'
+                              }
+                            }}
+                          >
+                            {/* Sender info */}
+                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.5, width: '100%' }}>
+                              <Typography variant="body2" fontWeight={500}>
+                                {result.sender_display_name || formatAddress(result.sender_wallet)}
+                              </Typography>
+                              {result.sender_wallet === currentWallet && (
+                                <Chip label="You" size="small" sx={{ height: 18, fontSize: 10 }} />
+                              )}
+                              <Typography variant="caption" color="text.secondary" sx={{ ml: 'auto' }}>
+                                {formatDistanceToNow(new Date(result.created_at), { addSuffix: true })}
+                              </Typography>
+                            </Box>
+
+                            {/* Message snippet with highlighted matches */}
+                            <Typography
+                              variant="body2"
+                              color="text.secondary"
+                              sx={{ 
+                                width: '100%',
+                                '& mark': {
+                                  backgroundColor: '#FEF08A',
+                                  padding: '0 2px',
+                                  borderRadius: '2px'
+                                }
+                              }}
+                              dangerouslySetInnerHTML={{ __html: highlightedSnippet }}
+                            />
+                          </ListItem>
+                        )
+                      })}
+                    </List>
+                  </Box>
+                )}
+              </Box>
+            ) : (
+              /* Regular Conversation List View */
+              <>
+                {/* Filter Tabs */}
+                <Box sx={{ px: 2, borderBottom: '1px solid', borderColor: 'divider' }}>
+                  <Tabs
+                    value={filterTab}
+                    onChange={(_, newValue) => setFilterTab(newValue)}
+                    sx={{
+                      minHeight: 40,
+                      '& .MuiTab-root': {
+                        minHeight: 40,
+                        textTransform: 'none',
+                        fontWeight: 500
+                      },
+                      '& .Mui-selected': {
+                        color: '#7C4DFF'
+                      },
+                      '& .MuiTabs-indicator': {
+                        bgcolor: '#7C4DFF'
+                      }
+                    }}
+                  >
+                    <Tab label="All" value="all" />
+                    <Tab 
+                      label={
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                          Unread
+                          {unreadCount > 0 && (
+                            <Badge
+                              badgeContent={unreadCount}
+                              sx={{
+                                '& .MuiBadge-badge': {
+                                  bgcolor: '#7C4DFF',
+                                  color: 'white',
+                                  fontSize: 10,
+                                  minWidth: 16,
+                                  height: 16
+                                }
+                              }}
+                            />
+                          )}
+                        </Box>
+                      }
+                      value="unread" 
+                    />
+                  </Tabs>
+                </Box>
+
+                {/* Conversation List */}
+                <Box sx={{ flex: 1, overflow: 'auto' }}>
+                  {currentWallet ? (
+                    <ConversationList
+                      currentWallet={currentWallet}
+                      onSelectConversation={handleSelectConversation}
+                    />
+                  ) : (
+                    <Box sx={{ p: 4, textAlign: 'center' }}>
+                      <Typography variant="body2" color="text.secondary">
+                        Connect your wallet to view messages
+                      </Typography>
+                    </Box>
+                  )}
+                </Box>
+              </>
+            )}
           </Box>
         )}
 

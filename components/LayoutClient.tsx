@@ -6,10 +6,21 @@ import { MessagingProvider } from '@/lib/MessagingContext'
 import { MessagesSidebar } from '@/components/MessagesSidebar'
 import { useMessaging } from '@/lib/MessagingContext'
 import { usePresenceTracking } from '@/lib/presence'
+import { useMessageNotifications } from '@/lib/notifications'
 
 function MessagesSidebarWrapper() {
   const wallet = useWallet()
-  const { isOpen, closeMessages, targetWallet } = useMessaging()
+  const { isOpen, closeMessages, targetWallet, openMessages } = useMessaging()
+  
+  // Enable message notifications
+  useMessageNotifications(
+    wallet.publicKey?.toBase58(),
+    (conversationId) => {
+      // When notification is clicked, open messages sidebar
+      // The targetWallet will be determined from the conversation
+      openMessages()
+    }
+  )
   
   return (
     <MessagesSidebar
@@ -34,4 +45,3 @@ export function LayoutClient({ children }: { children: ReactNode }) {
     </MessagingProvider>
   )
 }
-

@@ -67,6 +67,10 @@ export function UserProfileView({
   const [checkingMessage, setCheckingMessage] = useState(false)
   const [tokenPercentage, setTokenPercentage] = useState(0)
   const [loadingTier, setLoadingTier] = useState(false)
+  const [conversationExists, setConversationExists] = useState(false)
+  const [unreadCount, setUnreadCount] = useState(0)
+  const [lastMessage, setLastMessage] = useState<{ content: string; timestamp: string } | null>(null)
+  const [openingMessage, setOpeningMessage] = useState(false)
   
   // Truncate wallet address
   const truncateWallet = (address: string) => {
@@ -240,17 +244,95 @@ export function UserProfileView({
     fetchTokenBalance()
   }, [walletAddress, projectId])
   
+  // Check for existing conversation
+  useEffect(() => {
+    const checkConversation = async () => {
+      if (!currentUserWallet) return
+      
+      try {
+        // Find conversation
+        const { data: conversations } = await supabase
+          .from('conversations')
+          .select('id')
+          .or(`and(participant_1.eq.${currentUserWallet},participant_2.eq.${walletAddress}),and(participant_1.eq.${walletAddress},participant_2.eq.${currentUserWallet})`)
+          .maybeSingle()
+        
+        if (conversations) {
+          setConversationExists(true)
+          
+          // Get unread count
+          const { count } = await supabase
+            .from('messages')
+            .select('*', { count: 'exact', head: true })
+            .eq('conversation_id', conversations.id)
+            .eq('sender_wallet', walletAddress) // Messages from them
+            .eq('is_read', false)
+          
+          setUnreadCount(count || 0)
+          
+          // Get last message
+          const { data: messages } = await supabase
+            .from('messages')
+            .select('content, created_at')
+            .eq('conversation_id', conversations.id)
+            .order('created_at', { ascending: false })
+            .limit(1)
+            .maybeSingle()
+          
+          if (messages) {
+            setLastMessage({
+              content: messages.content,
+              timestamp: messages.created_at
+            })
+          }
+        }
+      } catch (error) {
+        console.error('Error checking conversation:', error)
+      }
+    }
+    
+    checkConversation()
+  }, [currentUserWallet, walletAddress])
+  
   // Handle message button click
   const handleMessage = async () => {
-    if (canMessage) {
+    if (!canMessage) {
+      toast.error(messageReason || 'Cannot message this user')
+      return
+    }
+    
+    setOpeningMessage(true)
+    
+    try {
       await openMessages(walletAddress)
       onClose() // Close profile view
       if (onMessage) {
         onMessage(walletAddress)
       }
-    } else {
-      toast.error(messageReason || 'Cannot message this user')
+    } catch (error) {
+      console.error('Error opening message:', error)
+      toast.error('Failed to open message')
+    } finally {
+      setOpeningMessage(false)
     }
+  }
+  
+  // Format time ago
+  const formatTimeAgo = (timestamp: string) => {
+    const date = new Date(timestamp)
+    const now = new Date()
+    const diffMinutes = Math.floor((now.getTime() - date.getTime()) / 60000)
+    
+    if (diffMinutes < 1) return 'just now'
+    if (diffMinutes < 60) return `${diffMinutes}m ago`
+    
+    const diffHours = Math.floor(diffMinutes / 60)
+    if (diffHours < 24) return `${diffHours}h ago`
+    
+    const diffDays = Math.floor(diffHours / 24)
+    if (diffDays < 7) return `${diffDays}d ago`
+    
+    return date.toLocaleDateString()
   }
   
   // Handle block button click
@@ -428,49 +510,83 @@ export function UserProfileView({
         <Divider sx={{ my: 3 }} />
         
         {/* Action Buttons */}
-        <div className="flex gap-3 mb-6">
+        <div className="mb-6">
+          {/* Primary Message CTA */}
           <Tooltip 
             title={!canMessage ? messageReason : ''}
             arrow
+            placement="top"
           >
-            <span className="flex-1">
+            <span className="block mb-3">
               <Button
                 variant="contained"
-                startIcon={<MessageIcon />}
+                startIcon={openingMessage ? <CircularProgress size={20} sx={{ color: 'white' }} /> : <MessageIcon />}
                 onClick={handleMessage}
-                disabled={!canMessage || checkingMessage}
+                disabled={!canMessage || checkingMessage || openingMessage}
                 fullWidth
                 sx={{
                   bgcolor: '#7C4DFF',
-                  '&:hover': { bgcolor: '#6C3FEF' },
+                  '&:hover': { 
+                    bgcolor: '#6C3FEF',
+                    boxShadow: '0 0 12px rgba(124, 77, 255, 0.5)' // Purple glow
+                  },
                   '&:disabled': {
                     bgcolor: 'rgba(0, 0, 0, 0.12)'
                   },
                   textTransform: 'none',
-                  fontSize: '16px'
+                  fontSize: '16px',
+                  py: 1.5,
+                  transition: 'all 0.2s ease-in-out',
+                  boxShadow: '0 2px 8px rgba(124, 77, 255, 0.3)'
                 }}
               >
-                {checkingMessage ? 'Checking...' : 'Message'}
+                {checkingMessage ? (
+                  'Checking permissions...'
+                ) : openingMessage ? (
+                  'Opening...'
+                ) : conversationExists ? (
+                  unreadCount > 0 ? `Continue conversation (${unreadCount} unread)` : 'Continue conversation'
+                ) : (
+                  'Start conversation'
+                )}
               </Button>
             </span>
           </Tooltip>
           
-          <Button
-            variant="outlined"
-            startIcon={<BlockIcon />}
-            onClick={handleBlock}
-            sx={{
-              borderColor: '#DC2626',
-              color: '#DC2626',
-              '&:hover': {
-                borderColor: '#B91C1C',
-                bgcolor: 'rgba(220, 38, 38, 0.04)'
-              },
-              textTransform: 'none'
-            }}
-          >
-            Block
-          </Button>
+          {/* Conversation Preview */}
+          {conversationExists && lastMessage && (
+            <div className="mb-3 p-3 bg-purple-50 rounded-lg border border-purple-200">
+              <div className="text-xs font-semibold text-purple-900 mb-1">
+                Last message • {formatTimeAgo(lastMessage.timestamp)}
+              </div>
+              <div className="text-sm text-gray-700 line-clamp-2">
+                {lastMessage.content.length > 80 
+                  ? lastMessage.content.substring(0, 80) + '...' 
+                  : lastMessage.content}
+              </div>
+            </div>
+          )}
+          
+          {/* Secondary Actions */}
+          <div className="flex gap-2">
+            <Button
+              variant="outlined"
+              startIcon={<BlockIcon />}
+              onClick={handleBlock}
+              fullWidth
+              sx={{
+                borderColor: '#DC2626',
+                color: '#DC2626',
+                '&:hover': {
+                  borderColor: '#B91C1C',
+                  bgcolor: 'rgba(220, 38, 38, 0.04)'
+                },
+                textTransform: 'none'
+              }}
+            >
+              Block
+            </Button>
+          </div>
         </div>
         
         {/* Reputation - Top Projects */}

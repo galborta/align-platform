@@ -7,8 +7,8 @@ import {
   Tabs,
   Tab,
   Box,
-  Card,
-  CardContent,
+  Card as MuiCard,
+  CardContent as MuiCardContent,
   Button,
   CircularProgress,
   Alert,
@@ -22,17 +22,20 @@ import {
   IconButton,
   Chip
 } from '@mui/material'
+import { Card, CardContent } from '@/components/ui/Card'
 import {
   ArrowBack as ArrowBackIcon,
   Edit as EditIcon,
   Block as BlockIcon,
   Visibility as VisibilityIcon,
   Security as SecurityIcon,
-  Person as PersonIcon
+  Person as PersonIcon,
+  Notifications as NotificationsIcon
 } from '@mui/icons-material'
 import { DataGrid, GridColDef } from '@mui/x-data-grid'
 import { WalletButton } from '@/components/WalletButton'
 import { ProfileEditModal } from '@/components/ProfileEditModal'
+import { NotificationSettings } from '@/components/NotificationSettings'
 import { supabase } from '@/lib/supabase'
 import { getOrCreateProfile } from '@/lib/messaging'
 import { Database } from '@/types/database'
@@ -42,7 +45,7 @@ import { formatDistanceToNow } from 'date-fns'
 type UserProfile = Database['public']['Tables']['user_profiles']['Row']
 type BlockedUser = Database['public']['Tables']['blocked_users']['Row']
 
-type TabValue = 'profile' | 'privacy' | 'blocked'
+type TabValue = 'profile' | 'privacy' | 'notifications' | 'blocked'
 
 export default function ProfileSettingsPage() {
   const router = useRouter()
@@ -207,8 +210,8 @@ export default function ProfileSettingsPage() {
           <h1 className="text-3xl font-bold">Profile Settings</h1>
         </div>
         
-        <Card>
-          <CardContent className="text-center py-12">
+        <MuiCard>
+          <MuiCardContent className="text-center py-12">
             <SecurityIcon sx={{ fontSize: 64, color: '#7C4DFF', mb: 2 }} />
             <Typography variant="h6" gutterBottom>
               Wallet Connection Required
@@ -217,8 +220,8 @@ export default function ProfileSettingsPage() {
               Please connect your wallet to manage your profile settings
             </Typography>
             <WalletButton />
-          </CardContent>
-        </Card>
+          </MuiCardContent>
+        </MuiCard>
       </div>
     )
   }
@@ -234,12 +237,12 @@ export default function ProfileSettingsPage() {
           <h1 className="text-3xl font-bold">Profile Settings</h1>
         </div>
         
-        <Card>
-          <CardContent className="text-center py-12">
+        <MuiCard>
+          <MuiCardContent className="text-center py-12">
             <CircularProgress />
             <Typography sx={{ mt: 2 }}>Loading profile...</Typography>
-          </CardContent>
-        </Card>
+          </MuiCardContent>
+        </MuiCard>
       </div>
     )
   }
@@ -310,7 +313,7 @@ export default function ProfileSettingsPage() {
       </div>
       
       {/* Tabs */}
-      <Card sx={{ mb: 3 }}>
+      <MuiCard sx={{ mb: 3 }}>
         <Tabs
           value={currentTab}
           onChange={(_, newValue) => setCurrentTab(newValue)}
@@ -343,18 +346,24 @@ export default function ProfileSettingsPage() {
             iconPosition="start"
           />
           <Tab
+            value="notifications"
+            label="Notifications"
+            icon={<NotificationsIcon />}
+            iconPosition="start"
+          />
+          <Tab
             value="blocked"
             label="Blocked Users"
             icon={<BlockIcon />}
             iconPosition="start"
           />
         </Tabs>
-      </Card>
+      </MuiCard>
       
       {/* Profile Tab */}
       {currentTab === 'profile' && (
-        <Card>
-          <CardContent className="p-6">
+        <MuiCard>
+          <MuiCardContent className="p-6">
             <div className="flex items-center justify-between mb-4">
               <div>
                 <Typography variant="h6" gutterBottom>
@@ -438,14 +447,14 @@ export default function ProfileSettingsPage() {
                 )}
               </div>
             </div>
-          </CardContent>
-        </Card>
+          </MuiCardContent>
+        </MuiCard>
       )}
       
       {/* Privacy Tab */}
       {currentTab === 'privacy' && (
-        <Card>
-          <CardContent className="p-6">
+        <MuiCard>
+          <MuiCardContent className="p-6">
             <Typography variant="h6" gutterBottom>
               Privacy Settings
             </Typography>
@@ -601,14 +610,27 @@ export default function ProfileSettingsPage() {
             >
               {savingPrivacy ? 'Saving...' : 'Save Privacy Settings'}
             </Button>
+          </MuiCardContent>
+        </MuiCard>
+      )}
+      
+      {/* Notifications Tab */}
+      {currentTab === 'notifications' && wallet?.publicKey && (
+        <Card>
+          <CardContent className="p-6">
+            <NotificationSettings 
+              walletAddress={wallet.publicKey.toString()}
+              currentProfile={profile}
+              onSave={handleSaveProfile}
+            />
           </CardContent>
         </Card>
       )}
       
       {/* Blocked Users Tab */}
       {currentTab === 'blocked' && (
-        <Card>
-          <CardContent className="p-6">
+        <MuiCard>
+          <MuiCardContent className="p-6">
             <Typography variant="h6" gutterBottom>
               Blocked Users
             </Typography>
@@ -650,8 +672,8 @@ export default function ProfileSettingsPage() {
                 />
               </div>
             )}
-          </CardContent>
-        </Card>
+          </MuiCardContent>
+        </MuiCard>
       )}
       
       {/* Profile Edit Modal */}

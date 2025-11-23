@@ -10,8 +10,11 @@ import SendIcon from '@mui/icons-material/Send'
 import CircularProgress from '@mui/material/CircularProgress'
 import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown'
 import MessageIcon from '@mui/icons-material/Message'
+import BlockIcon from '@mui/icons-material/Block'
 import { IconButton, Tooltip } from '@mui/material'
 import { useMessaging } from '@/lib/MessagingContext'
+import { canMessageUser } from '@/lib/messaging'
+import { toast } from 'react-hot-toast'
 
 interface Message {
   id: string
@@ -38,6 +41,7 @@ export function ProjectChat({ projectId, tokenMint }: ProjectChatProps) {
   const [error, setError] = useState<string | null>(null)
   const [showNewMessagesIndicator, setShowNewMessagesIndicator] = useState(false)
   const [hoveredMessageId, setHoveredMessageId] = useState<string | null>(null)
+  const [openingMessageFor, setOpeningMessageFor] = useState<string | null>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const messagesContainerRef = useRef<HTMLDivElement>(null)
 
@@ -202,6 +206,39 @@ export function ProjectChat({ projectId, tokenMint }: ProjectChatProps) {
     return date.toLocaleDateString()
   }
 
+  // Handle opening direct message with user
+  async function handleOpenMessage(targetWallet: string) {
+    if (!publicKey) {
+      toast.error('Please connect your wallet to send messages')
+      return
+    }
+
+    if (targetWallet === publicKey.toBase58()) {
+      toast.error('Cannot message yourself')
+      return
+    }
+
+    setOpeningMessageFor(targetWallet)
+
+    try {
+      // Check if user can be messaged
+      const result = await canMessageUser(publicKey.toBase58(), targetWallet, projectId)
+      
+      if (!result.canMessage) {
+        toast.error(result.reason || 'Cannot message this user')
+        return
+      }
+
+      // Open messages sidebar
+      await openMessages(targetWallet)
+    } catch (error) {
+      console.error('Error opening message:', error)
+      toast.error('Failed to open message')
+    } finally {
+      setOpeningMessageFor(null)
+    }
+  }
+
   return (
     <Card className="h-[400px] md:h-[600px] flex flex-col relative overflow-hidden">
       {/* Header - Enhanced */}
@@ -273,18 +310,34 @@ export function ProjectChat({ projectId, tokenMint }: ProjectChatProps) {
                       
                       {/* Message Icon (show on hover, not for own messages) */}
                       {!isOwnMessage && hoveredMessageId === msg.id && (
-                        <Tooltip title="Send message">
+                        <Tooltip 
+                          title="Send direct message"
+                          arrow
+                          placement="top"
+                        >
                           <IconButton
                             size="small"
-                            onClick={() => openMessages(msg.wallet_address)}
+                            onClick={() => handleOpenMessage(msg.wallet_address)}
+                            disabled={openingMessageFor === msg.wallet_address}
                             sx={{
                               p: 0.5,
                               ml: 0.5,
                               color: '#7C4DFF',
-                              '&:hover': { bgcolor: 'rgba(124, 77, 255, 0.1)' }
+                              '&:hover': { 
+                                bgcolor: 'rgba(124, 77, 255, 0.1)',
+                                boxShadow: '0 0 8px rgba(124, 77, 255, 0.4)' // Purple glow
+                              },
+                              transition: 'all 0.2s ease-in-out',
+                              '&:disabled': {
+                                color: '#9E9E9E'
+                              }
                             }}
                           >
-                            <MessageIcon sx={{ fontSize: 14 }} />
+                            {openingMessageFor === msg.wallet_address ? (
+                              <CircularProgress size={14} sx={{ color: '#7C4DFF' }} />
+                            ) : (
+                              <MessageIcon sx={{ fontSize: 14 }} />
+                            )}
                           </IconButton>
                         </Tooltip>
                       )}
