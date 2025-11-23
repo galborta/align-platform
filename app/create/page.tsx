@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { useWallet, useConnection } from '@solana/wallet-adapter-react'
-import { WalletButton } from '@/components/WalletButton'
+import { AppHeader } from '@/components/AppHeader'
 import { Button } from '@/components/ui/Button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card'
 import { getTokenMetadata, TokenMetadata } from '@/lib/solana'
@@ -558,17 +558,7 @@ export default function CreatePage() {
   // Main render
   return (
     <div className="min-h-screen bg-page-bg">
-      {/* Header */}
-      <header className="border-b border-border-subtle bg-card-bg">
-        <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
-          <div className="flex items-center justify-between">
-            <h1 className="font-display text-2xl font-bold text-text-primary">
-              Add Your Project
-            </h1>
-            <WalletButton />
-          </div>
-        </div>
-      </header>
+      <AppHeader />
 
       {/* Progress Bar */}
       <div className="border-b border-border-subtle bg-white">

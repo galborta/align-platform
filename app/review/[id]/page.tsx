@@ -2,11 +2,10 @@
 
 import { useState, useEffect } from 'react'
 import { useParams, useRouter } from 'next/navigation'
-import Link from 'next/link'
 import { useWallet } from '@solana/wallet-adapter-react'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
-import { WalletButton } from '@/components/WalletButton'
+import { AppHeader } from '@/components/AppHeader'
 import { supabase } from '@/lib/supabase'
 import { Database } from '@/types/database'
 import CheckCircleIcon from '@mui/icons-material/CheckCircle'
@@ -111,18 +110,7 @@ export default function ReviewPage() {
   if (loading) {
     return (
       <div className="min-h-screen bg-page-bg">
-        <header className="sticky top-0 bg-page-bg/95 backdrop-blur-sm border-b border-border-subtle z-50">
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
-            <div className="flex items-center justify-between">
-              <Link href="/">
-                <h1 className="font-display text-2xl font-bold text-text-primary cursor-pointer hover:text-accent-primary transition-colors">
-                  Align
-                </h1>
-              </Link>
-              <WalletButton />
-            </div>
-          </div>
-        </header>
+        <AppHeader />
         <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-12 text-center">
           <p className="font-body text-text-secondary">Loading project status...</p>
         </div>
@@ -133,18 +121,7 @@ export default function ReviewPage() {
   if (error || !project) {
     return (
       <div className="min-h-screen bg-page-bg">
-        <header className="sticky top-0 bg-page-bg/95 backdrop-blur-sm border-b border-border-subtle z-50">
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
-            <div className="flex items-center justify-between">
-              <Link href="/">
-                <h1 className="font-display text-2xl font-bold text-text-primary cursor-pointer hover:text-accent-primary transition-colors">
-                  Align
-                </h1>
-              </Link>
-              <WalletButton />
-            </div>
-          </div>
-        </header>
+        <AppHeader />
         <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-12 text-center">
           <p className="font-body text-text-secondary mb-4">{error}</p>
           <Button onClick={() => router.push('/')}>
@@ -157,19 +134,7 @@ export default function ReviewPage() {
 
   return (
     <div className="min-h-screen bg-page-bg">
-      {/* Header */}
-      <header className="sticky top-0 bg-page-bg/95 backdrop-blur-sm border-b border-border-subtle z-50">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
-          <div className="flex items-center justify-between">
-            <Link href="/">
-              <h1 className="font-display text-2xl font-bold text-text-primary cursor-pointer hover:text-accent-primary transition-colors">
-                Align
-              </h1>
-            </Link>
-            <WalletButton />
-          </div>
-        </div>
-      </header>
+      <AppHeader />
 
       {/* Main Content */}
       <main className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-12">

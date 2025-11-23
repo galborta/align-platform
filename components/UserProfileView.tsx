@@ -24,6 +24,7 @@ import { getTier } from '@/lib/karma'
 import { canMessageUser } from '@/lib/messaging'
 import { getWalletTokenData } from '@/lib/token-balance'
 import { toast } from 'react-hot-toast'
+import { useMessaging } from '@/lib/MessagingContext'
 
 type UserProfile = Database['public']['Tables']['user_profiles']['Row']
 type WalletKarma = {
@@ -56,6 +57,7 @@ export function UserProfileView({
   onClose,
   onMessage
 }: UserProfileViewProps) {
+  const { openMessages } = useMessaging()
   const [profile, setProfile] = useState<UserProfile | null>(null)
   const [karma, setKarma] = useState<WalletKarma | null>(null)
   const [topProjects, setTopProjects] = useState<ProjectKarma[]>([])
@@ -239,9 +241,13 @@ export function UserProfileView({
   }, [walletAddress, projectId])
   
   // Handle message button click
-  const handleMessage = () => {
+  const handleMessage = async () => {
     if (canMessage) {
-      onMessage(walletAddress)
+      await openMessages(walletAddress)
+      onClose() // Close profile view
+      if (onMessage) {
+        onMessage(walletAddress)
+      }
     } else {
       toast.error(messageReason || 'Cannot message this user')
     }

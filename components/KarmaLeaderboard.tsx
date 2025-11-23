@@ -3,6 +3,9 @@
 import { useEffect, useState } from 'react'
 import { useWallet } from '@solana/wallet-adapter-react'
 import { supabase } from '@/lib/supabase'
+import { IconButton, Tooltip } from '@mui/material'
+import MessageIcon from '@mui/icons-material/Message'
+import { useMessaging } from '@/lib/MessagingContext'
 
 interface WalletKarma {
   wallet_address: string
@@ -16,6 +19,7 @@ export function KarmaLeaderboard({ projectId }: { projectId: string }) {
   const [leaders, setLeaders] = useState<WalletKarma[]>([])
   const [loading, setLoading] = useState(true)
   const currentWallet = useWallet().publicKey?.toString()
+  const { openMessages } = useMessaging()
   
   useEffect(() => {
     async function fetchLeaders() {
@@ -126,11 +130,29 @@ export function KarmaLeaderboard({ projectId }: { projectId: string }) {
                 </div>
               </div>
               
-              <div className="text-right">
-                <div className="font-bold text-purple-600">
-                  {leader.total_karma_points.toFixed(0)}
+              <div className="flex items-center gap-2">
+                <div className="text-right">
+                  <div className="font-bold text-purple-600">
+                    {leader.total_karma_points.toFixed(0)}
+                  </div>
+                  <div className="text-xs text-gray-500">karma</div>
                 </div>
-                <div className="text-xs text-gray-500">karma</div>
+                
+                {/* Message Button (don't show for own wallet) */}
+                {leader.wallet_address !== currentWallet && currentWallet && (
+                  <Tooltip title="Send message">
+                    <IconButton
+                      size="small"
+                      onClick={() => openMessages(leader.wallet_address)}
+                      sx={{
+                        color: '#7C4DFF',
+                        '&:hover': { bgcolor: 'rgba(124, 77, 255, 0.1)' }
+                      }}
+                    >
+                      <MessageIcon sx={{ fontSize: 18 }} />
+                    </IconButton>
+                  </Tooltip>
+                )}
               </div>
             </div>
           ))}

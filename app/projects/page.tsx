@@ -1,9 +1,8 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import Link from 'next/link'
 import { Card } from '@/components/ui/Card'
-import { WalletButton } from '@/components/WalletButton'
+import { AppHeader } from '@/components/AppHeader'
 import { supabase } from '@/lib/supabase'
 import { Database } from '@/types/database'
 import VerifiedIcon from '@mui/icons-material/Verified'
@@ -119,19 +118,7 @@ export default function ProjectsPage() {
 
   return (
     <div className="min-h-screen bg-page-bg">
-      {/* Sticky Header */}
-      <header className="sticky top-0 bg-page-bg/95 backdrop-blur-sm border-b border-border-subtle z-50">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
-          <div className="flex items-center justify-between">
-            <Link href="/">
-              <h1 className="font-display text-2xl font-bold text-text-primary cursor-pointer hover:text-accent-primary transition-colors">
-                Align
-              </h1>
-            </Link>
-            <WalletButton />
-          </div>
-        </div>
-      </header>
+      <AppHeader />
 
       {/* Main Content */}
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">

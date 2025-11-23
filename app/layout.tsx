@@ -3,6 +3,7 @@ import { Space_Grotesk, Inter } from 'next/font/google'
 import './globals.css'
 import ThemeProvider from '@/components/ThemeProvider'
 import { WalletConfigProvider } from '@/lib/wallet-config'
+import { LayoutClient } from '@/components/LayoutClient'
 import { Toaster } from 'react-hot-toast'
 
 const spaceGrotesk = Space_Grotesk({ subsets: ['latin'], variable: '--font-display' })
@@ -28,7 +29,9 @@ export default function RootLayout({
       <body className={`${spaceGrotesk.variable} ${inter.variable} font-body`}>
         <ThemeProvider>
           <WalletConfigProvider>
-            {children}
+            <LayoutClient>
+              {children}
+            </LayoutClient>
           </WalletConfigProvider>
         </ThemeProvider>
         <Toaster 

@@ -9,6 +9,9 @@ import { Button } from '@/components/ui/Button'
 import SendIcon from '@mui/icons-material/Send'
 import CircularProgress from '@mui/material/CircularProgress'
 import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown'
+import MessageIcon from '@mui/icons-material/Message'
+import { IconButton, Tooltip } from '@mui/material'
+import { useMessaging } from '@/lib/MessagingContext'
 
 interface Message {
   id: string
@@ -27,12 +30,14 @@ interface ProjectChatProps {
 
 export function ProjectChat({ projectId, tokenMint }: ProjectChatProps) {
   const { publicKey } = useWallet()
+  const { openMessages } = useMessaging()
   const [messages, setMessages] = useState<Message[]>([])
   const [newMessage, setNewMessage] = useState('')
   const [loading, setLoading] = useState(false)
   const [isLoadingMessages, setIsLoadingMessages] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [showNewMessagesIndicator, setShowNewMessagesIndicator] = useState(false)
+  const [hoveredMessageId, setHoveredMessageId] = useState<string | null>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const messagesContainerRef = useRef<HTMLDivElement>(null)
 
@@ -247,6 +252,7 @@ export function ProjectChat({ projectId, tokenMint }: ProjectChatProps) {
             messages.map((msg) => {
               const tierDisplay = getTierDisplay(msg.holding_tier)
               const tierStyles = getTierStyles(msg.holding_tier)
+              const isOwnMessage = msg.wallet_address === publicKey?.toBase58()
               
               return (
                 <div
@@ -254,6 +260,8 @@ export function ProjectChat({ projectId, tokenMint }: ProjectChatProps) {
                   className={`p-3 rounded-lg ${tierStyles.border} ${tierStyles.bg} ${
                     msg.pending ? 'opacity-60' : ''
                   }`}
+                  onMouseEnter={() => !isOwnMessage && setHoveredMessageId(msg.id)}
+                  onMouseLeave={() => setHoveredMessageId(null)}
                 >
                   {/* Username and timestamp row */}
                   <div className="flex items-center justify-between mb-1">
@@ -262,6 +270,24 @@ export function ProjectChat({ projectId, tokenMint }: ProjectChatProps) {
                       <span className="text-xs md:text-sm">{formatAddress(msg.wallet_address)}</span>
                       <span className="text-xs">•</span>
                       <span className="text-xs">{msg.token_percentage.toFixed(3)}%</span>
+                      
+                      {/* Message Icon (show on hover, not for own messages) */}
+                      {!isOwnMessage && hoveredMessageId === msg.id && (
+                        <Tooltip title="Send message">
+                          <IconButton
+                            size="small"
+                            onClick={() => openMessages(msg.wallet_address)}
+                            sx={{
+                              p: 0.5,
+                              ml: 0.5,
+                              color: '#7C4DFF',
+                              '&:hover': { bgcolor: 'rgba(124, 77, 255, 0.1)' }
+                            }}
+                          >
+                            <MessageIcon sx={{ fontSize: 14 }} />
+                          </IconButton>
+                        </Tooltip>
+                      )}
                     </div>
                     <div className="flex items-center gap-1">
                       {msg.pending && (

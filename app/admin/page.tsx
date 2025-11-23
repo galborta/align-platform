@@ -1,10 +1,9 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import Link from 'next/link'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
-import { WalletButton } from '@/components/WalletButton'
+import { AppHeader } from '@/components/AppHeader'
 import { supabase } from '@/lib/supabase'
 import { Database } from '@/types/database'
 import { ADMIN_WALLET, isAdminWallet } from '@/lib/admin-auth'
@@ -337,18 +336,7 @@ export default function AdminPage() {
   if (!isAdmin && publicKey) {
     return (
       <div className="min-h-screen bg-page-bg">
-        <header className="sticky top-0 bg-page-bg/95 backdrop-blur-sm border-b border-border-subtle z-50">
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
-            <div className="flex items-center justify-between">
-              <Link href="/">
-                <h1 className="font-display text-2xl font-bold text-text-primary cursor-pointer hover:text-accent-primary transition-colors">
-                  Align
-                </h1>
-              </Link>
-              <WalletButton />
-            </div>
-          </div>
-        </header>
+        <AppHeader />
         <div className="min-h-[calc(100vh-80px)] flex items-center justify-center px-4">
           <Card className="max-w-md w-full">
             <CardContent className="text-center py-12">
@@ -382,18 +370,7 @@ export default function AdminPage() {
   if (!publicKey) {
     return (
       <div className="min-h-screen bg-page-bg">
-        <header className="sticky top-0 bg-page-bg/95 backdrop-blur-sm border-b border-border-subtle z-50">
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
-            <div className="flex items-center justify-between">
-              <Link href="/">
-                <h1 className="font-display text-2xl font-bold text-text-primary cursor-pointer hover:text-accent-primary transition-colors">
-                  Align
-                </h1>
-              </Link>
-              <WalletButton />
-            </div>
-          </div>
-        </header>
+        <AppHeader />
         <div className="min-h-[calc(100vh-80px)] flex items-center justify-center px-4">
           <Card className="max-w-md w-full">
             <CardContent className="text-center py-12">
@@ -420,18 +397,7 @@ export default function AdminPage() {
   if (isAdmin && !isVerified) {
     return (
       <div className="min-h-screen bg-page-bg">
-        <header className="sticky top-0 bg-page-bg/95 backdrop-blur-sm border-b border-border-subtle z-50">
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
-            <div className="flex items-center justify-between">
-              <Link href="/">
-                <h1 className="font-display text-2xl font-bold text-text-primary cursor-pointer hover:text-accent-primary transition-colors">
-                  Align
-                </h1>
-              </Link>
-              <WalletButton />
-            </div>
-          </div>
-        </header>
+        <AppHeader />
         <div className="min-h-[calc(100vh-80px)] flex items-center justify-center px-4">
           <Card className="max-w-md w-full">
             <CardContent className="text-center py-12">
@@ -464,18 +430,7 @@ export default function AdminPage() {
   if (loading) {
     return (
       <div className="min-h-screen bg-page-bg">
-        <header className="sticky top-0 bg-page-bg/95 backdrop-blur-sm border-b border-border-subtle z-50">
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
-            <div className="flex items-center justify-between">
-              <Link href="/">
-                <h1 className="font-display text-2xl font-bold text-text-primary cursor-pointer hover:text-accent-primary transition-colors">
-                  Align
-                </h1>
-              </Link>
-              <WalletButton />
-            </div>
-          </div>
-        </header>
+        <AppHeader />
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12 text-center">
           <p className="font-body text-text-secondary">Loading pending items...</p>
         </div>
@@ -485,24 +440,7 @@ export default function AdminPage() {
 
   return (
     <div className="min-h-screen bg-page-bg">
-      {/* Header */}
-      <header className="sticky top-0 bg-page-bg/95 backdrop-blur-sm border-b border-border-subtle z-50">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
-          <div className="flex items-center justify-between">
-            <Link href="/">
-              <h1 className="font-display text-2xl font-bold text-text-primary cursor-pointer hover:text-accent-primary transition-colors">
-                Align
-              </h1>
-            </Link>
-            <div className="flex items-center gap-4">
-              <Link href="/projects">
-                <Button variant="ghost">View Projects</Button>
-              </Link>
-              <WalletButton />
-            </div>
-          </div>
-        </div>
-      </header>
+      <AppHeader />
 
       {/* Main Content */}
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
