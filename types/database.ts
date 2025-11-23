@@ -412,6 +412,142 @@ export interface Database {
           created_at?: string
         }
       }
+      user_profiles: {
+        Row: {
+          id: string
+          wallet_address: string
+          display_name: string | null
+          bio: string | null
+          avatar_url: string | null
+          privacy_level: 'public' | 'holders_only' | 'private'
+          allow_messages_from: 'everyone' | 'holders_only' | 'nobody'
+          last_seen_at: string | null
+          is_online: boolean
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          wallet_address: string
+          display_name?: string | null
+          bio?: string | null
+          avatar_url?: string | null
+          privacy_level?: 'public' | 'holders_only' | 'private'
+          allow_messages_from?: 'everyone' | 'holders_only' | 'nobody'
+          last_seen_at?: string | null
+          is_online?: boolean
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          wallet_address?: string
+          display_name?: string | null
+          bio?: string | null
+          avatar_url?: string | null
+          privacy_level?: 'public' | 'holders_only' | 'private'
+          allow_messages_from?: 'everyone' | 'holders_only' | 'nobody'
+          last_seen_at?: string | null
+          is_online?: boolean
+          created_at?: string
+          updated_at?: string
+        }
+      }
+      conversations: {
+        Row: {
+          id: string
+          participant_1: string
+          participant_2: string
+          last_message_at: string
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          participant_1: string
+          participant_2: string
+          last_message_at?: string
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          participant_1?: string
+          participant_2?: string
+          last_message_at?: string
+          created_at?: string
+          updated_at?: string
+        }
+      }
+      messages: {
+        Row: {
+          id: string
+          conversation_id: string
+          sender_wallet: string
+          content: string
+          is_read: boolean
+          read_at: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          conversation_id: string
+          sender_wallet: string
+          content: string
+          is_read?: boolean
+          read_at?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          conversation_id?: string
+          sender_wallet?: string
+          content?: string
+          is_read?: boolean
+          read_at?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+      }
+      blocked_users: {
+        Row: {
+          id: string
+          blocker_wallet: string
+          blocked_wallet: string
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          blocker_wallet: string
+          blocked_wallet: string
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          blocker_wallet?: string
+          blocked_wallet?: string
+          created_at?: string
+        }
+      }
+      typing_indicators: {
+        Row: {
+          conversation_id: string
+          wallet_address: string
+          last_typed_at: string
+        }
+        Insert: {
+          conversation_id: string
+          wallet_address: string
+          last_typed_at?: string
+        }
+        Update: {
+          conversation_id?: string
+          wallet_address?: string
+          last_typed_at?: string
+        }
+      }
     }
     Views: {
       [_ in never]: never

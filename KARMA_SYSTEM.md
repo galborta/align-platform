@@ -501,3 +501,4 @@ The karma system creates a self-regulating community where:
 **Status**: ✅ Core logic complete  
 **Next**: Implement in API endpoints (`/api/assets/submit`, `/api/assets/vote`)
 
+

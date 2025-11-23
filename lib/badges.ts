@@ -53,3 +53,4 @@ export function calculateBadges(project: Project): Badge[] {
 
 
 
+

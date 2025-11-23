@@ -37,3 +37,4 @@ GRANT EXECUTE ON FUNCTION add_karma(TEXT, UUID, NUMERIC) TO anon;
 -- Add comment for documentation
 COMMENT ON FUNCTION add_karma IS 'Adds or updates karma points for a wallet in a specific project. Handles upsert logic automatically.';
 
+

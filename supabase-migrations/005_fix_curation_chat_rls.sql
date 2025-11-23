@@ -9,3 +9,4 @@ CREATE POLICY "Anyone can post to curation chat" ON curation_chat_messages
 CREATE POLICY "Anyone can insert pending assets" ON pending_assets
   FOR INSERT WITH CHECK (true);
 
+

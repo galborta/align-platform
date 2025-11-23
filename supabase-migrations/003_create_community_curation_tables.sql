@@ -123,3 +123,4 @@ ALTER PUBLICATION supabase_realtime ADD TABLE asset_votes;
 ALTER PUBLICATION supabase_realtime ADD TABLE wallet_karma;
 ALTER PUBLICATION supabase_realtime ADD TABLE curation_chat_messages;
 
+
