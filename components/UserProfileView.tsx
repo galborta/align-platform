@@ -16,15 +16,18 @@ import {
   Close as CloseIcon,
   Message as MessageIcon,
   Block as BlockIcon,
-  Star as StarIcon
+  Star as StarIcon,
+  CheckCircle as CheckCircleIcon
 } from '@mui/icons-material'
 import { supabase } from '@/lib/supabase'
 import { Database } from '@/types/database'
 import { getTier } from '@/lib/karma'
-import { canMessageUser } from '@/lib/messaging'
+import { canMessageUser, blockUser, unblockUser, isBlocked } from '@/lib/messaging'
 import { getWalletTokenData } from '@/lib/token-balance'
+import { canViewProfile, canSeeOnlineStatus, getPrivacyLevelInfo } from '@/lib/privacy'
 import { toast } from 'react-hot-toast'
 import { useMessaging } from '@/lib/MessagingContext'
+import { BlockUserModal } from '@/components/BlockUserModal'
 
 type UserProfile = Database['public']['Tables']['user_profiles']['Row']
 type WalletKarma = {
@@ -71,6 +74,18 @@ export function UserProfileView({
   const [unreadCount, setUnreadCount] = useState(0)
   const [lastMessage, setLastMessage] = useState<{ content: string; timestamp: string } | null>(null)
   const [openingMessage, setOpeningMessage] = useState(false)
+  const [showBlockModal, setShowBlockModal] = useState(false)
+  const [blockStatus, setBlockStatus] = useState<{
+    isBlocked: boolean
+    blockedBy?: string
+    blockedUser?: string
+  }>({ isBlocked: false })
+  const [privacyCheck, setPrivacyCheck] = useState<{
+    canView: boolean
+    reason?: string
+    hiddenSections?: string[]
+  }>({ canView: true })
+  const [canSeeStatus, setCanSeeStatus] = useState(true)
   
   // Truncate wallet address
   const truncateWallet = (address: string) => {
@@ -118,6 +133,15 @@ export function UserProfileView({
           .maybeSingle()
         
         setProfile(profileData)
+        
+        // 1a. Check privacy permissions if profile exists
+        if (profileData) {
+          const viewCheck = await canViewProfile(currentUserWallet, profileData)
+          setPrivacyCheck(viewCheck)
+          
+          const statusCheck = await canSeeOnlineStatus(currentUserWallet, profileData)
+          setCanSeeStatus(statusCheck)
+        }
         
         // 2. Fetch karma for specific project (if provided)
         if (projectId) {
@@ -244,6 +268,18 @@ export function UserProfileView({
     fetchTokenBalance()
   }, [walletAddress, projectId])
   
+  // Check block status
+  useEffect(() => {
+    const checkBlockStatus = async () => {
+      if (!currentUserWallet) return
+      
+      const status = await isBlocked(currentUserWallet, walletAddress)
+      setBlockStatus(status)
+    }
+    
+    checkBlockStatus()
+  }, [currentUserWallet, walletAddress])
+
   // Check for existing conversation
   useEffect(() => {
     const checkConversation = async () => {
@@ -336,30 +372,42 @@ export function UserProfileView({
   }
   
   // Handle block button click
-  const handleBlock = async () => {
+  const handleBlock = async (deleteHistory: boolean, reason?: string) => {
     if (!currentUserWallet) {
       toast.error('Please connect your wallet to block users')
       return
     }
     
-    try {
-      const { error } = await supabase
-        .from('blocked_users')
-        .insert({
-          blocker_wallet: currentUserWallet,
-          blocked_wallet: walletAddress
-        })
-      
-      if (error) {
-        console.error('Block error:', error)
-        toast.error('Failed to block user')
-      } else {
-        toast.success('User blocked')
-        onClose() // Close profile view after blocking
-      }
-    } catch (error) {
-      console.error('Error blocking user:', error)
-      toast.error('Failed to block user')
+    const result = await blockUser(currentUserWallet, walletAddress, reason, deleteHistory)
+    
+    if (result.success) {
+      toast.success('User blocked')
+      setBlockStatus({
+        isBlocked: true,
+        blockedBy: currentUserWallet,
+        blockedUser: walletAddress
+      })
+      setShowBlockModal(false)
+      onClose() // Close profile view after blocking
+    } else {
+      toast.error(result.error || 'Failed to block user')
+    }
+  }
+
+  // Handle unblock button click
+  const handleUnblock = async () => {
+    if (!currentUserWallet) {
+      toast.error('Please connect your wallet')
+      return
+    }
+    
+    const result = await unblockUser(currentUserWallet, walletAddress)
+    
+    if (result.success) {
+      toast.success('User unblocked')
+      setBlockStatus({ isBlocked: false })
+    } else {
+      toast.error(result.error || 'Failed to unblock user')
     }
   }
   
@@ -376,6 +424,100 @@ export function UserProfileView({
   
   const online = profile ? isOnline(profile.last_seen_at) : false
   const displayName = profile?.display_name || truncateWallet(walletAddress)
+  const youBlockedThem = blockStatus.isBlocked && blockStatus.blockedBy === currentUserWallet
+  const theyBlockedYou = blockStatus.isBlocked && blockStatus.blockedBy === walletAddress
+  const privacyLevel = profile?.privacy_level || 'public'
+  const privacyInfo = getPrivacyLevelInfo(privacyLevel as any)
+  
+  // Restricted view for holder-only profiles when viewer can't access
+  if (!privacyCheck.canView && privacyCheck.hiddenSections) {
+    return (
+      <Card sx={{ maxWidth: 600, mx: 'auto', mt: 4 }}>
+        <CardContent className="p-6">
+          {/* Header with Close Button */}
+          <div className="flex justify-between items-start mb-6">
+            <div className="flex items-center gap-4 flex-1">
+              <Avatar
+                sx={{ 
+                  width: 80, 
+                  height: 80,
+                  bgcolor: '#7C4DFF',
+                  fontSize: '2rem'
+                }}
+              >
+                {displayName[0]?.toUpperCase()}
+              </Avatar>
+              
+              <div className="flex-1">
+                <h2 className="text-2xl font-bold text-gray-900">
+                  {displayName}
+                </h2>
+                <p className="text-sm text-gray-500 font-mono mt-1">
+                  {truncateWallet(walletAddress)}
+                </p>
+                <Chip 
+                  label="Holder-Only Profile" 
+                  size="small" 
+                  icon={<span>{privacyInfo.icon}</span>}
+                  sx={{ mt: 1, bgcolor: '#FFC857', color: '#000' }}
+                />
+              </div>
+            </div>
+            
+            <IconButton onClick={onClose} size="small">
+              <CloseIcon />
+            </IconButton>
+          </div>
+          
+          {/* Restricted Message */}
+          <div className="text-center py-12">
+            <div className="text-6xl mb-4">{privacyInfo.icon}</div>
+            <Typography variant="h6" fontWeight={600} sx={{ mb: 2 }}>
+              This is a Holder-Only Profile
+            </Typography>
+            <Typography variant="body2" color="text.secondary" sx={{ mb: 3, maxWidth: 400, mx: 'auto' }}>
+              {privacyCheck.reason || 'Hold tokens in a common project to view full profile details.'}
+            </Typography>
+            {!currentUserWallet && (
+              <Typography variant="caption" color="text.secondary">
+                Connect your wallet to see if you have access
+              </Typography>
+            )}
+          </div>
+        </CardContent>
+      </Card>
+    )
+  }
+  
+  // Fully restricted view for private profiles
+  if (!privacyCheck.canView && !privacyCheck.hiddenSections) {
+    return (
+      <Card sx={{ maxWidth: 600, mx: 'auto', mt: 4 }}>
+        <CardContent className="p-6">
+          <div className="flex justify-between items-start mb-6">
+            <div className="flex-1">
+              <h2 className="text-2xl font-bold text-gray-900">
+                Private Profile
+              </h2>
+            </div>
+            <IconButton onClick={onClose} size="small">
+              <CloseIcon />
+            </IconButton>
+          </div>
+          
+          <div className="text-center py-12">
+            <div className="text-6xl mb-4">🔐</div>
+            <Typography variant="h6" fontWeight={600} sx={{ mb: 2 }}>
+              This Profile is Private
+            </Typography>
+            <Typography variant="body2" color="text.secondary">
+              {privacyCheck.reason || 'This user has set their profile to private.'}
+            </Typography>
+          </div>
+        </CardContent>
+      </Card>
+    )
+  }
   
   return (
     <Card sx={{ maxWidth: 600, mx: 'auto', mt: 4 }}>
@@ -397,17 +539,19 @@ export function UserProfileView({
                 {displayName[0]?.toUpperCase()}
               </Avatar>
               
-              {/* Online Indicator */}
-              <Tooltip title={online ? 'Online' : 'Offline'}>
-                <div
-                  className={`absolute bottom-1 right-1 w-5 h-5 rounded-full border-4 border-white transition-colors duration-300 ${
-                    online ? 'bg-green-500' : 'bg-gray-400'
-                  }`}
-                  style={{
-                    boxShadow: online ? '0 0 8px rgba(34, 197, 94, 0.6)' : 'none'
-                  }}
-                />
-              </Tooltip>
+              {/* Online Indicator - only show if allowed */}
+              {canSeeStatus && (
+                <Tooltip title={online ? 'Online' : 'Offline'}>
+                  <div
+                    className={`absolute bottom-1 right-1 w-5 h-5 rounded-full border-4 border-white transition-colors duration-300 ${
+                      online ? 'bg-green-500' : 'bg-gray-400'
+                    }`}
+                    style={{
+                      boxShadow: online ? '0 0 8px rgba(34, 197, 94, 0.6)' : 'none'
+                    }}
+                  />
+                </Tooltip>
+              )}
             </div>
             
             {/* Name and Wallet */}
@@ -418,13 +562,30 @@ export function UserProfileView({
               <p className="text-sm text-gray-500 font-mono mt-1">
                 {truncateWallet(walletAddress)}
               </p>
-              {profile?.privacy_level === 'private' && (
-                <Chip 
-                  label="Private Profile" 
-                  size="small" 
-                  sx={{ mt: 1 }}
-                />
-              )}
+              <div className="flex gap-2 mt-1">
+                {profile?.privacy_level === 'private' && (
+                  <Chip 
+                    label="Private Profile" 
+                    size="small"
+                  />
+                )}
+                {youBlockedThem && (
+                  <Chip 
+                    label="Blocked" 
+                    size="small"
+                    color="error"
+                    icon={<BlockIcon />}
+                  />
+                )}
+                {theyBlockedYou && (
+                  <Chip 
+                    label="Blocked You" 
+                    size="small"
+                    sx={{ bgcolor: '#DC2626', color: 'white' }}
+                    icon={<BlockIcon sx={{ color: 'white !important' }} />}
+                  />
+                )}
+              </div>
             </div>
           </div>
           
@@ -513,7 +674,15 @@ export function UserProfileView({
         <div className="mb-6">
           {/* Primary Message CTA */}
           <Tooltip 
-            title={!canMessage ? messageReason : ''}
+            title={
+              blockStatus.isBlocked 
+                ? theyBlockedYou 
+                  ? 'This user has blocked you' 
+                  : 'You have blocked this user'
+                : !canMessage 
+                ? messageReason 
+                : ''
+            }
             arrow
             placement="top"
           >
@@ -522,7 +691,7 @@ export function UserProfileView({
                 variant="contained"
                 startIcon={openingMessage ? <CircularProgress size={20} sx={{ color: 'white' }} /> : <MessageIcon />}
                 onClick={handleMessage}
-                disabled={!canMessage || checkingMessage || openingMessage}
+                disabled={blockStatus.isBlocked || !canMessage || checkingMessage || openingMessage}
                 fullWidth
                 sx={{
                   bgcolor: '#7C4DFF',
@@ -544,6 +713,8 @@ export function UserProfileView({
                   'Checking permissions...'
                 ) : openingMessage ? (
                   'Opening...'
+                ) : blockStatus.isBlocked ? (
+                  theyBlockedYou ? 'User blocked you' : 'You blocked this user'
                 ) : conversationExists ? (
                   unreadCount > 0 ? `Continue conversation (${unreadCount} unread)` : 'Continue conversation'
                 ) : (
@@ -569,23 +740,41 @@ export function UserProfileView({
           
           {/* Secondary Actions */}
           <div className="flex gap-2">
-            <Button
-              variant="outlined"
-              startIcon={<BlockIcon />}
-              onClick={handleBlock}
-              fullWidth
-              sx={{
-                borderColor: '#DC2626',
-                color: '#DC2626',
-                '&:hover': {
-                  borderColor: '#B91C1C',
-                  bgcolor: 'rgba(220, 38, 38, 0.04)'
-                },
-                textTransform: 'none'
-              }}
-            >
-              Block
-            </Button>
+            {youBlockedThem ? (
+              <Button
+                variant="contained"
+                startIcon={<CheckCircleIcon />}
+                onClick={handleUnblock}
+                fullWidth
+                sx={{
+                  bgcolor: '#36C170',
+                  '&:hover': {
+                    bgcolor: '#2DA760'
+                  },
+                  textTransform: 'none'
+                }}
+              >
+                Unblock User
+              </Button>
+            ) : !theyBlockedYou ? (
+              <Button
+                variant="outlined"
+                startIcon={<BlockIcon />}
+                onClick={() => setShowBlockModal(true)}
+                fullWidth
+                sx={{
+                  borderColor: '#DC2626',
+                  color: '#DC2626',
+                  '&:hover': {
+                    borderColor: '#B91C1C',
+                    bgcolor: 'rgba(220, 38, 38, 0.04)'
+                  },
+                  textTransform: 'none'
+                }}
+              >
+                Block
+              </Button>
+            ) : null}
           </div>
         </div>
         
@@ -632,6 +821,15 @@ export function UserProfileView({
           </div>
         )}
       </CardContent>
+
+      {/* Block User Modal */}
+      <BlockUserModal
+        open={showBlockModal}
+        onClose={() => setShowBlockModal(false)}
+        onConfirm={handleBlock}
+        userName={displayName}
+        walletAddress={walletAddress}
+      />
     </Card>
   )
 }

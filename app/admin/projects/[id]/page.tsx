@@ -39,6 +39,7 @@ import LockIcon from '@mui/icons-material/Lock'
 import ContentCopyIcon from '@mui/icons-material/ContentCopy'
 import { formatDistanceToNow } from 'date-fns'
 import { toast } from 'react-hot-toast'
+import { WalletAddressWithMessage } from '@/components/WalletAddressWithMessage'
 
 type Project = Database['public']['Tables']['projects']['Row']
 type SocialAsset = Database['public']['Tables']['social_assets']['Row']
@@ -5094,13 +5095,12 @@ export default function AdminProjectPage() {
                           <div key={wallet.id} className="p-4 bg-white rounded-lg border border-border-subtle">
                             <div className="flex items-center justify-between gap-4">
                               <div>
-                                <p className="font-medium">{wallet.label || 'Team Wallet'}</p>
-                                <p className="font-mono text-xs text-text-muted flex items-center gap-2">
-                                  {wallet.wallet_address}
-                                  <button onClick={() => copyToClipboard(wallet.wallet_address)}>
-                                    <ContentCopyIcon sx={{ fontSize: 14 }} />
-                                  </button>
-                                </p>
+                                <p className="font-medium mb-2">{wallet.label || 'Team Wallet'}</p>
+                                <WalletAddressWithMessage 
+                                  walletAddress={wallet.wallet_address}
+                                  showFullAddress
+                                  projectId={params.id as string}
+                                />
                               </div>
                               <a
                                 href={`https://solscan.io/account/${wallet.wallet_address}`}

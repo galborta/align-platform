@@ -20,6 +20,7 @@ import InstagramIcon from '@mui/icons-material/Instagram'
 import YouTubeIcon from '@mui/icons-material/YouTube'
 import OpenInNewIcon from '@mui/icons-material/OpenInNew'
 import XIcon from '@mui/icons-material/X'
+import { WalletAddressWithMessage } from '@/components/WalletAddressWithMessage'
 
 type Project = Database['public']['Tables']['projects']['Row']
 type SocialAsset = Database['public']['Tables']['social_assets']['Row']
@@ -570,14 +571,10 @@ export default function ProjectDetailPage() {
                           <span className="font-body text-xs font-semibold text-accent-primary flex-shrink-0">
                             #{index + 1}
                           </span>
-                          <a
-                            href={`https://solscan.io/account/${holder.owner}`}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="font-body text-xs text-text-primary font-mono hover:text-accent-primary truncate"
-                          >
-                            {shortenAddress(holder.owner)}
-                          </a>
+                          <WalletAddressWithMessage 
+                            walletAddress={holder.owner}
+                            projectId={params.id as string}
+                          />
                         </div>
                         <span className="font-body text-xs font-medium text-text-secondary ml-2 flex-shrink-0">
                           {holder.percentage ? `${holder.percentage.toFixed(2)}%` : 'N/A'}
@@ -608,12 +605,15 @@ export default function ProjectDetailPage() {
                         key={wallet.id}
                         className="p-3 bg-white rounded-lg border border-border-subtle"
                       >
-                        <p className="font-body font-medium text-text-primary text-sm mb-1">
+                        <p className="font-body font-medium text-text-primary text-sm mb-2">
                           {wallet.label || 'Team Wallet'}
                         </p>
-                        <p className="font-body text-xs text-text-secondary font-mono mb-2">
-                          {shortenAddress(wallet.wallet_address)}
-                        </p>
+                        <div className="mb-2">
+                          <WalletAddressWithMessage 
+                            walletAddress={wallet.wallet_address}
+                            projectId={params.id as string}
+                          />
+                        </div>
                         <a
                           href={`https://solscan.io/account/${wallet.wallet_address}`}
                           target="_blank"

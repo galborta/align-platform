@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '@/lib/supabase'
 import { Database } from '@/types/database'
+import { canSeeOnlineStatus } from '@/lib/privacy'
 import { formatDistanceToNow } from 'date-fns'
 import {
   List,
@@ -30,82 +31,150 @@ interface ConversationWithDetails extends Conversation {
   otherParticipant?: UserProfile
   unreadCount: number
   isUnread: boolean
+  canSeeStatus: boolean
 }
 
 interface ConversationListProps {
   currentWallet: string
   onSelectConversation: (conversationId: string) => void
+  filter?: 'all' | 'unread'
 }
 
 export function ConversationList({ 
   currentWallet, 
-  onSelectConversation 
+  onSelectConversation,
+  filter = 'all'
 }: ConversationListProps) {
   const [conversations, setConversations] = useState<ConversationWithDetails[]>([])
   const [loading, setLoading] = useState(true)
+  const [loadingMore, setLoadingMore] = useState(false)
+  const [hasMore, setHasMore] = useState(true)
   const [hoveredConvId, setHoveredConvId] = useState<string | null>(null)
+  
+  const CONVERSATIONS_PER_PAGE = 20
 
-  // Load conversations with all details
-  const loadConversations = useCallback(async () => {
+  // Load conversations with pagination and optimization
+  const loadConversations = useCallback(async (loadMore = false) => {
     if (!currentWallet) return
 
+    if (loadMore) {
+      setLoadingMore(true)
+    } else {
+      setLoading(true)
+    }
+
     try {
-      // 1. Fetch all conversations for current user
+      const offset = loadMore ? conversations.length : 0
+      
+      // 1. Fetch conversations with limit (only needed columns)
+      // Only show conversations that have at least one message and are not archived
       const { data: convData, error: convError } = await supabase
         .from('conversations')
-        .select('*')
+        .select('id, participant_1, participant_2, last_message_at, created_at, updated_at, archived_by_participant_1, archived_by_participant_2')
         .or(`participant_1.eq.${currentWallet},participant_2.eq.${currentWallet}`)
+        .not('last_message_at', 'is', null)
         .order('last_message_at', { ascending: false })
+        .range(offset, offset + CONVERSATIONS_PER_PAGE - 1)
+      
+      // Filter out archived conversations client-side (more reliable than complex OR query)
+      const filteredConvData = convData?.filter(conv => {
+        const isParticipant1 = conv.participant_1 === currentWallet
+        return isParticipant1 
+          ? !conv.archived_by_participant_1 
+          : !conv.archived_by_participant_2
+      }) || []
 
       if (convError) {
         console.error('Error fetching conversations:', convError)
         return
       }
 
-      if (!convData || convData.length === 0) {
-        setConversations([])
+      if (!filteredConvData || filteredConvData.length === 0) {
+        if (!loadMore) {
+          setConversations([])
+        }
+        setHasMore(false)
         return
       }
 
-      // 2. Fetch details for each conversation
+      // Check if there are more conversations
+      setHasMore(filteredConvData.length === CONVERSATIONS_PER_PAGE)
+
+      // Get all unique participant wallets for batch fetching
+      const participantWallets = new Set<string>()
+      filteredConvData.forEach(conv => {
+        const otherWallet = 
+          conv.participant_1 === currentWallet 
+            ? conv.participant_2 
+            : conv.participant_1
+        participantWallets.add(otherWallet)
+      })
+
+      // 2. Batch fetch all participant profiles
+      const { data: profilesData } = await supabase
+        .from('user_profiles')
+        .select('wallet_address, display_name, avatar_url, is_online, last_seen_at, privacy_level')
+        .in('wallet_address', Array.from(participantWallets))
+
+      const profileMap = new Map(
+        profilesData?.map(p => [p.wallet_address, p]) || []
+      )
+
+      // 3. Batch fetch last messages for all conversations
+      const conversationIds = filteredConvData.map(c => c.id)
+      const { data: messagesData } = await supabase
+        .from('messages')
+        .select('id, conversation_id, content, sender_wallet, created_at')
+        .in('conversation_id', conversationIds)
+        .order('created_at', { ascending: false })
+
+      // Group messages by conversation (take only the latest)
+      const lastMessageMap = new Map<string, any>()
+      messagesData?.forEach(msg => {
+        if (!lastMessageMap.has(msg.conversation_id)) {
+          lastMessageMap.set(msg.conversation_id, msg)
+        }
+      })
+
+      // 4. Batch count unread messages
+      const { data: unreadData } = await supabase
+        .from('messages')
+        .select('conversation_id, id')
+        .in('conversation_id', conversationIds)
+        .neq('sender_wallet', currentWallet)
+        .eq('is_read', false)
+
+      const unreadCountMap = new Map<string, number>()
+      unreadData?.forEach(msg => {
+        unreadCountMap.set(
+          msg.conversation_id,
+          (unreadCountMap.get(msg.conversation_id) || 0) + 1
+        )
+      })
+
+      // 5. Build conversations with details
       const conversationsWithDetails = await Promise.all(
-        convData.map(async (conv) => {
-          // Get other participant's wallet address
+        filteredConvData.map(async (conv) => {
           const otherWallet = 
             conv.participant_1 === currentWallet 
               ? conv.participant_2 
               : conv.participant_1
 
-          // Fetch other participant's profile
-          const { data: profileData } = await supabase
-            .from('user_profiles')
-            .select('*')
-            .eq('wallet_address', otherWallet)
-            .maybeSingle()
+          const profileData = profileMap.get(otherWallet)
+          const unreadCount = unreadCountMap.get(conv.id) || 0
 
-          // Fetch last message
-          const { data: lastMessageData } = await supabase
-            .from('messages')
-            .select('*')
-            .eq('conversation_id', conv.id)
-            .order('created_at', { ascending: false })
-            .limit(1)
-            .maybeSingle()
-
-          // Count unread messages (messages from other person)
-          const { count: unreadCount } = await supabase
-            .from('messages')
-            .select('id', { count: 'exact', head: true })
-            .eq('conversation_id', conv.id)
-            .eq('sender_wallet', otherWallet)
-            .eq('is_read', false)
+          // Check if current user can see other user's online status
+          const statusCheck = profileData 
+            ? await canSeeOnlineStatus(currentWallet, profileData)
+            : false
 
           return {
             ...conv,
-            lastMessage: lastMessageData || undefined,
+            lastMessage: lastMessageMap.get(conv.id) || undefined,
             otherParticipant: profileData || undefined,
-            unreadCount: unreadCount || 0,
-            isUnread: (unreadCount || 0) > 0
+            unreadCount,
+            isUnread: unreadCount > 0,
+            canSeeStatus: statusCheck
           }
         })
       )
@@ -122,13 +191,18 @@ export function ConversationList({
         return bTime - aTime
       })
 
-      setConversations(sorted)
+      if (loadMore) {
+        setConversations(prev => [...prev, ...sorted])
+      } else {
+        setConversations(sorted)
+      }
     } catch (error) {
       console.error('Error loading conversations:', error)
     } finally {
       setLoading(false)
+      setLoadingMore(false)
     }
-  }, [currentWallet])
+  }, [currentWallet, conversations.length])
 
   // Initial load
   useEffect(() => {
@@ -175,34 +249,43 @@ export function ConversationList({
     }
   }, [currentWallet, loadConversations])
 
-  // Delete conversation handler
+  // Archive conversation handler (doesn't delete, just hides from view)
   const handleDeleteConversation = async (
     e: React.MouseEvent, 
     conversationId: string
   ) => {
     e.stopPropagation()
     
-    if (!confirm('Delete this conversation? This cannot be undone.')) {
+    if (!confirm('Archive this conversation? You can restore it later from settings.')) {
       return
     }
 
     try {
-      // Delete all messages first
-      await supabase
-        .from('messages')
-        .delete()
-        .eq('conversation_id', conversationId)
+      // Find the conversation to determine which participant is archiving
+      const conversation = conversations.find(c => c.id === conversationId)
+      if (!conversation) return
 
-      // Delete conversation
-      await supabase
+      // Determine which archive field to update
+      const isParticipant1 = conversation.participant_1 === currentWallet
+      const archiveField = isParticipant1 
+        ? 'archived_by_participant_1' 
+        : 'archived_by_participant_2'
+
+      // Archive the conversation (don't delete)
+      const { error } = await supabase
         .from('conversations')
-        .delete()
+        .update({ [archiveField]: true })
         .eq('id', conversationId)
 
-      // Update local state
+      if (error) {
+        console.error('Error archiving conversation:', error)
+        return
+      }
+
+      // Update local state (remove from view)
       setConversations(prev => prev.filter(c => c.id !== conversationId))
     } catch (error) {
-      console.error('Error deleting conversation:', error)
+      console.error('Error archiving conversation:', error)
     }
   }
 
@@ -245,8 +328,13 @@ export function ConversationList({
     )
   }
 
+  // Filter conversations based on selected tab
+  const filteredConversations = filter === 'unread' 
+    ? conversations.filter(conv => conv.isUnread)
+    : conversations
+
   // Empty state
-  if (conversations.length === 0) {
+  if (filteredConversations.length === 0) {
     return (
       <Box
         sx={{
@@ -256,10 +344,13 @@ export function ConversationList({
         }}
       >
         <Typography variant="h6" color="text.secondary" gutterBottom>
-          No messages yet
+          {filter === 'unread' ? 'No unread messages' : 'No messages yet'}
         </Typography>
         <Typography variant="body2" color="text.secondary">
-          Start a conversation by visiting a user's profile!
+          {filter === 'unread' 
+            ? 'All caught up! You have no unread conversations.'
+            : "Start a conversation by visiting a user's profile!"
+          }
         </Typography>
       </Box>
     )
@@ -267,91 +358,106 @@ export function ConversationList({
 
   // Conversations list
   return (
-    <List sx={{ width: '100%', bgcolor: 'background.paper', p: 0 }}>
-      {conversations.map((conv) => {
-        const displayName = getDisplayName(conv)
-        const lastMessagePreview = conv.lastMessage
-          ? truncateMessage(conv.lastMessage.content)
-          : 'No messages yet'
-        const timestamp = conv.lastMessage
-          ? formatTimestamp(conv.lastMessage.created_at)
-          : ''
-        const isOnline = conv.otherParticipant?.is_online || false
+    <>
+      <List sx={{ width: '100%', bgcolor: 'background.paper', p: 0 }}>
+        {filteredConversations.map((conv) => {
+          const displayName = getDisplayName(conv)
+          const lastMessagePreview = conv.lastMessage
+            ? truncateMessage(conv.lastMessage.content)
+            : 'No messages yet'
+          const timestamp = conv.lastMessage
+            ? formatTimestamp(conv.lastMessage.created_at)
+            : ''
+          const isOnline = conv.otherParticipant?.is_online || false
+          const showOnlineStatus = conv.canSeeStatus && isOnline
 
-        return (
-          <ListItem
-            key={conv.id}
-            disablePadding
-            onMouseEnter={() => setHoveredConvId(conv.id)}
-            onMouseLeave={() => setHoveredConvId(null)}
-            secondaryAction={
-              hoveredConvId === conv.id ? (
-                <IconButton
-                  edge="end"
-                  aria-label="delete"
-                  onClick={(e) => handleDeleteConversation(e, conv.id)}
-                  sx={{
-                    color: 'error.main',
-                    '&:hover': {
-                      bgcolor: 'error.light',
-                      color: 'error.dark'
-                    }
-                  }}
-                >
-                  <DeleteIcon />
-                </IconButton>
-              ) : null
-            }
-            sx={{
-              borderBottom: '1px solid',
-              borderColor: 'divider',
-              bgcolor: conv.isUnread ? 'action.hover' : 'transparent',
-              '&:hover': {
-                bgcolor: 'action.selected'
+          return (
+            <ListItem
+              key={conv.id}
+              disablePadding
+              onMouseEnter={() => setHoveredConvId(conv.id)}
+              onMouseLeave={() => setHoveredConvId(null)}
+              secondaryAction={
+                hoveredConvId === conv.id ? (
+                  <IconButton
+                    edge="end"
+                    aria-label="delete"
+                    onClick={(e) => handleDeleteConversation(e, conv.id)}
+                    sx={{
+                      color: 'error.main',
+                      '&:hover': {
+                        bgcolor: 'error.light',
+                        color: 'error.dark'
+                      }
+                    }}
+                  >
+                    <DeleteIcon />
+                  </IconButton>
+                ) : null
               }
-            }}
-          >
+              sx={{
+                borderBottom: '1px solid',
+                borderColor: 'divider',
+                bgcolor: conv.isUnread ? 'action.hover' : 'transparent',
+                '&:hover': {
+                  bgcolor: 'action.selected'
+                }
+              }}
+            >
             <ListItemButton
               onClick={() => onSelectConversation(conv.id)}
               sx={{ py: 2 }}
             >
               <ListItemAvatar>
-                <Badge
-                  overlap="circular"
-                  anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
-                  variant="dot"
-                  sx={{
-                    '& .MuiBadge-badge': {
-                      backgroundColor: isOnline ? '#44b700' : 'transparent',
-                      color: isOnline ? '#44b700' : 'transparent',
-                      boxShadow: `0 0 0 2px ${isOnline ? '#fff' : 'transparent'}`,
-                      width: 12,
-                      height: 12,
-                      borderRadius: '50%',
-                      '&::after': isOnline ? {
-                        position: 'absolute',
-                        top: 0,
-                        left: 0,
-                        width: '100%',
-                        height: '100%',
+                {conv.canSeeStatus ? (
+                  <Badge
+                    overlap="circular"
+                    anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+                    variant="dot"
+                    sx={{
+                      '& .MuiBadge-badge': {
+                        backgroundColor: isOnline ? '#44b700' : '#9E9E9E',
+                        color: isOnline ? '#44b700' : '#9E9E9E',
+                        boxShadow: `0 0 0 2px #fff`,
+                        width: 12,
+                        height: 12,
                         borderRadius: '50%',
-                        animation: 'ripple 1.2s infinite ease-in-out',
-                        border: '1px solid currentColor',
-                        content: '""',
-                      } : {}
-                    },
-                    '@keyframes ripple': {
-                      '0%': {
-                        transform: 'scale(.8)',
-                        opacity: 1,
+                        '&::after': isOnline ? {
+                          position: 'absolute',
+                          top: 0,
+                          left: 0,
+                          width: '100%',
+                          height: '100%',
+                          borderRadius: '50%',
+                          animation: 'ripple 1.2s infinite ease-in-out',
+                          border: '1px solid currentColor',
+                          content: '""',
+                        } : {}
                       },
-                      '100%': {
-                        transform: 'scale(2.4)',
-                        opacity: 0,
+                      '@keyframes ripple': {
+                        '0%': {
+                          transform: 'scale(.8)',
+                          opacity: 1,
+                        },
+                        '100%': {
+                          transform: 'scale(2.4)',
+                          opacity: 0,
+                        },
                       },
-                    },
-                  }}
-                >
+                    }}
+                  >
+                    <Avatar
+                      src={conv.otherParticipant?.avatar_url || undefined}
+                      sx={{ 
+                        bgcolor: '#7C4DFF',
+                        width: 48,
+                        height: 48
+                      }}
+                    >
+                      {conv.otherParticipant?.avatar_url ? null : <PersonIcon />}
+                    </Avatar>
+                  </Badge>
+                ) : (
                   <Avatar
                     src={conv.otherParticipant?.avatar_url || undefined}
                     sx={{ 
@@ -362,7 +468,7 @@ export function ConversationList({
                   >
                     {conv.otherParticipant?.avatar_url ? null : <PersonIcon />}
                   </Avatar>
-                </Badge>
+                )}
               </ListItemAvatar>
 
               <ListItemText
@@ -443,6 +549,37 @@ export function ConversationList({
         )
       })}
     </List>
+    
+    {/* Load More Button */}
+    {hasMore && !loading && (
+      <Box sx={{ p: 2, textAlign: 'center' }}>
+        <Typography
+          variant="body2"
+          onClick={() => loadConversations(true)}
+          sx={{
+            color: '#7C4DFF',
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: 1,
+            '&:hover': {
+              textDecoration: 'underline'
+            }
+          }}
+        >
+          {loadingMore ? (
+            <>
+              <CircularProgress size={16} sx={{ color: '#7C4DFF' }} />
+              Loading...
+            </>
+          ) : (
+            'Load more conversations'
+          )}
+        </Typography>
+      </Box>
+    )}
+  </>
   )
 }
 

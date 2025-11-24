@@ -1,7 +1,7 @@
 'use client'
 
 import React, { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react'
-import { getUnreadCount, getOrCreateConversation } from '@/lib/messaging'
+import { getUnreadCount } from '@/lib/messaging'
 import { supabase } from '@/lib/supabase'
 
 interface MessagingContextType {
@@ -73,17 +73,15 @@ export function MessagingProvider({ children, currentWallet }: MessagingProvider
 
   // Open messages with optional target wallet
   const openMessages = useCallback(async (walletAddress?: string) => {
-    if (walletAddress && currentWallet) {
-      // If target wallet provided, try to get or create conversation
-      const conversation = await getOrCreateConversation(currentWallet, walletAddress)
-      if (conversation) {
-        setTargetWallet(walletAddress)
-      }
+    if (walletAddress) {
+      // Just set the target wallet, don't create conversation yet
+      // Conversation will be created when first message is sent
+      setTargetWallet(walletAddress)
     } else {
       setTargetWallet(null)
     }
     setIsOpen(true)
-  }, [currentWallet])
+  }, [])
 
   // Close messages
   const closeMessages = useCallback(() => {
@@ -139,4 +137,6 @@ export function useMessaging() {
   }
   return context
 }
+
+
 

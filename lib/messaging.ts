@@ -1,6 +1,7 @@
 import { supabase } from '@/lib/supabase'
 import { Database } from '@/types/database'
 import { getWalletTokenData } from '@/lib/token-balance'
+import { canMessageBasedOnPrivacy } from '@/lib/privacy'
 
 type UserProfile = Database['public']['Tables']['user_profiles']['Row']
 type Conversation = Database['public']['Tables']['conversations']['Row']
@@ -48,6 +49,37 @@ export async function getOrCreateProfile(
     
   } catch (error) {
     console.error('Error in getOrCreateProfile:', error)
+    return null
+  }
+}
+
+// Get existing conversation between two users (without creating)
+export async function getExistingConversation(
+  wallet1: string,
+  wallet2: string
+): Promise<Conversation | null> {
+  try {
+    // Order wallets alphabetically for consistency
+    const participant1 = wallet1 < wallet2 ? wallet1 : wallet2
+    const participant2 = wallet1 < wallet2 ? wallet2 : wallet1
+    
+    // Check if conversation exists
+    const { data: existingConv, error: selectError } = await supabase
+      .from('conversations')
+      .select('*')
+      .eq('participant_1', participant1)
+      .eq('participant_2', participant2)
+      .maybeSingle()
+    
+    if (selectError) {
+      console.error('Error fetching conversation:', selectError)
+      return null
+    }
+    
+    return existingConv
+    
+  } catch (error) {
+    console.error('Error in getExistingConversation:', error)
     return null
   }
 }
@@ -107,9 +139,15 @@ export async function getOrCreateConversation(
 export async function canMessageUser(
   senderWallet: string,
   recipientWallet: string,
-  projectId?: string
+  projectId?: string,
+  adminOverride: boolean = false
 ): Promise<{ canMessage: boolean; reason?: string }> {
   try {
+    // Admin override bypasses all checks
+    if (adminOverride) {
+      return { canMessage: true }
+    }
+    
     // 1. Check if sender is blocked by recipient (or vice versa)
     const { data: blocked } = await supabase
       .from('blocked_users')
@@ -124,76 +162,23 @@ export async function canMessageUser(
       }
     }
     
-    // 2. Get recipient's profile to check message permissions
+    // 2. Get recipient's profile to check privacy and message permissions
     const { data: recipientProfile } = await supabase
       .from('user_profiles')
-      .select('allow_messages_from, privacy_level')
+      .select('*')
       .eq('wallet_address', recipientWallet)
       .maybeSingle()
     
-    // If no profile exists, default to allowing messages
-    if (!recipientProfile) {
-      return { canMessage: true }
-    }
+    // 3. Check privacy-based messaging permissions
+    const privacyCheck = await canMessageBasedOnPrivacy(
+      senderWallet,
+      recipientWallet,
+      recipientProfile,
+      projectId
+    )
     
-    // 3. Check message permissions
-    const { allow_messages_from } = recipientProfile
-    
-    if (allow_messages_from === 'nobody') {
-      return {
-        canMessage: false,
-        reason: 'User is not accepting messages'
-      }
-    }
-    
-    if (allow_messages_from === 'everyone') {
-      return { canMessage: true }
-    }
-    
-    // 4. If 'holders_only', verify both hold tokens
-    if (allow_messages_from === 'holders_only') {
-      if (!projectId) {
-        return {
-          canMessage: false,
-          reason: 'Token holding verification requires a project ID'
-        }
-      }
-      
-      // Get project token mint
-      const { data: project } = await supabase
-        .from('projects')
-        .select('token_mint')
-        .eq('id', projectId)
-        .single()
-      
-      if (!project) {
-        return {
-          canMessage: false,
-          reason: 'Project not found'
-        }
-      }
-      
-      // Check if both users hold tokens
-      const [senderTokens, recipientTokens] = await Promise.all([
-        getWalletTokenData(senderWallet, project.token_mint),
-        getWalletTokenData(recipientWallet, project.token_mint)
-      ])
-      
-      if (!senderTokens || senderTokens.balance === 0) {
-        return {
-          canMessage: false,
-          reason: 'You must hold tokens to message this user'
-        }
-      }
-      
-      if (!recipientTokens || recipientTokens.balance === 0) {
-        return {
-          canMessage: false,
-          reason: 'Recipient does not hold tokens'
-        }
-      }
-      
-      return { canMessage: true }
+    if (!privacyCheck.canMessage) {
+      return privacyCheck
     }
     
     // Default: allow
@@ -238,29 +223,27 @@ export async function markConversationAsRead(
   }
 }
 
-// Get count of unread messages for a user
+// Get count of unread messages for a user (optimized)
 export async function getUnreadCount(
   walletAddress: string
 ): Promise<number> {
   try {
-    // Get all conversations where user is a participant
+    // Step 1: Get conversation IDs (fast, just IDs, uses index)
     const { data: conversations, error: convError } = await supabase
       .from('conversations')
       .select('id')
       .or(`participant_1.eq.${walletAddress},participant_2.eq.${walletAddress}`)
     
-    if (convError || !conversations) {
-      console.error('Error fetching conversations:', convError)
-      return 0
-    }
-    
-    if (conversations.length === 0) {
+    if (convError || !conversations || conversations.length === 0) {
+      if (convError) {
+        console.error('Error fetching conversations:', convError)
+      }
       return 0
     }
     
     const conversationIds = conversations.map(c => c.id)
     
-    // Count unread messages in those conversations (not sent by user)
+    // Step 2: Count unread messages using index (very fast with proper index)
     const { count, error: countError } = await supabase
       .from('messages')
       .select('id', { count: 'exact', head: true })
@@ -326,6 +309,167 @@ export async function isUserBlocked(
   } catch (error) {
     console.error('Error checking block status:', error)
     return false
+  }
+}
+
+// Block a user
+export async function blockUser(
+  blockerWallet: string,
+  blockedWallet: string,
+  reason?: string,
+  deleteHistory: boolean = true
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    // 1. Check not blocking self
+    if (blockerWallet === blockedWallet) {
+      return { success: false, error: 'Cannot block yourself' }
+    }
+    
+    // 2. Insert block record
+    const { error: blockError } = await supabase
+      .from('blocked_users')
+      .insert({
+        blocker_wallet: blockerWallet,
+        blocked_wallet: blockedWallet,
+        reason: reason || null
+      })
+    
+    if (blockError) {
+      console.error('Error blocking user:', blockError)
+      return { success: false, error: 'Failed to block user' }
+    }
+    
+    // 3. Find conversation between users
+    const { data: conversation } = await supabase
+      .from('conversations')
+      .select('id')
+      .or(`and(participant_1.eq.${blockerWallet},participant_2.eq.${blockedWallet}),and(participant_1.eq.${blockedWallet},participant_2.eq.${blockerWallet})`)
+      .maybeSingle()
+    
+    if (conversation && deleteHistory) {
+      // 4. Soft delete all messages in the conversation
+      const { error: deleteError } = await supabase
+        .from('messages')
+        .update({ deleted_at: new Date().toISOString() })
+        .eq('conversation_id', conversation.id)
+      
+      if (deleteError) {
+        console.error('Error deleting messages:', deleteError)
+      }
+      
+      // 5. Delete the conversation
+      const { error: convDeleteError } = await supabase
+        .from('conversations')
+        .delete()
+        .eq('id', conversation.id)
+      
+      if (convDeleteError) {
+        console.error('Error deleting conversation:', convDeleteError)
+      }
+    }
+    
+    return { success: true }
+    
+  } catch (error) {
+    console.error('Error in blockUser:', error)
+    return { success: false, error: 'An error occurred' }
+  }
+}
+
+// Unblock a user
+export async function unblockUser(
+  blockerWallet: string,
+  blockedWallet: string
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    const { error } = await supabase
+      .from('blocked_users')
+      .delete()
+      .eq('blocker_wallet', blockerWallet)
+      .eq('blocked_wallet', blockedWallet)
+    
+    if (error) {
+      console.error('Error unblocking user:', error)
+      return { success: false, error: 'Failed to unblock user' }
+    }
+    
+    return { success: true }
+    
+  } catch (error) {
+    console.error('Error in unblockUser:', error)
+    return { success: false, error: 'An error occurred' }
+  }
+}
+
+// Check bidirectional block status with details
+export async function isBlocked(
+  wallet1: string,
+  wallet2: string
+): Promise<{
+  isBlocked: boolean
+  blockedBy?: string
+  blockedUser?: string
+  reason?: string
+}> {
+  try {
+    const { data } = await supabase
+      .from('blocked_users')
+      .select('blocker_wallet, blocked_wallet, reason')
+      .or(`and(blocker_wallet.eq.${wallet1},blocked_wallet.eq.${wallet2}),and(blocker_wallet.eq.${wallet2},blocked_wallet.eq.${wallet1})`)
+      .maybeSingle()
+    
+    if (!data) {
+      return { isBlocked: false }
+    }
+    
+    return {
+      isBlocked: true,
+      blockedBy: data.blocker_wallet,
+      blockedUser: data.blocked_wallet,
+      reason: data.reason || undefined
+    }
+    
+  } catch (error) {
+    console.error('Error in isBlocked:', error)
+    return { isBlocked: false }
+  }
+}
+
+// Get list of blocked users with pagination
+export async function getBlockedUsers(
+  walletAddress: string,
+  limit: number = 50,
+  offset: number = 0
+): Promise<{
+  blockedUsers: Array<{
+    id: string
+    blocked_wallet: string
+    reason: string | null
+    created_at: string
+  }>
+  hasMore: boolean
+}> {
+  try {
+    const { data, error } = await supabase
+      .from('blocked_users')
+      .select('id, blocked_wallet, reason, created_at')
+      .eq('blocker_wallet', walletAddress)
+      .order('created_at', { ascending: false })
+      .range(offset, offset + limit)
+    
+    if (error) {
+      console.error('Error fetching blocked users:', error)
+      return { blockedUsers: [], hasMore: false }
+    }
+    
+    return {
+      blockedUsers: data || [],
+      hasMore: (data?.length || 0) === limit + 1
+    }
+    
+  } catch (error) {
+    console.error('Error in getBlockedUsers:', error)
+    return { blockedUsers: [], hasMore: false }
   }
 }
 
@@ -395,6 +539,119 @@ export async function getConversationMessages(
     
   } catch (error) {
     console.error('Error in getConversationMessages:', error)
+    return []
+  }
+}
+
+// Archive a conversation for a specific user
+export async function archiveConversation(
+  conversationId: string,
+  currentWallet: string
+): Promise<boolean> {
+  try {
+    // Get conversation to determine which participant is archiving
+    const { data: conv, error: fetchError } = await supabase
+      .from('conversations')
+      .select('participant_1, participant_2')
+      .eq('id', conversationId)
+      .maybeSingle()
+    
+    if (fetchError || !conv) {
+      console.error('Error fetching conversation for archive:', fetchError)
+      return false
+    }
+
+    // Determine which archive field to update
+    const isParticipant1 = conv.participant_1 === currentWallet
+    const archiveField = isParticipant1 
+      ? 'archived_by_participant_1' 
+      : 'archived_by_participant_2'
+
+    // Archive the conversation
+    const { error } = await supabase
+      .from('conversations')
+      .update({ [archiveField]: true })
+      .eq('id', conversationId)
+
+    if (error) {
+      console.error('Error archiving conversation:', error)
+      return false
+    }
+
+    return true
+  } catch (error) {
+    console.error('Error in archiveConversation:', error)
+    return false
+  }
+}
+
+// Unarchive a conversation for a specific user
+export async function unarchiveConversation(
+  conversationId: string,
+  currentWallet: string
+): Promise<boolean> {
+  try {
+    // Get conversation to determine which participant is unarchiving
+    const { data: conv, error: fetchError } = await supabase
+      .from('conversations')
+      .select('participant_1, participant_2')
+      .eq('id', conversationId)
+      .maybeSingle()
+    
+    if (fetchError || !conv) {
+      console.error('Error fetching conversation for unarchive:', fetchError)
+      return false
+    }
+
+    const isParticipant1 = conv.participant_1 === currentWallet
+    const archiveField = isParticipant1 
+      ? 'archived_by_participant_1' 
+      : 'archived_by_participant_2'
+
+    // Unarchive the conversation
+    const { error } = await supabase
+      .from('conversations')
+      .update({ [archiveField]: false })
+      .eq('id', conversationId)
+
+    if (error) {
+      console.error('Error unarchiving conversation:', error)
+      return false
+    }
+
+    return true
+  } catch (error) {
+    console.error('Error in unarchiveConversation:', error)
+    return false
+  }
+}
+
+// Get archived conversations for a user
+export async function getArchivedConversations(
+  walletAddress: string
+): Promise<Conversation[]> {
+  try {
+    const { data, error } = await supabase
+      .from('conversations')
+      .select('*')
+      .or(`participant_1.eq.${walletAddress},participant_2.eq.${walletAddress}`)
+    
+    if (error) {
+      console.error('Error fetching archived conversations:', error)
+      return []
+    }
+
+    // Filter to only show conversations archived by this user
+    const archivedConversations = data?.filter(conv => {
+      const isParticipant1 = conv.participant_1 === walletAddress
+      return isParticipant1 
+        ? conv.archived_by_participant_1 
+        : conv.archived_by_participant_2
+    }) || []
+
+    return archivedConversations
+  } catch (error) {
+    console.error('Error in getArchivedConversations:', error)
     return []
   }
 }

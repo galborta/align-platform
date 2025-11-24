@@ -496,6 +496,7 @@ export interface Database {
           content: string
           is_read: boolean
           read_at: string | null
+          deleted_at: string | null
           created_at: string
           updated_at: string
         }
@@ -506,6 +507,7 @@ export interface Database {
           content: string
           is_read?: boolean
           read_at?: string | null
+          deleted_at?: string | null
           created_at?: string
           updated_at?: string
         }
@@ -516,6 +518,7 @@ export interface Database {
           content?: string
           is_read?: boolean
           read_at?: string | null
+          deleted_at?: string | null
           created_at?: string
           updated_at?: string
         }
@@ -525,18 +528,21 @@ export interface Database {
           id: string
           blocker_wallet: string
           blocked_wallet: string
+          reason: string | null
           created_at: string
         }
         Insert: {
           id?: string
           blocker_wallet: string
           blocked_wallet: string
+          reason?: string | null
           created_at?: string
         }
         Update: {
           id?: string
           blocker_wallet?: string
           blocked_wallet?: string
+          reason?: string | null
           created_at?: string
         }
       }

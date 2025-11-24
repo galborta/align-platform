@@ -3,8 +3,10 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { supabase } from '@/lib/supabase'
 import { Database } from '@/types/database'
-import { markConversationAsRead } from '@/lib/messaging'
+import { markConversationAsRead, blockUser, unblockUser, isBlocked } from '@/lib/messaging'
+import { canSeeOnlineStatus } from '@/lib/privacy'
 import { UserProfileView } from '@/components/UserProfileView'
+import { BlockUserModal } from '@/components/BlockUserModal'
 import { 
   format, 
   isToday, 
@@ -20,11 +22,18 @@ import {
   Button,
   CircularProgress,
   Tooltip,
-  Badge
+  Badge,
+  Menu,
+  MenuItem,
+  ListItemIcon,
+  ListItemText
 } from '@mui/material'
 import DoneIcon from '@mui/icons-material/Done'
 import DoneAllIcon from '@mui/icons-material/DoneAll'
 import PersonIcon from '@mui/icons-material/Person'
+import MoreVertIcon from '@mui/icons-material/MoreVert'
+import BlockIcon from '@mui/icons-material/Block'
+import { toast } from 'react-hot-toast'
 
 type Message = Database['public']['Tables']['messages']['Row']
 type UserProfile = Database['public']['Tables']['user_profiles']['Row']
@@ -50,15 +59,27 @@ export function MessageThread({
   const [loading, setLoading] = useState(true)
   const [loadingMore, setLoadingMore] = useState(false)
   const [hasMore, setHasMore] = useState(true)
+  const [oldestMessageId, setOldestMessageId] = useState<string | null>(null)
   const [isTyping, setIsTyping] = useState(false)
   const [showProfileView, setShowProfileView] = useState(false)
   const [hoveredMessageId, setHoveredMessageId] = useState<string | null>(null)
+  const [menuAnchorEl, setMenuAnchorEl] = useState<null | HTMLElement>(null)
+  const [showBlockModal, setShowBlockModal] = useState(false)
+  const [blockStatus, setBlockStatus] = useState<{
+    isBlocked: boolean
+    blockedBy?: string
+    blockedUser?: string
+  }>({ isBlocked: false })
+  const [canSeeStatus, setCanSeeStatus] = useState(true)
   
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const messagesContainerRef = useRef<HTMLDivElement>(null)
   const typingTimeoutRef = useRef<NodeJS.Timeout>()
+  const messageChannelRef = useRef<any>(null)
+  const typingChannelRef = useRef<any>(null)
   
   const MESSAGES_PER_PAGE = 50
+  const menuOpen = Boolean(menuAnchorEl)
 
   // Scroll to bottom
   const scrollToBottom = (smooth = true) => {
@@ -114,38 +135,70 @@ export function MessageThread({
     return format(parseISO(timestamp), 'HH:mm')
   }
 
-  // Load messages
-  const loadMessages = useCallback(async (offset = 0) => {
-    if (offset === 0) {
+  // Load messages with cursor-based pagination
+  const loadMessages = useCallback(async (cursor?: string) => {
+    const isInitialLoad = !cursor
+    
+    if (isInitialLoad) {
       setLoading(true)
     } else {
       setLoadingMore(true)
     }
 
     try {
-      const { data, error } = await supabase
+      // Fetch only needed columns for better performance
+      let query = supabase
         .from('messages')
-        .select('*')
+        .select('id, conversation_id, sender_wallet, content, created_at, is_read, read_at')
         .eq('conversation_id', conversationId)
         .order('created_at', { ascending: false })
-        .range(offset, offset + MESSAGES_PER_PAGE - 1)
+        .limit(MESSAGES_PER_PAGE + 1) // Fetch one extra to check if more exist
+
+      // Apply cursor for pagination
+      if (cursor) {
+        query = query.lt('created_at', cursor)
+      }
+
+      const { data, error } = await supabase.rpc('get_messages_with_cursor', {
+        p_conversation_id: conversationId,
+        p_cursor: cursor || null,
+        p_limit: MESSAGES_PER_PAGE + 1
+      }).then(({ data: rpcData, error: rpcError }) => {
+        // Fallback to regular query if RPC doesn't exist
+        if (rpcError) {
+          return query
+        }
+        return { data: rpcData, error: rpcError }
+      })
 
       if (error) {
         console.error('Error fetching messages:', error)
         return
       }
 
-      if (!data || data.length < MESSAGES_PER_PAGE) {
-        setHasMore(false)
-      }
+      // Check if more messages exist
+      const hasMoreMessages = data && data.length > MESSAGES_PER_PAGE
+      const messagesToShow = hasMoreMessages ? data.slice(0, MESSAGES_PER_PAGE) : (data || [])
+      
+      setHasMore(hasMoreMessages)
 
-      if (offset === 0) {
-        setMessages(data?.reverse() || [])
+      if (isInitialLoad) {
+        const reversed = messagesToShow.reverse()
+        setMessages(reversed)
+        // Set oldest message ID for next pagination
+        if (reversed.length > 0) {
+          setOldestMessageId(reversed[0].created_at)
+        }
         // Scroll to bottom on initial load
         setTimeout(() => scrollToBottom(false), 100)
       } else {
         // Prepend older messages
-        setMessages(prev => [...(data?.reverse() || []), ...prev])
+        const reversed = messagesToShow.reverse()
+        setMessages(prev => [...reversed, ...prev])
+        // Update oldest message ID
+        if (reversed.length > 0) {
+          setOldestMessageId(reversed[0].created_at)
+        }
       }
     } finally {
       setLoading(false)
@@ -163,10 +216,26 @@ export function MessageThread({
         .maybeSingle()
       
       setRecipientProfile(data)
+      
+      // Check if current user can see online status
+      if (data) {
+        const statusCheck = await canSeeOnlineStatus(currentWallet, data)
+        setCanSeeStatus(statusCheck)
+      }
     }
     
     loadRecipientProfile()
-  }, [recipientWallet])
+  }, [recipientWallet, currentWallet])
+
+  // Check block status
+  useEffect(() => {
+    const checkBlockStatus = async () => {
+      const status = await isBlocked(currentWallet, recipientWallet)
+      setBlockStatus(status)
+    }
+    
+    checkBlockStatus()
+  }, [currentWallet, recipientWallet])
 
   // Initial load
   useEffect(() => {
@@ -176,9 +245,13 @@ export function MessageThread({
     markConversationAsRead(conversationId, currentWallet)
   }, [conversationId, currentWallet, loadMessages])
 
-  // Real-time subscription for new messages
+  // Real-time subscription for new messages (only when conversation is active)
   useEffect(() => {
-    const channel = supabase
+    // Only subscribe when conversation is selected
+    if (!conversationId) return
+
+    // Store channel ref for cleanup
+    messageChannelRef.current = supabase
       .channel(`message_thread_${conversationId}`)
       .on(
         'postgres_changes',
@@ -190,7 +263,13 @@ export function MessageThread({
         },
         (payload) => {
           const newMessage = payload.new as Message
-          setMessages(prev => [...prev, newMessage])
+          setMessages(prev => {
+            // Avoid duplicates
+            if (prev.some(m => m.id === newMessage.id)) {
+              return prev
+            }
+            return [...prev, newMessage]
+          })
           
           // Mark as read if not from current user
           if (newMessage.sender_wallet !== currentWallet) {
@@ -221,13 +300,20 @@ export function MessageThread({
       .subscribe()
 
     return () => {
-      supabase.removeChannel(channel)
+      // Clean up subscription when conversation changes or unmounts
+      if (messageChannelRef.current) {
+        supabase.removeChannel(messageChannelRef.current)
+        messageChannelRef.current = null
+      }
     }
   }, [conversationId, currentWallet])
 
-  // Subscribe to typing indicators
+  // Subscribe to typing indicators (only for active conversation)
   useEffect(() => {
-    const channel = supabase
+    if (!conversationId || !recipientWallet) return
+
+    // Store channel ref for cleanup
+    typingChannelRef.current = supabase
       .channel(`typing_${conversationId}`)
       .on(
         'postgres_changes',
@@ -256,13 +342,19 @@ export function MessageThread({
                 setIsTyping(false)
               }, 3000)
             }
+          } else if (payload.eventType === 'DELETE') {
+            setIsTyping(false)
           }
         }
       )
       .subscribe()
 
     return () => {
-      supabase.removeChannel(channel)
+      // Clean up subscription
+      if (typingChannelRef.current) {
+        supabase.removeChannel(typingChannelRef.current)
+        typingChannelRef.current = null
+      }
       if (typingTimeoutRef.current) {
         clearTimeout(typingTimeoutRef.current)
       }
@@ -292,9 +384,11 @@ export function MessageThread({
     }
   }, [recipientWallet])
 
-  // Load more messages
+  // Load more messages using cursor
   const handleLoadMore = () => {
-    loadMessages(messages.length)
+    if (oldestMessageId) {
+      loadMessages(oldestMessageId)
+    }
   }
 
   // Handle message for user profile
@@ -303,9 +397,41 @@ export function MessageThread({
     // Already in message thread, just close profile
   }
 
+  // Handle block user
+  const handleBlock = async (deleteHistory: boolean, reason?: string) => {
+    const result = await blockUser(currentWallet, recipientWallet, reason, deleteHistory)
+    
+    if (result.success) {
+      toast.success('User blocked')
+      setBlockStatus({
+        isBlocked: true,
+        blockedBy: currentWallet,
+        blockedUser: recipientWallet
+      })
+      setShowBlockModal(false)
+      setMenuAnchorEl(null)
+    } else {
+      toast.error(result.error || 'Failed to block user')
+    }
+  }
+
+  // Handle unblock user
+  const handleUnblock = async () => {
+    const result = await unblockUser(currentWallet, recipientWallet)
+    
+    if (result.success) {
+      toast.success('User unblocked')
+      setBlockStatus({ isBlocked: false })
+    } else {
+      toast.error(result.error || 'Failed to unblock user')
+    }
+  }
+
   const displayName = recipientProfile?.display_name || formatAddress(recipientWallet)
   const online = isOnline(recipientProfile?.last_seen_at || null)
   const groupedMessages = groupMessagesByDate(messages)
+  const youBlockedThem = blockStatus.isBlocked && blockStatus.blockedBy === currentWallet
+  const theyBlockedYou = blockStatus.isBlocked && blockStatus.blockedBy === recipientWallet
 
   if (loading) {
     return (
@@ -335,20 +461,34 @@ export function MessageThread({
             onClick={() => setShowProfileView(true)}
             sx={{ p: 0 }}
           >
-            <Badge
-              overlap="circular"
-              anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
-              variant="dot"
-              sx={{
-                '& .MuiBadge-badge': {
-                  backgroundColor: online ? '#44b700' : '#9E9E9E',
-                  boxShadow: '0 0 0 2px #fff',
-                  width: 12,
-                  height: 12,
-                  borderRadius: '50%'
-                }
-              }}
-            >
+            {canSeeStatus ? (
+              <Badge
+                overlap="circular"
+                anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+                variant="dot"
+                sx={{
+                  '& .MuiBadge-badge': {
+                    backgroundColor: online ? '#44b700' : '#9E9E9E',
+                    boxShadow: '0 0 0 2px #fff',
+                    width: 12,
+                    height: 12,
+                    borderRadius: '50%'
+                  }
+                }}
+              >
+                <Avatar
+                  src={recipientProfile?.avatar_url || undefined}
+                  sx={{ 
+                    width: 48, 
+                    height: 48,
+                    bgcolor: '#7C4DFF',
+                    cursor: 'pointer'
+                  }}
+                >
+                  {recipientProfile?.avatar_url ? null : <PersonIcon />}
+                </Avatar>
+              </Badge>
+            ) : (
               <Avatar
                 src={recipientProfile?.avatar_url || undefined}
                 sx={{ 
@@ -360,7 +500,7 @@ export function MessageThread({
               >
                 {recipientProfile?.avatar_url ? null : <PersonIcon />}
               </Avatar>
-            </Badge>
+            )}
           </IconButton>
 
           <Box sx={{ flex: 1, cursor: 'pointer' }} onClick={() => setShowProfileView(true)}>
@@ -372,13 +512,48 @@ export function MessageThread({
                 <span style={{ color: '#7C4DFF', fontStyle: 'italic' }}>
                   typing...
                 </span>
-              ) : online ? (
-                'Online'
+              ) : canSeeStatus ? (
+                online ? 'Online' : 'Offline'
               ) : (
-                'Offline'
+                '' // Don't show status if not allowed
               )}
             </Typography>
           </Box>
+
+          {/* Menu Button */}
+          {!blockStatus.isBlocked && (
+            <>
+              <IconButton
+                onClick={(e) => setMenuAnchorEl(e.currentTarget)}
+                size="small"
+              >
+                <MoreVertIcon />
+              </IconButton>
+              <Menu
+                anchorEl={menuAnchorEl}
+                open={menuOpen}
+                onClose={() => setMenuAnchorEl(null)}
+                anchorOrigin={{
+                  vertical: 'bottom',
+                  horizontal: 'right',
+                }}
+                transformOrigin={{
+                  vertical: 'top',
+                  horizontal: 'right',
+                }}
+              >
+                <MenuItem onClick={() => {
+                  setShowBlockModal(true)
+                  setMenuAnchorEl(null)
+                }}>
+                  <ListItemIcon>
+                    <BlockIcon fontSize="small" sx={{ color: '#DC2626' }} />
+                  </ListItemIcon>
+                  <ListItemText>Block User</ListItemText>
+                </MenuItem>
+              </Menu>
+            </>
+          )}
         </Box>
 
         {/* Messages Container */}
@@ -393,6 +568,56 @@ export function MessageThread({
             flexDirection: 'column'
           }}
         >
+          {/* Blocked User View */}
+          {blockStatus.isBlocked ? (
+            <Box
+              sx={{
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                justifyContent: 'center',
+                height: '100%',
+                textAlign: 'center',
+                px: 4,
+                py: 8
+              }}
+            >
+              <BlockIcon sx={{ fontSize: 64, color: '#DC2626', mb: 2 }} />
+              
+              {youBlockedThem ? (
+                <>
+                  <Typography variant="h6" fontWeight={600} sx={{ mb: 1 }}>
+                    You blocked this user
+                  </Typography>
+                  <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
+                    You won't receive messages from {displayName} and they won't be able to message you.
+                  </Typography>
+                  <Button
+                    variant="contained"
+                    onClick={handleUnblock}
+                    sx={{
+                      bgcolor: '#7C4DFF',
+                      '&:hover': { bgcolor: '#6C3FEF' },
+                      textTransform: 'none',
+                      px: 4
+                    }}
+                  >
+                    Unblock User
+                  </Button>
+                </>
+              ) : theyBlockedYou ? (
+                <>
+                  <Typography variant="h6" fontWeight={600} sx={{ mb: 1 }}>
+                    This user blocked you
+                  </Typography>
+                  <Typography variant="body2" color="text.secondary">
+                    You cannot send messages to {displayName}.
+                  </Typography>
+                </>
+              ) : null}
+            </Box>
+          ) : (
+            <>
           {/* Load More Button */}
           {hasMore && messages.length >= MESSAGES_PER_PAGE && (
             <Box sx={{ textAlign: 'center', mb: 2 }}>
@@ -605,8 +830,19 @@ export function MessageThread({
           )}
 
           <div ref={messagesEndRef} />
+          </>
+          )}
         </Box>
       </Box>
+
+      {/* Block User Modal */}
+      <BlockUserModal
+        open={showBlockModal}
+        onClose={() => setShowBlockModal(false)}
+        onConfirm={handleBlock}
+        userName={displayName}
+        walletAddress={recipientWallet}
+      />
 
       {/* User Profile Modal */}
       {showProfileView && (

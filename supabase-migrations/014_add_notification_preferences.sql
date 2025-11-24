@@ -14,3 +14,5 @@ COMMENT ON COLUMN user_profiles.notification_enabled IS 'Whether the user has en
 COMMENT ON COLUMN user_profiles.notification_sound IS 'Whether to play a sound when notifications appear';
 COMMENT ON COLUMN user_profiles.notification_preview IS 'How much message content to show in notifications: full, sender, or none';
 
+
+

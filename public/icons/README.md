@@ -65,3 +65,5 @@ Until then, notifications will use:
 - Sender's avatar as the icon (if available)
 - Browser default icon (if no avatar)
 
+
+

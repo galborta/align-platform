@@ -417,9 +417,12 @@ export function MessagesSidebar({
   // Helper to start conversation with specific wallet
   const handleStartConversationWithWallet = async (walletAddress: string) => {
     try {
+      // Always create conversation when explicitly clicking message button
+      // This provides direct access to chat, conversation will be hidden until first message
       const conversation = await getOrCreateConversation(currentWallet, walletAddress)
       
       if (conversation) {
+        // Go directly to thread view
         setSelectedConversationId(conversation.id)
         setRecipientWallet(walletAddress)
         setView('thread')
@@ -498,7 +501,7 @@ export function MessagesSidebar({
                     badgeContent={unreadCount}
                     color="error"
                     sx={{
-                      ml: 1,
+                      ml: 2,
                       '& .MuiBadge-badge': {
                         bgcolor: '#7C4DFF',
                         color: 'white'
@@ -759,7 +762,7 @@ export function MessagesSidebar({
                     <Tab label="All" value="all" />
                     <Tab 
                       label={
-                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
                           Unread
                           {unreadCount > 0 && (
                             <Badge
@@ -788,6 +791,7 @@ export function MessagesSidebar({
                     <ConversationList
                       currentWallet={currentWallet}
                       onSelectConversation={handleSelectConversation}
+                      filter={filterTab}
                     />
                   ) : (
                     <Box sx={{ p: 4, textAlign: 'center' }}>

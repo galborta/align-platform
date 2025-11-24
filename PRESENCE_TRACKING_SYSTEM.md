@@ -604,3 +604,5 @@ function MyComponent({ recipientWallet }) {
 
 🎉 **Presence tracking is now live and fully functional!** 🎉
 
+
+

@@ -11,10 +11,11 @@ import CircularProgress from '@mui/material/CircularProgress'
 import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown'
 import MessageIcon from '@mui/icons-material/Message'
 import BlockIcon from '@mui/icons-material/Block'
-import { IconButton, Tooltip } from '@mui/material'
+import { IconButton, Tooltip, Dialog, Box } from '@mui/material'
 import { useMessaging } from '@/lib/MessagingContext'
 import { canMessageUser } from '@/lib/messaging'
 import { toast } from 'react-hot-toast'
+import { UserProfileView } from '@/components/UserProfileView'
 
 interface Message {
   id: string
@@ -40,8 +41,9 @@ export function ProjectChat({ projectId, tokenMint }: ProjectChatProps) {
   const [isLoadingMessages, setIsLoadingMessages] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [showNewMessagesIndicator, setShowNewMessagesIndicator] = useState(false)
-  const [hoveredMessageId, setHoveredMessageId] = useState<string | null>(null)
   const [openingMessageFor, setOpeningMessageFor] = useState<string | null>(null)
+  const [showProfileView, setShowProfileView] = useState(false)
+  const [selectedProfileWallet, setSelectedProfileWallet] = useState<string | null>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const messagesContainerRef = useRef<HTMLDivElement>(null)
 
@@ -297,19 +299,26 @@ export function ProjectChat({ projectId, tokenMint }: ProjectChatProps) {
                   className={`p-3 rounded-lg ${tierStyles.border} ${tierStyles.bg} ${
                     msg.pending ? 'opacity-60' : ''
                   }`}
-                  onMouseEnter={() => !isOwnMessage && setHoveredMessageId(msg.id)}
-                  onMouseLeave={() => setHoveredMessageId(null)}
                 >
                   {/* Username and timestamp row */}
                   <div className="flex items-center justify-between mb-1">
                     <div className={`flex items-center gap-1 md:gap-2 ${tierStyles.text} font-medium text-sm`}>
                       <span className="text-base md:text-lg">{tierDisplay.emoji}</span>
-                      <span className="text-xs md:text-sm">{formatAddress(msg.wallet_address)}</span>
+                      <span 
+                        className="text-xs md:text-sm cursor-pointer hover:text-purple-600 underline decoration-dotted transition-colors"
+                        onClick={() => {
+                          setSelectedProfileWallet(msg.wallet_address)
+                          setShowProfileView(true)
+                        }}
+                        title="View profile"
+                      >
+                        {formatAddress(msg.wallet_address)}
+                      </span>
                       <span className="text-xs">•</span>
                       <span className="text-xs">{msg.token_percentage.toFixed(3)}%</span>
                       
-                      {/* Message Icon (show on hover, not for own messages) */}
-                      {!isOwnMessage && hoveredMessageId === msg.id && (
+                      {/* Message Icon (always visible, not for own messages) */}
+                      {!isOwnMessage && (
                         <Tooltip 
                           title="Send direct message"
                           arrow
@@ -420,6 +429,49 @@ export function ProjectChat({ projectId, tokenMint }: ProjectChatProps) {
           </div>
         )}
       </CardContent>
+
+      {/* Profile View Modal */}
+      {selectedProfileWallet && (
+        <Dialog
+          open={showProfileView}
+          onClose={() => {
+            setShowProfileView(false)
+            setSelectedProfileWallet(null)
+          }}
+          maxWidth="md"
+          fullWidth
+          PaperProps={{
+            sx: {
+              borderRadius: 2,
+              maxHeight: '90vh'
+            }
+          }}
+          BackdropProps={{
+            sx: {
+              backgroundColor: 'rgba(0, 0, 0, 0.7)'
+            }
+          }}
+        >
+          <Box sx={{ 
+            bgcolor: 'background.paper',
+            overflow: 'auto'
+          }}>
+            <UserProfileView
+              walletAddress={selectedProfileWallet}
+              currentUserWallet={publicKey?.toString()}
+              projectId={projectId}
+              onClose={() => {
+                setShowProfileView(false)
+                setSelectedProfileWallet(null)
+              }}
+              onMessage={() => {
+                setShowProfileView(false)
+                setSelectedProfileWallet(null)
+              }}
+            />
+          </Box>
+        </Dialog>
+      )}
     </Card>
   )
 }

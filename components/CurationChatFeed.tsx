@@ -6,6 +6,8 @@ import { supabase } from '@/lib/supabase'
 import { formatDistanceToNow } from 'date-fns'
 import { AssetVotingCard } from './AssetVotingCard'
 import { Database } from '@/types/database'
+import { Dialog, Box } from '@mui/material'
+import { UserProfileView } from '@/components/UserProfileView'
 
 const getPlatformUrl = (platform: string, handle: string): string => {
   const urls: Record<string, string> = {
@@ -30,6 +32,8 @@ export function CurationChatFeed({ projectId }: CurationChatFeedProps) {
   const wallet = useWallet()
   const [messages, setMessages] = useState<CurationMessage[]>([])
   const [loading, setLoading] = useState(true)
+  const [showProfileView, setShowProfileView] = useState(false)
+  const [selectedProfileWallet, setSelectedProfileWallet] = useState<string | null>(null)
   
   // Fetch messages function
   const fetchMessages = useCallback(async () => {
@@ -90,16 +94,61 @@ export function CurationChatFeed({ projectId }: CurationChatFeedProps) {
   }
   
   return (
-    <div className="space-y-3">
-      {messages.map(msg => (
-        <CurationChatMessage
-          key={msg.id}
-          message={msg}
-          currentWallet={wallet.publicKey?.toString()}
-          projectId={projectId}
-        />
-      ))}
-    </div>
+    <>
+      <div className="space-y-3">
+        {messages.map(msg => (
+          <CurationChatMessage
+            key={msg.id}
+            message={msg}
+            currentWallet={wallet.publicKey?.toString()}
+            projectId={projectId}
+          />
+        ))}
+      </div>
+
+      {/* Profile View Modal */}
+      {selectedProfileWallet && (
+        <Dialog
+          open={showProfileView}
+          onClose={() => {
+            setShowProfileView(false)
+            setSelectedProfileWallet(null)
+          }}
+          maxWidth="md"
+          fullWidth
+          PaperProps={{
+            sx: {
+              borderRadius: 2,
+              maxHeight: '90vh'
+            }
+          }}
+          BackdropProps={{
+            sx: {
+              backgroundColor: 'rgba(0, 0, 0, 0.7)'
+            }
+          }}
+        >
+          <Box sx={{ 
+            bgcolor: 'background.paper',
+            overflow: 'auto'
+          }}>
+            <UserProfileView
+              walletAddress={selectedProfileWallet}
+              currentUserWallet={wallet.publicKey?.toString()}
+              projectId={projectId}
+              onClose={() => {
+                setShowProfileView(false)
+                setSelectedProfileWallet(null)
+              }}
+              onMessage={() => {
+                setShowProfileView(false)
+                setSelectedProfileWallet(null)
+              }}
+            />
+          </Box>
+        </Dialog>
+      )}
+    </>
   )
 }
 
@@ -131,7 +180,16 @@ function CurationChatMessage({
         <div className="flex flex-col sm:flex-row sm:items-start gap-2 sm:gap-3">
           <div className="flex-1">
             <p className="text-sm">
-              <span className="font-mono text-purple-600 font-medium">
+              <span 
+                className="font-mono text-purple-600 font-medium cursor-pointer hover:text-purple-800 underline decoration-dotted transition-colors"
+                onClick={() => {
+                  if (message.wallet_address) {
+                    setSelectedProfileWallet(message.wallet_address)
+                    setShowProfileView(true)
+                  }
+                }}
+                title="View profile"
+              >
                 {message.wallet_address?.slice(0, 4)}...{message.wallet_address?.slice(-4)}
               </span>
               <span className="text-gray-400 mx-2">•</span>
@@ -218,7 +276,16 @@ function CurationChatMessage({
       <div className="bg-red-50 border border-red-200 rounded-lg p-3">
         <p className="text-sm text-red-900">
           <span className="font-bold">🚫 Wallet Banned:</span>{' '}
-          <span className="font-mono">
+          <span 
+            className="font-mono cursor-pointer hover:text-red-700 underline decoration-dotted transition-colors"
+            onClick={() => {
+              if (message.wallet_address) {
+                setSelectedProfileWallet(message.wallet_address)
+                setShowProfileView(true)
+              }
+            }}
+            title="View profile"
+          >
             {message.wallet_address?.slice(0, 4)}...{message.wallet_address?.slice(-4)}
           </span>
         </p>

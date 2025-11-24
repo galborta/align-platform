@@ -17,6 +17,7 @@ import MenuItem from '@mui/material/MenuItem'
 import Select from '@mui/material/Select'
 import FormControl from '@mui/material/FormControl'
 import InputLabel from '@mui/material/InputLabel'
+import { WalletAddressWithMessage } from '@/components/WalletAddressWithMessage'
 
 type SocialPlatform = 'Instagram' | 'Twitter' | 'TikTok' | 'YouTube'
 type FollowerTier = '<10k' | '10k-50k' | '50k-100k' | '100k-500k' | '500k-1m' | '1m-5m' | '5m+'
@@ -1193,12 +1194,12 @@ export default function CreatePage() {
                           className="bg-white border border-border-subtle rounded-lg p-4 flex items-center justify-between"
                         >
                           <div>
-                            <p className="font-body font-semibold text-text-primary">
+                            <p className="font-body font-semibold text-text-primary mb-2">
                               {wallet.label}
                             </p>
-                            <p className="font-mono text-sm text-text-secondary">
-                              {shortenAddress(wallet.address)}
-                            </p>
+                            <WalletAddressWithMessage 
+                              walletAddress={wallet.address}
+                            />
                           </div>
                           <Button
                             onClick={() => handleRemoveTeamWallet(wallet.id)}
