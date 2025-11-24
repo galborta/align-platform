@@ -330,6 +330,65 @@ export async function elementExists(page: Page, selector: string): Promise<boole
 }
 
 /**
+ * Open the messages sidebar by clicking the Mail icon in the header
+ */
+export async function openMessagesSidebar(page: Page): Promise<void> {
+  try {
+    // Wait for page to be ready
+    await page.waitForLoadState('networkidle')
+    
+    // Use keyboard shortcut (most reliable method)
+    // Cmd+M on Mac, Ctrl+M on others
+    const isMac = process.platform === 'darwin'
+    await page.keyboard.press(isMac ? 'Meta+KeyM' : 'Control+KeyM')
+    
+    // Wait for sidebar to appear (drawer animation)
+    await page.waitForTimeout(800)
+    
+    console.log('✅ Messages sidebar opened via keyboard shortcut')
+  } catch (error) {
+    console.error('❌ Failed to open messages sidebar:', error)
+    throw error
+  }
+}
+
+/**
+ * Open a conversation with a specific user (waits for it to appear in list)
+ */
+export async function openConversation(page: Page, userName: string): Promise<void> {
+  try {
+    // Wait for conversation list to load (look for any conversation or the user)
+    await page.waitForTimeout(1000)
+    
+    // Try to find the conversation
+    const conversation = page.locator(`text=${userName}`).first()
+    
+    // Wait up to 5 seconds for conversation to appear
+    const isVisible = await conversation.isVisible({ timeout: 5000 }).catch(() => false)
+    
+    if (isVisible) {
+      await conversation.click()
+      await page.waitForTimeout(500)
+      console.log(`✅ Opened conversation with ${userName}`)
+    } else {
+      // Conversation not found - might need to create it
+      console.log(`⚠️ Conversation with ${userName} not found, may need to start new conversation`)
+      
+      // Try clicking "New Message" button
+      const newBtn = page.getByRole('button', { name: /new|start/i }).first()
+      if (await newBtn.isVisible({ timeout: 2000 }).catch(() => false)) {
+        await newBtn.click()
+        await page.waitForTimeout(500)
+        console.log('✅ Clicked new message button')
+      }
+    }
+  } catch (error) {
+    console.error(`❌ Failed to open conversation with ${userName}:`, error)
+    throw error
+  }
+}
+
+/**
  * Get current conversation count for a user
  */
 export async function getConversationCount(walletAddress: string): Promise<number> {

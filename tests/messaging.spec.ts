@@ -10,6 +10,8 @@ import {
   waitForText,
   elementExists,
   getUnreadCount,
+  openMessagesSidebar,
+  openConversation,
 } from './test-utils'
 
 // Setup: Seed test data before all tests
@@ -45,30 +47,11 @@ test.describe('Messaging System E2E Tests', () => {
       
       // Alice opens app and navigates to messages
       await alicePage.goto('/')
-      await alicePage.waitForLoadState('networkidle')
+      await openMessagesSidebar(alicePage)
+      await openConversation(alicePage, 'Bob')
       
-      // Open messages sidebar (look for various possible selectors)
-      const messageButton = alicePage.locator('[aria-label*="Message"], button:has-text("Messages")').first()
-      if (await messageButton.isVisible({ timeout: 2000 }).catch(() => false)) {
-        await messageButton.click()
-      }
-      
-      // Wait for sidebar to appear
-      await alicePage.waitForTimeout(1000)
-      
-      // Start new conversation by finding Bob or creating new message
-      const hasConversations = await elementExists(alicePage, '.conversation-item, [data-testid="conversation"]')
-      
-      if (!hasConversations) {
-        // Click new message button
-        const newMsgBtn = alicePage.locator('[aria-label="New message"], button:has-text("New")').first()
-        if (await newMsgBtn.isVisible({ timeout: 2000 }).catch(() => false)) {
-          await newMsgBtn.click()
-        }
-      }
-      
-      // Type and send message (look for message input)
-      const messageInput = alicePage.locator('textarea, input[type="text"]').filter({ hasText: '' }).first()
+      // Type and send message
+      const messageInput = alicePage.locator('textarea, input[type="text"]').first()
       await messageInput.fill('Hey Bob, this is a test message!')
       await messageInput.press('Enter')
       
@@ -77,26 +60,19 @@ test.describe('Messaging System E2E Tests', () => {
       
       // Bob opens app
       await bobPage.goto('/')
-      await bobPage.waitForLoadState('networkidle')
-      
-      // Bob opens messages
-      const bobMessageButton = bobPage.locator('[aria-label*="Message"], button:has-text("Messages")').first()
-      if (await bobMessageButton.isVisible({ timeout: 2000 }).catch(() => false)) {
-        await bobMessageButton.click()
-      }
+      await openMessagesSidebar(bobPage)
       
       // Bob should see conversation with Alice (real-time update)
       await expect(bobPage.locator('text=Alice')).toBeVisible({ timeout: 5000 })
       
       // Click on Alice's conversation
-      await bobPage.locator('text=Alice').click()
-      await bobPage.waitForTimeout(500)
+      await openConversation(bobPage, 'Alice')
       
       // Bob sees Alice's message
       await expect(bobPage.locator('text=Hey Bob')).toBeVisible({ timeout: 3000 })
       
       // Bob sends reply
-      const bobInput = bobPage.locator('textarea, input[type="text"]').filter({ hasText: '' }).first()
+      const bobInput = bobPage.locator('textarea, input[type="text"]').first()
       await bobInput.fill('Hi Alice! Got your message.')
       await bobInput.press('Enter')
       
@@ -128,10 +104,12 @@ test.describe('Messaging System E2E Tests', () => {
       
       // Both users open the conversation
       await alicePage.goto('/')
-      await alicePage.waitForTimeout(1000)
+      await openMessagesSidebar(alicePage)
+      await openConversation(alicePage, 'Bob')
       
       await bobPage.goto('/')
-      await bobPage.waitForTimeout(1000)
+      await openMessagesSidebar(bobPage)
+      await openConversation(bobPage, 'Alice')
       
       // Alice starts typing
       const aliceInput = alicePage.locator('textarea, input').first()
@@ -166,12 +144,16 @@ test.describe('Messaging System E2E Tests', () => {
 
   test('message character limit is enforced', async ({ page }) => {
     await mockWalletConnection(page, TEST_WALLETS.ALICE)
-    await page.goto('/')
     
     // Create test conversation
     await createTestConversation(TEST_WALLETS.ALICE, TEST_WALLETS.BOB)
     
-    await page.waitForTimeout(1000)
+    await page.goto('/')
+    await openMessagesSidebar(page)
+    
+    // Click on Bob's conversation
+    await page.click('text=Bob')
+    await page.waitForTimeout(500)
     
     // Find message input
     const input = page.locator('textarea, input[type="text"]').first()
@@ -244,7 +226,8 @@ test.describe('Messaging System E2E Tests', () => {
       
       // Alice sends 3 messages
       await alicePage.goto('/')
-      await alicePage.waitForTimeout(1500)
+      await openMessagesSidebar(alicePage)
+      await openConversation(alicePage, 'Bob')
       
       const aliceInput = alicePage.locator('textarea, input').first()
       
@@ -493,8 +476,9 @@ test.describe('Messaging System E2E Tests', () => {
     
     await createTestConversation(TEST_WALLETS.ALICE, TEST_WALLETS.BOB)
     
-    await page.goto('/')
-    await page.waitForTimeout(2000)
+      await page.goto('/')
+      await openMessagesSidebar(page)
+      await openConversation(page, 'Bob')
     
     const input = page.locator('textarea, input').first()
     const sendButton = page.locator('button[type="submit"], button:has-text("Send")').first()
@@ -521,8 +505,9 @@ test.describe('Messaging System E2E Tests', () => {
     
     await createTestConversation(TEST_WALLETS.ALICE, TEST_WALLETS.BOB)
     
-    await page.goto('/')
-    await page.waitForTimeout(2000)
+      await page.goto('/')
+      await openMessagesSidebar(page)
+      await openConversation(page, 'Bob')
     
     const input = page.locator('textarea, input').first()
     
@@ -635,7 +620,8 @@ test.describe('Messaging System E2E Tests', () => {
       
       // Alice sends message
       await alicePage.goto('/')
-      await alicePage.waitForTimeout(1500)
+      await openMessagesSidebar(alicePage)
+      await openConversation(alicePage, 'Bob')
       
       const aliceInput = alicePage.locator('textarea, input').first()
       await aliceInput.fill('Read receipt test')
@@ -652,10 +638,10 @@ test.describe('Messaging System E2E Tests', () => {
       
       // Bob opens and reads message
       await bobPage.goto('/')
-      await bobPage.waitForTimeout(2000)
+      await openMessagesSidebar(bobPage)
       
       // Open conversation
-      const conversation = bobPage.locator('.conversation-item, text=Alice').first()
+      const conversation = bobPage.locator('text=Alice').first()
       if (await conversation.isVisible({ timeout: 2000 }).catch(() => false)) {
         await conversation.click()
         await bobPage.waitForTimeout(1000)
