@@ -38,6 +38,8 @@ interface JobApplicationModalProps {
   walletAddress: string
   userKarma: number
   completedJobsCount: number
+  assignmentMode: 'first_come' | 'review'
+  jobStatus: string
   onApplicationSubmitted?: () => void
 }
 
@@ -68,6 +70,8 @@ export function JobApplicationModal({
   walletAddress,
   userKarma,
   completedJobsCount,
+  assignmentMode,
+  jobStatus,
   onApplicationSubmitted
 }: JobApplicationModalProps) {
   const [loading, setLoading] = useState(false)
@@ -268,7 +272,7 @@ export function JobApplicationModal({
         : TIME_OPTIONS.find(opt => opt.value === estimatedCompletion)?.label || estimatedCompletion
 
       // Submit application
-      await applyToJob({
+      const applicationData = await applyToJob({
         job_id: jobId,
         applicant_wallet: walletAddress,
         pitch: pitch.trim(),
@@ -279,6 +283,42 @@ export function JobApplicationModal({
       // TODO: Award karma via job-karma helper
       // await awardApplyToJobKarma(walletAddress, projectId, tokenMint)
 
+      // AUTO-ASSIGNMENT FOR FIRST_COME MODE
+      if (assignmentMode === 'first_come' && jobStatus === 'open') {
+        try {
+          const autoAssignResponse = await fetch(`/api/jobs/${jobId}/auto-assign`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              applicationId: applicationData.id,
+              applicantWallet: walletAddress
+            })
+          })
+
+          const autoAssignResult = await autoAssignResponse.json()
+
+          if (autoAssignResult.success) {
+            toast.success('🎉 Job automatically assigned to you! Start working 💪', {
+              duration: 5000,
+              style: {
+                background: '#7C4DFF',
+                color: '#fff',
+              }
+            })
+            
+            onClose()
+            if (onApplicationSubmitted) {
+              onApplicationSubmitted()
+            }
+            return
+          }
+        } catch (autoAssignError) {
+          console.error('Auto-assign failed:', autoAssignError)
+          // Continue with normal flow if auto-assign fails
+        }
+      }
+
+      // Normal success flow for review mode
       toast.success(`Application submitted! +${immediateKarma} karma earned 🎉`, {
         duration: 4000,
         style: {

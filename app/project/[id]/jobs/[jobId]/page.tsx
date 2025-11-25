@@ -11,11 +11,11 @@ import { CreateJobModal } from '@/components/CreateJobModal'
 import { OpenDisputeModal } from '@/components/OpenDisputeModal'
 import { SupporterBadge } from '@/components/SupporterBadge'
 import { SupporterBadgeFetcher } from '@/components/SupporterBadgeFetcher'
+import JobComments from '@/components/JobComments'
 import { supabase } from '@/lib/supabase'
 import { getJobById } from '@/lib/jobs'
 import { upvoteApplication, getApplicationVotes, hasUserVoted } from '@/lib/job-upvoting'
 import { awardApplicationUpvoterBonuses } from '@/lib/job-karma'
-import { getJobComments, postJobComment, JobComment } from '@/lib/job-comments'
 import { Database } from '@/types/database'
 import { useWallet } from '@solana/wallet-adapter-react'
 import { formatDistanceToNow, addDays, format } from 'date-fns'
@@ -123,9 +123,6 @@ export default function JobDetailPage() {
   const [applicationVotes, setApplicationVotes] = useState<Record<string, { totalWeight: number; voterCount: number; hasVoted: boolean }>>({})
   const [upvoting, setUpvoting] = useState<string | null>(null)
   const [sortBy, setSortBy] = useState<'votes' | 'karma' | 'recent'>('votes')
-  const [comments, setComments] = useState<JobComment[]>([])
-  const [newComment, setNewComment] = useState('')
-  const [postingComment, setPostingComment] = useState(false)
 
   useEffect(() => {
     if (params.jobId && params.id) {
@@ -239,10 +236,6 @@ export default function JobDetailPage() {
       if (jobData.status === 'disputed') {
         await fetchDisputeData(params.jobId as string, jobData.project_id)
       }
-
-      // Fetch job comments
-      const commentsData = await getJobComments(params.jobId as string)
-      setComments(commentsData)
 
     } catch (err) {
       console.error('Error fetching job data:', err)
@@ -658,41 +651,6 @@ export default function JobDetailPage() {
       toast.error('Failed to release payment')
     } finally {
       setReleasing(false)
-    }
-  }
-
-  const handlePostComment = async () => {
-    if (!publicKey) {
-      toast.error('Please connect your wallet to comment')
-      return
-    }
-
-    if (!newComment.trim()) {
-      toast.error('Comment cannot be empty')
-      return
-    }
-
-    setPostingComment(true)
-    
-    try {
-      const result = await postJobComment(
-        job.id,
-        publicKey.toString(),
-        newComment
-      )
-      
-      if (result.success) {
-        toast.success('Comment posted!')
-        setNewComment('')
-        await fetchJobData() // Refresh to show new comment
-      } else {
-        toast.error(result.error || 'Failed to post comment')
-      }
-    } catch (error) {
-      console.error('Error posting comment:', error)
-      toast.error('Failed to post comment')
-    } finally {
-      setPostingComment(false)
     }
   }
 
@@ -2399,138 +2357,10 @@ export default function JobDetailPage() {
           </CardContent>
         </Card>
 
-        {/* Job Comments Section - NEW */}
+        {/* Job Discussion Thread */}
         <Card className="mt-6">
           <CardContent className="p-6">
-            <h2 
-              className="text-2xl font-bold mb-4"
-              style={{ 
-                fontFamily: 'var(--font-display), Space Grotesk, sans-serif',
-                color: '#1A1A1E'
-              }}
-            >
-              Discussion ({comments.length})
-            </h2>
-
-            {/* Comment Input */}
-            {publicKey ? (
-              <div className="mb-6">
-                <textarea
-                  value={newComment}
-                  onChange={(e) => setNewComment(e.target.value)}
-                  placeholder="Add a comment or ask a question..."
-                  className="w-full p-4 rounded-lg border-2 resize-none"
-                  style={{
-                    borderColor: '#E5E7F0',
-                    minHeight: '100px',
-                    fontFamily: 'Inter, sans-serif',
-                    fontSize: '15px',
-                    lineHeight: '1.6'
-                  }}
-                  maxLength={1000}
-                />
-                <div className="flex justify-between items-center mt-2">
-                  <span 
-                    className="text-xs"
-                    style={{ color: '#6F7280' }}
-                  >
-                    {newComment.length}/1,000
-                  </span>
-                  <Button
-                    variant="primary"
-                    onClick={handlePostComment}
-                    disabled={postingComment || !newComment.trim()}
-                  >
-                    {postingComment ? (
-                      <>
-                        <CircularProgress size={16} sx={{ mr: 1, color: '#fff' }} />
-                        Posting...
-                      </>
-                    ) : (
-                      'Post Comment'
-                    )}
-                  </Button>
-                </div>
-              </div>
-            ) : (
-              <div 
-                className="p-4 rounded-lg text-center mb-6"
-                style={{ backgroundColor: '#F8F9FC' }}
-              >
-                <p className="text-sm" style={{ color: '#6F7280' }}>
-                  Connect your wallet to join the discussion
-                </p>
-              </div>
-            )}
-
-            {/* Comments List */}
-            {comments.length === 0 ? (
-              <div 
-                className="text-center py-12"
-                style={{ color: '#A3A7B5' }}
-              >
-                <p className="text-lg">
-                  No comments yet. Be the first to comment!
-                </p>
-              </div>
-            ) : (
-              <div className="space-y-4">
-                {comments.map((comment) => (
-                  <div 
-                    key={comment.id}
-                    className="p-4 rounded-lg border"
-                    style={{ 
-                      borderColor: '#E5E7F0',
-                      backgroundColor: '#FAFBFC'
-                    }}
-                  >
-                    <div className="flex items-center justify-between mb-2">
-                      <div className="flex items-center gap-2">
-                        <span 
-                          className="text-sm font-mono font-semibold"
-                          style={{ color: '#1A1A1E' }}
-                        >
-                          {formatWalletAddress(comment.wallet_address)}
-                        </span>
-                        <Tooltip title="Copy address">
-                          <IconButton
-                            size="small"
-                            onClick={() => handleCopyAddress(comment.wallet_address)}
-                            sx={{ 
-                              padding: '2px',
-                              color: '#6F7280',
-                              '&:hover': { color: '#7C4DFF' }
-                            }}
-                          >
-                            <ContentCopyIcon sx={{ fontSize: 12 }} />
-                          </IconButton>
-                        </Tooltip>
-                        <SupporterBadgeFetcher 
-                          walletAddress={comment.wallet_address} 
-                          projectId={project.id}
-                          size="small"
-                        />
-                      </div>
-                      <span 
-                        className="text-xs"
-                        style={{ color: '#A3A7B5' }}
-                      >
-                        {formatDistanceToNow(new Date(comment.created_at), { addSuffix: true })}
-                      </span>
-                    </div>
-                    <p 
-                      className="text-base whitespace-pre-wrap"
-                      style={{ 
-                        color: '#1A1A1E',
-                        lineHeight: '1.6'
-                      }}
-                    >
-                      {comment.message}
-                    </p>
-                  </div>
-                ))}
-              </div>
-            )}
+            <JobComments jobId={job.id} projectId={params.id as string} />
           </CardContent>
         </Card>
       </main>
@@ -2768,6 +2598,8 @@ export default function JobDetailPage() {
           walletAddress={publicKey.toString()}
           userKarma={userKarma}
           completedJobsCount={userCompletedJobs}
+          assignmentMode={job.assignment_mode}
+          jobStatus={job.status}
           onApplicationSubmitted={() => {
             fetchJobData() // Refresh to show new application
           }}
