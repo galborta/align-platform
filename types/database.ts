@@ -814,6 +814,61 @@ export interface Database {
           created_at?: string
         }
       }
+      job_comments: {
+        Row: {
+          id: string
+          job_id: string
+          wallet_address: string
+          message: string
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          job_id: string
+          wallet_address: string
+          message: string
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          job_id?: string
+          wallet_address?: string
+          message?: string
+          created_at?: string
+          updated_at?: string
+        }
+      }
+      chat_tips: {
+        Row: {
+          id: string
+          project_id: string
+          from_wallet: string
+          to_wallet: string
+          amount_nub: number
+          message: string | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          project_id: string
+          from_wallet: string
+          to_wallet: string
+          amount_nub: number
+          message?: string | null
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          project_id?: string
+          from_wallet?: string
+          to_wallet?: string
+          amount_nub?: number
+          message?: string | null
+          created_at?: string
+        }
+      }
     }
     Views: {
       [_ in never]: never
