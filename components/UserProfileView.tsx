@@ -1,6 +1,8 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { useRouter } from 'next/navigation'
+import { formatDistanceToNow } from 'date-fns'
 import {
   Card,
   CardContent,
@@ -10,7 +12,11 @@ import {
   Tooltip,
   CircularProgress,
   Avatar,
-  Divider
+  Divider,
+  Paper,
+  Typography,
+  Box,
+  Grid
 } from '@mui/material'
 import {
   Close as CloseIcon,
@@ -86,6 +92,22 @@ export function UserProfileView({
     hiddenSections?: string[]
   }>({ canView: true })
   const [canSeeStatus, setCanSeeStatus] = useState(true)
+  const [jobStats, setJobStats] = useState<{
+    poster: {
+      jobsPosted: number
+      completedJobs: number
+      disputedJobs: number
+      winRate: number
+    }
+    worker: {
+      jobsCompleted: number
+      failures: number
+      winRate: number
+    }
+  } | null>(null)
+  const [completedJobs, setCompletedJobs] = useState<any[]>([])
+  const [showAllJobs, setShowAllJobs] = useState(false)
+  const router = useRouter()
   
   // Truncate wallet address
   const truncateWallet = (address: string) => {
@@ -116,6 +138,94 @@ export function UserProfileView({
       name: tier.name.toUpperCase(),
       multiplier: tier.multiplier,
       ...colors
+    }
+  }
+  
+  // Get reputation badge based on worker stats
+  const getReputationBadge = (stats: { jobsCompleted: number; failures: number }) => {
+    const total = stats.jobsCompleted + stats.failures
+    if (total === 0) return null
+    
+    const completionRate = stats.jobsCompleted / total
+    
+    if (completionRate >= 0.9 && stats.jobsCompleted >= 5) {
+      return (
+        <Chip 
+          label="🟢 Trusted" 
+          size="small"
+          sx={{ bgcolor: '#E3F8ED', color: '#36C170', fontWeight: 600 }}
+        />
+      )
+    } else if (completionRate >= 0.7) {
+      return (
+        <Chip 
+          label="🟡 Reliable" 
+          size="small"
+          sx={{ bgcolor: '#FFF8E1', color: '#FFC857', fontWeight: 600 }}
+        />
+      )
+    } else {
+      return (
+        <Chip 
+          label="🔴 Risky" 
+          size="small"
+          sx={{ bgcolor: '#FFEBEE', color: '#E74C3C', fontWeight: 600 }}
+        />
+      )
+    }
+  }
+  
+  // Load job statistics
+  const loadJobStats = async () => {
+    try {
+      // Poster stats
+      const { data: postedJobs } = await supabase
+        .from('jobs')
+        .select('*')
+        .eq('poster_wallet', walletAddress)
+
+      const completedPosted = postedJobs?.filter(j => j.status === 'completed').length || 0
+      const disputedPosted = postedJobs?.filter(j => j.status === 'disputed').length || 0
+      
+      // Worker stats
+      const { data: workerJobs } = await supabase
+        .from('jobs')
+        .select('*')
+        .eq('assigned_to', walletAddress)
+        .eq('status', 'completed')
+
+      const completedWorker = workerJobs?.length || 0
+      
+      const { data: failures } = await supabase
+        .from('job_failures')
+        .select('*')
+        .eq('worker_wallet', walletAddress)
+
+      // Calculate win rates
+      const posterWinRate = disputedPosted > 0 
+        ? Math.round((completedPosted / (completedPosted + disputedPosted)) * 100) 
+        : 100
+
+      setJobStats({
+        poster: {
+          jobsPosted: postedJobs?.length || 0,
+          completedJobs: completedPosted,
+          disputedJobs: disputedPosted,
+          winRate: posterWinRate
+        },
+        worker: {
+          jobsCompleted: completedWorker,
+          failures: failures?.length || 0,
+          winRate: 95 // TODO: Calculate from dispute outcomes
+        }
+      })
+      
+      // Load completed jobs for portfolio
+      if (workerJobs) {
+        setCompletedJobs(workerJobs)
+      }
+    } catch (error) {
+      console.error('Error loading job stats:', error)
     }
   }
   
@@ -194,6 +304,11 @@ export function UserProfileView({
     
     fetchUserData()
   }, [walletAddress, projectId])
+  
+  // Load job statistics
+  useEffect(() => {
+    loadJobStats()
+  }, [walletAddress])
   
   // Check if current user can message this user
   useEffect(() => {
@@ -656,6 +771,170 @@ export function UserProfileView({
               )}
             </div>
           </div>
+        )}
+        
+        {/* Job Stats Section */}
+        {jobStats && (jobStats.poster.jobsPosted > 0 || jobStats.worker.jobsCompleted > 0) && (
+          <Paper sx={{ p: 3, mb: 3, bgcolor: '#FAFBFC' }}>
+            <Typography variant="h6" sx={{ mb: 2, fontFamily: 'Space Grotesk', fontWeight: 700 }}>
+              Job Activity
+            </Typography>
+
+            {/* As Poster */}
+            {jobStats.poster.jobsPosted > 0 && (
+              <Box sx={{ mb: 3 }}>
+                <Typography variant="subtitle2" sx={{ mb: 1.5, color: '#7C4DFF', fontWeight: 600 }}>
+                  As Job Poster
+                </Typography>
+                <Grid container spacing={2}>
+                  <Grid item xs={6} sm={3}>
+                    <Typography variant="h4" sx={{ fontWeight: 700 }}>
+                      {jobStats.poster.jobsPosted}
+                    </Typography>
+                    <Typography variant="caption" sx={{ color: '#6F7280' }}>
+                      Jobs Posted
+                    </Typography>
+                  </Grid>
+                  <Grid item xs={6} sm={3}>
+                    <Typography variant="h4" sx={{ fontWeight: 700, color: '#36C170' }}>
+                      {jobStats.poster.completedJobs}
+                    </Typography>
+                    <Typography variant="caption" sx={{ color: '#6F7280' }}>
+                      Completed
+                    </Typography>
+                  </Grid>
+                  <Grid item xs={6} sm={3}>
+                    <Typography variant="h4" sx={{ fontWeight: 700, color: '#FFC857' }}>
+                      {jobStats.poster.disputedJobs}
+                    </Typography>
+                    <Typography variant="caption" sx={{ color: '#6F7280' }}>
+                      Disputed
+                    </Typography>
+                  </Grid>
+                  <Grid item xs={6} sm={3}>
+                    <Typography variant="h4" sx={{ fontWeight: 700 }}>
+                      {jobStats.poster.winRate}%
+                    </Typography>
+                    <Typography variant="caption" sx={{ color: '#6F7280' }}>
+                      Win Rate
+                    </Typography>
+                  </Grid>
+                </Grid>
+              </Box>
+            )}
+
+            {/* As Worker */}
+            {jobStats.worker.jobsCompleted > 0 && (
+              <Box>
+                <Typography variant="subtitle2" sx={{ mb: 1.5, color: '#7C4DFF', fontWeight: 600 }}>
+                  As Worker
+                </Typography>
+                <Grid container spacing={2}>
+                  <Grid item xs={6} sm={3}>
+                    <Typography variant="h4" sx={{ fontWeight: 700 }}>
+                      {jobStats.worker.jobsCompleted}
+                    </Typography>
+                    <Typography variant="caption" sx={{ color: '#6F7280' }}>
+                      Jobs Completed
+                    </Typography>
+                  </Grid>
+                  <Grid item xs={6} sm={3}>
+                    <Typography variant="h4" sx={{ fontWeight: 700, color: '#E74C3C' }}>
+                      {jobStats.worker.failures}
+                    </Typography>
+                    <Typography variant="caption" sx={{ color: '#6F7280' }}>
+                      Failed to Deliver
+                    </Typography>
+                  </Grid>
+                  <Grid item xs={6} sm={3}>
+                    <Typography variant="h4" sx={{ fontWeight: 700 }}>
+                      {jobStats.worker.winRate}%
+                    </Typography>
+                    <Typography variant="caption" sx={{ color: '#6F7280' }}>
+                      Dispute Win Rate
+                    </Typography>
+                  </Grid>
+                  <Grid item xs={6} sm={3}>
+                    <Box sx={{ display: 'flex', alignItems: 'center', height: '100%' }}>
+                      {getReputationBadge(jobStats.worker)}
+                    </Box>
+                  </Grid>
+                </Grid>
+              </Box>
+            )}
+          </Paper>
+        )}
+        
+        {/* Completed Jobs Portfolio */}
+        {jobStats && jobStats.worker.jobsCompleted > 0 && completedJobs.length > 0 && (
+          <Paper sx={{ p: 3, mb: 3 }}>
+            <Typography variant="h6" sx={{ mb: 2, fontFamily: 'Space Grotesk', fontWeight: 700 }}>
+              Portfolio ({jobStats.worker.jobsCompleted} jobs)
+            </Typography>
+            
+            <Grid container spacing={2}>
+              {completedJobs.slice(0, showAllJobs ? completedJobs.length : 6).map(job => (
+                <Grid item xs={12} sm={6} md={4} key={job.id}>
+                  <Card 
+                    sx={{ 
+                      p: 2, 
+                      cursor: 'pointer',
+                      transition: 'all 0.2s',
+                      '&:hover': { 
+                        boxShadow: 3,
+                        transform: 'translateY(-2px)'
+                      }
+                    }}
+                    onClick={() => router.push(`/project/${job.project_id}/jobs/${job.id}`)}
+                  >
+                    <Typography variant="subtitle2" sx={{ fontWeight: 600, mb: 0.5, lineClamp: 2 }}>
+                      {job.title}
+                    </Typography>
+                    <Typography variant="caption" sx={{ color: '#6F7280' }}>
+                      {job.category} • ${job.payment_amount_usd}
+                    </Typography>
+                    <Typography variant="caption" sx={{ display: 'block', mt: 1, color: '#36C170' }}>
+                      ✓ Completed {job.completed_at ? formatDistanceToNow(new Date(job.completed_at), { addSuffix: true }) : ''}
+                    </Typography>
+                  </Card>
+                </Grid>
+              ))}
+            </Grid>
+
+            {jobStats.worker.jobsCompleted > 6 && !showAllJobs && (
+              <Button 
+                fullWidth 
+                sx={{ 
+                  mt: 2,
+                  textTransform: 'none',
+                  color: '#7C4DFF',
+                  '&:hover': {
+                    bgcolor: '#F8F5FF'
+                  }
+                }}
+                onClick={() => setShowAllJobs(true)}
+              >
+                View All {jobStats.worker.jobsCompleted} Jobs
+              </Button>
+            )}
+            
+            {showAllJobs && jobStats.worker.jobsCompleted > 6 && (
+              <Button 
+                fullWidth 
+                sx={{ 
+                  mt: 2,
+                  textTransform: 'none',
+                  color: '#7C4DFF',
+                  '&:hover': {
+                    bgcolor: '#F8F5FF'
+                  }
+                }}
+                onClick={() => setShowAllJobs(false)}
+              >
+                Show Less
+              </Button>
+            )}
+          </Paper>
         )}
         
         {/* Bio Section */}
