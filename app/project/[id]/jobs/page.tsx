@@ -19,6 +19,12 @@ import ContentCopyIcon from '@mui/icons-material/ContentCopy'
 import WorkOutlineIcon from '@mui/icons-material/WorkOutline'
 import IconButton from '@mui/material/IconButton'
 import Tooltip from '@mui/material/Tooltip'
+import Box from '@mui/material/Box'
+import FormControl from '@mui/material/FormControl'
+import InputLabel from '@mui/material/InputLabel'
+import Select from '@mui/material/Select'
+import MenuItem from '@mui/material/MenuItem'
+import TextField from '@mui/material/TextField'
 
 type Project = Database['public']['Tables']['projects']['Row']
 type Job = Database['public']['Tables']['jobs']['Row']
@@ -59,6 +65,13 @@ export default function ProjectJobsPage() {
   const [copiedAddress, setCopiedAddress] = useState<string | null>(null)
   const [myApplicationJobs, setMyApplicationJobs] = useState<JobWithApplicationCount[]>([])
   const [showCreateModal, setShowCreateModal] = useState(false)
+  
+  // Advanced filter states
+  const [statusFilter, setStatusFilter] = useState<string>('all')
+  const [categoryFilter, setCategoryFilter] = useState<string>('all')
+  const [priceFilter, setPriceFilter] = useState<string>('all')
+  const [sortBy, setSortBy] = useState<string>('newest')
+  const [walletSearch, setWalletSearch] = useState<string>('')
 
   useEffect(() => {
     if (params.id) {
@@ -199,19 +212,96 @@ export default function ProjectJobsPage() {
     return `${address.slice(0, 4)}...${address.slice(-4)}`
   }
 
+  const getStatusIcon = (status: string) => {
+    switch (status) {
+      case 'open': return '🟢'
+      case 'assigned': return '🟡'
+      case 'submitted': return '🔵'
+      case 'disputed': return '🔴'
+      case 'completed': return '✅'
+      case 'cancelled': return '❌'
+      default: return ''
+    }
+  }
+
   const getFilteredJobs = () => {
+    // Start with base tab filter
+    let filtered: JobWithApplicationCount[] = []
     switch (activeTab) {
       case 0: // Open Jobs
-        return jobs.filter(job => job.status === 'open')
+        filtered = jobs.filter(job => job.status === 'open')
+        break
       case 1: // Assigned
-        return jobs.filter(job => job.status === 'assigned' || job.status === 'submitted')
+        filtered = jobs.filter(job => job.status === 'assigned' || job.status === 'submitted')
+        break
       case 2: // Completed
-        return jobs.filter(job => job.status === 'completed')
+        filtered = jobs.filter(job => job.status === 'completed')
+        break
       case 3: // My Applications
-        return myApplicationJobs
+        filtered = myApplicationJobs
+        break
       default:
-        return jobs
+        filtered = jobs
     }
+
+    // Apply status filter
+    if (statusFilter !== 'all') {
+      filtered = filtered.filter(job => job.status === statusFilter)
+    }
+
+    // Apply category filter
+    if (categoryFilter !== 'all') {
+      filtered = filtered.filter(job => job.category === categoryFilter)
+    }
+
+    // Apply price filter
+    if (priceFilter !== 'all') {
+      const [minStr, maxStr] = priceFilter.split('-')
+      const min = parseInt(minStr)
+      const max = maxStr === '+' ? Infinity : parseInt(maxStr)
+      filtered = filtered.filter(job => 
+        job.payment_amount_usd >= min && job.payment_amount_usd <= max
+      )
+    }
+
+    // Apply wallet search
+    if (walletSearch.trim()) {
+      const searchLower = walletSearch.toLowerCase().trim()
+      filtered = filtered.filter(job => 
+        job.poster_wallet.toLowerCase().includes(searchLower) ||
+        (job.assigned_to && job.assigned_to.toLowerCase().includes(searchLower))
+      )
+    }
+
+    // Apply sorting
+    switch (sortBy) {
+      case 'newest':
+        filtered = filtered.sort((a, b) => 
+          new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+        )
+        break
+      case 'highest_payment':
+        filtered = filtered.sort((a, b) => 
+          b.payment_amount_usd - a.payment_amount_usd
+        )
+        break
+      case 'most_applications':
+        filtered = filtered.sort((a, b) => 
+          b.application_count - a.application_count
+        )
+        break
+      case 'ending_soon':
+        // For disputed jobs, sort by how soon they end
+        filtered = filtered
+          .filter(job => job.status === 'disputed')
+          .sort((a, b) => {
+            if (!a.submitted_at || !b.submitted_at) return 0
+            return new Date(a.submitted_at).getTime() - new Date(b.submitted_at).getTime()
+          })
+        break
+    }
+
+    return filtered
   }
 
   const filteredJobs = getFilteredJobs()
@@ -303,6 +393,135 @@ export default function ProjectJobsPage() {
             <Tab label="My Applications" />
           </Tabs>
 
+          {/* Advanced Filters */}
+          <Box 
+            sx={{ 
+              p: 3, 
+              borderBottom: '1px solid #E5E7F0',
+              display: 'flex', 
+              gap: 2, 
+              flexWrap: 'wrap',
+              '@media (max-width: 600px)': {
+                flexDirection: 'column'
+              }
+            }}
+          >
+            {/* Status Filter */}
+            <FormControl 
+              sx={{ 
+                minWidth: 150,
+                '@media (max-width: 600px)': {
+                  width: '100%'
+                }
+              }}
+            >
+              <InputLabel>Status</InputLabel>
+              <Select
+                value={statusFilter}
+                label="Status"
+                onChange={(e) => setStatusFilter(e.target.value)}
+                sx={{ bgcolor: '#fff' }}
+              >
+                <MenuItem value="all">All</MenuItem>
+                <MenuItem value="open">🟢 Open</MenuItem>
+                <MenuItem value="assigned">🟡 Assigned</MenuItem>
+                <MenuItem value="submitted">🔵 Submitted</MenuItem>
+                <MenuItem value="disputed">🔴 Disputed</MenuItem>
+                <MenuItem value="completed">✅ Completed</MenuItem>
+                <MenuItem value="cancelled">❌ Cancelled</MenuItem>
+              </Select>
+            </FormControl>
+
+            {/* Category Filter */}
+            <FormControl 
+              sx={{ 
+                minWidth: 150,
+                '@media (max-width: 600px)': {
+                  width: '100%'
+                }
+              }}
+            >
+              <InputLabel>Category</InputLabel>
+              <Select
+                value={categoryFilter}
+                label="Category"
+                onChange={(e) => setCategoryFilter(e.target.value)}
+                sx={{ bgcolor: '#fff' }}
+              >
+                <MenuItem value="all">All</MenuItem>
+                <MenuItem value="design">Design</MenuItem>
+                <MenuItem value="marketing">Marketing</MenuItem>
+                <MenuItem value="development">Development</MenuItem>
+                <MenuItem value="content">Content</MenuItem>
+                <MenuItem value="community">Community</MenuItem>
+                <MenuItem value="other">Other</MenuItem>
+              </Select>
+            </FormControl>
+
+            {/* Price Range Filter */}
+            <FormControl 
+              sx={{ 
+                minWidth: 150,
+                '@media (max-width: 600px)': {
+                  width: '100%'
+                }
+              }}
+            >
+              <InputLabel>Price Range</InputLabel>
+              <Select
+                value={priceFilter}
+                label="Price Range"
+                onChange={(e) => setPriceFilter(e.target.value)}
+                sx={{ bgcolor: '#fff' }}
+              >
+                <MenuItem value="all">All</MenuItem>
+                <MenuItem value="5-25">$5-25</MenuItem>
+                <MenuItem value="25-100">$25-100</MenuItem>
+                <MenuItem value="100-500">$100-500</MenuItem>
+                <MenuItem value="500-99999">$500+</MenuItem>
+              </Select>
+            </FormControl>
+
+            {/* Sort By */}
+            <FormControl 
+              sx={{ 
+                minWidth: 150,
+                '@media (max-width: 600px)': {
+                  width: '100%'
+                }
+              }}
+            >
+              <InputLabel>Sort By</InputLabel>
+              <Select
+                value={sortBy}
+                label="Sort By"
+                onChange={(e) => setSortBy(e.target.value)}
+                sx={{ bgcolor: '#fff' }}
+              >
+                <MenuItem value="newest">Newest First</MenuItem>
+                <MenuItem value="highest_payment">Highest Payment</MenuItem>
+                <MenuItem value="most_applications">Most Applications</MenuItem>
+                <MenuItem value="ending_soon">Ending Soon (Disputes)</MenuItem>
+              </Select>
+            </FormControl>
+
+            {/* Search by Wallet */}
+            <TextField
+              label="Search by wallet"
+              value={walletSearch}
+              onChange={(e) => setWalletSearch(e.target.value)}
+              placeholder="7xK...9mP"
+              sx={{ 
+                minWidth: 200,
+                bgcolor: '#fff',
+                '@media (max-width: 600px)': {
+                  width: '100%'
+                }
+              }}
+              size="small"
+            />
+          </Box>
+
           {/* Content Area */}
           {filteredJobs.length === 0 ? (
             // Empty State
@@ -342,10 +561,9 @@ export default function ProjectJobsPage() {
                       {/* Status Indicator */}
                       <div className="flex items-center justify-between mb-4 mt-1">
                         <div className="flex items-center gap-2">
-                          <div 
-                            className="w-2 h-2 rounded-full"
-                            style={{ backgroundColor: statusColors[job.status] }}
-                          />
+                          <span className="text-base">
+                            {getStatusIcon(job.status)}
+                          </span>
                           <span 
                             className="text-sm font-medium capitalize"
                             style={{ color: '#6F7280' }}
@@ -394,6 +612,22 @@ export default function ProjectJobsPage() {
                           ${job.payment_amount_usd.toLocaleString()} USD
                         </p>
                       </div>
+
+                      {/* Application Count Chip */}
+                      {job.application_count > 0 && job.status !== 'completed' && (
+                        <div className="mb-3">
+                          <Chip 
+                            label={`${job.application_count} ${job.application_count === 1 ? 'application' : 'applications'}`}
+                            size="small"
+                            sx={{
+                              bgcolor: '#E8F4FF',
+                              color: '#2563EB',
+                              fontWeight: 500,
+                              fontSize: '12px'
+                            }}
+                          />
+                        </div>
+                      )}
 
                       {/* Completed By (for completed jobs) OR Posted By */}
                       {job.status === 'completed' && job.assigned_to ? (
