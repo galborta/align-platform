@@ -848,6 +848,8 @@ export interface Database {
           to_wallet: string
           amount_nub: number
           message: string | null
+          token_mint: string | null
+          tx_signature: string | null
           created_at: string
         }
         Insert: {
@@ -857,6 +859,8 @@ export interface Database {
           to_wallet: string
           amount_nub: number
           message?: string | null
+          token_mint?: string | null
+          tx_signature?: string | null
           created_at?: string
         }
         Update: {
@@ -866,6 +870,8 @@ export interface Database {
           to_wallet?: string
           amount_nub?: number
           message?: string | null
+          token_mint?: string | null
+          tx_signature?: string | null
           created_at?: string
         }
       }

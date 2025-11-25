@@ -11,11 +11,13 @@ import CircularProgress from '@mui/material/CircularProgress'
 import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown'
 import MessageIcon from '@mui/icons-material/Message'
 import BlockIcon from '@mui/icons-material/Block'
+import LocalAtmIcon from '@mui/icons-material/LocalAtm'
 import { IconButton, Tooltip, Dialog, Box } from '@mui/material'
 import { useMessaging } from '@/lib/MessagingContext'
 import { canMessageUser } from '@/lib/messaging'
 import { toast } from 'react-hot-toast'
 import { UserProfileView } from '@/components/UserProfileView'
+import TipModal from '@/components/TipModal'
 
 interface Message {
   id: string
@@ -44,6 +46,8 @@ export function ProjectChat({ projectId, tokenMint }: ProjectChatProps) {
   const [openingMessageFor, setOpeningMessageFor] = useState<string | null>(null)
   const [showProfileView, setShowProfileView] = useState(false)
   const [selectedProfileWallet, setSelectedProfileWallet] = useState<string | null>(null)
+  const [tipModalOpen, setTipModalOpen] = useState(false)
+  const [tipRecipient, setTipRecipient] = useState('')
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const messagesContainerRef = useRef<HTMLDivElement>(null)
 
@@ -319,36 +323,65 @@ export function ProjectChat({ projectId, tokenMint }: ProjectChatProps) {
                       
                       {/* Message Icon (always visible, not for own messages) */}
                       {!isOwnMessage && (
-                        <Tooltip 
-                          title="Send direct message"
-                          arrow
-                          placement="top"
-                        >
-                          <IconButton
-                            size="small"
-                            onClick={() => handleOpenMessage(msg.wallet_address)}
-                            disabled={openingMessageFor === msg.wallet_address}
-                            sx={{
-                              p: 0.5,
-                              ml: 0.5,
-                              color: '#7C4DFF',
-                              '&:hover': { 
-                                bgcolor: 'rgba(124, 77, 255, 0.1)',
-                                boxShadow: '0 0 8px rgba(124, 77, 255, 0.4)' // Purple glow
-                              },
-                              transition: 'all 0.2s ease-in-out',
-                              '&:disabled': {
-                                color: '#9E9E9E'
-                              }
-                            }}
+                        <>
+                          <Tooltip 
+                            title="Send direct message"
+                            arrow
+                            placement="top"
                           >
-                            {openingMessageFor === msg.wallet_address ? (
-                              <CircularProgress size={14} sx={{ color: '#7C4DFF' }} />
-                            ) : (
-                              <MessageIcon sx={{ fontSize: 14 }} />
-                            )}
-                          </IconButton>
-                        </Tooltip>
+                            <IconButton
+                              size="small"
+                              onClick={() => handleOpenMessage(msg.wallet_address)}
+                              disabled={openingMessageFor === msg.wallet_address}
+                              sx={{
+                                p: 0.5,
+                                ml: 0.5,
+                                color: '#7C4DFF',
+                                '&:hover': { 
+                                  bgcolor: 'rgba(124, 77, 255, 0.1)',
+                                  boxShadow: '0 0 8px rgba(124, 77, 255, 0.4)' // Purple glow
+                                },
+                                transition: 'all 0.2s ease-in-out',
+                                '&:disabled': {
+                                  color: '#9E9E9E'
+                                }
+                              }}
+                            >
+                              {openingMessageFor === msg.wallet_address ? (
+                                <CircularProgress size={14} sx={{ color: '#7C4DFF' }} />
+                              ) : (
+                                <MessageIcon sx={{ fontSize: 14 }} />
+                              )}
+                            </IconButton>
+                          </Tooltip>
+                          
+                          {/* Tip Icon */}
+                          <Tooltip 
+                            title="Send tip"
+                            arrow
+                            placement="top"
+                          >
+                            <IconButton
+                              size="small"
+                              onClick={() => {
+                                setTipRecipient(msg.wallet_address)
+                                setTipModalOpen(true)
+                              }}
+                              sx={{
+                                p: 0.5,
+                                ml: 0.5,
+                                color: '#36C170',
+                                '&:hover': { 
+                                  bgcolor: 'rgba(54, 193, 112, 0.1)',
+                                  boxShadow: '0 0 8px rgba(54, 193, 112, 0.4)' // Green glow
+                                },
+                                transition: 'all 0.2s ease-in-out'
+                              }}
+                            >
+                              <LocalAtmIcon sx={{ fontSize: 14 }} />
+                            </IconButton>
+                          </Tooltip>
+                        </>
                       )}
                     </div>
                     <div className="flex items-center gap-1">
@@ -472,6 +505,15 @@ export function ProjectChat({ projectId, tokenMint }: ProjectChatProps) {
           </Box>
         </Dialog>
       )}
+
+      {/* Tip Modal */}
+      <TipModal
+        open={tipModalOpen}
+        onClose={() => setTipModalOpen(false)}
+        recipientWallet={tipRecipient}
+        projectId={projectId}
+        tokenMint={tokenMint}
+      />
     </Card>
   )
 }
