@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
-import { getUnreadCount, getOrCreateConversation } from '@/lib/messaging'
+import { getUnreadCount, getOrCreateConversation, getExistingConversation } from '@/lib/messaging'
 import { ConversationList } from '@/components/ConversationList'
 import { MessageThread } from '@/components/MessageThread'
 import { MessageComposer } from '@/components/MessageComposer'
@@ -246,6 +246,33 @@ export function MessagesSidebar({
     }
   }, [currentWallet, loadUnreadCount])
 
+  // Clean up empty conversations when closing sidebar
+  const handleCloseSidebarWithCleanup = useCallback(async () => {
+    // If we have a conversation open, check if it has messages
+    if (selectedConversationId) {
+      try {
+        const { data: messages, error } = await supabase
+          .from('messages')
+          .select('id')
+          .eq('conversation_id', selectedConversationId)
+          .limit(1)
+
+        // If no messages exist, delete the conversation
+        if (!error && (!messages || messages.length === 0)) {
+          await supabase
+            .from('conversations')
+            .delete()
+            .eq('id', selectedConversationId)
+        }
+      } catch (error) {
+        console.error('Error cleaning up empty conversation:', error)
+      }
+    }
+
+    // Close the sidebar
+    onClose()
+  }, [selectedConversationId, onClose])
+
   // Keyboard shortcuts
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -254,7 +281,7 @@ export function MessagesSidebar({
         if (view === 'thread' || view === 'new') {
           handleBackToList()
         } else {
-          onClose()
+          handleCloseSidebarWithCleanup()
         }
       }
       
@@ -262,7 +289,7 @@ export function MessagesSidebar({
       if ((e.metaKey || e.ctrlKey) && e.key === 'm') {
         e.preventDefault()
         if (isOpen) {
-          onClose()
+          handleCloseSidebarWithCleanup()
         } else {
           // Can't open from here, but parent can handle this
         }
@@ -273,7 +300,7 @@ export function MessagesSidebar({
       window.addEventListener('keydown', handleKeyDown)
       return () => window.removeEventListener('keydown', handleKeyDown)
     }
-  }, [isOpen, view, onClose])
+  }, [isOpen, view, handleCloseSidebarWithCleanup])
 
   // Handle conversation selection
   const handleSelectConversation = async (conversationId: string) => {
@@ -359,7 +386,7 @@ export function MessagesSidebar({
   // Handle settings
   const handleSettings = () => {
     router.push('/profile/settings')
-    onClose()
+    handleCloseSidebarWithCleanup()
   }
 
   // Start new conversation
@@ -417,8 +444,7 @@ export function MessagesSidebar({
   // Helper to start conversation with specific wallet
   const handleStartConversationWithWallet = async (walletAddress: string) => {
     try {
-      // Always create conversation when explicitly clicking message button
-      // This provides direct access to chat, conversation will be hidden until first message
+      // Get or create conversation
       const conversation = await getOrCreateConversation(currentWallet, walletAddress)
       
       if (conversation) {
@@ -456,7 +482,7 @@ export function MessagesSidebar({
     <Drawer
       anchor="right"
       open={isOpen}
-      onClose={onClose}
+      onClose={handleCloseSidebarWithCleanup}
       PaperProps={{
         sx: {
           width: { xs: '100%', sm: 400 },
@@ -533,7 +559,7 @@ export function MessagesSidebar({
           )}
 
           {/* Close Button */}
-          <IconButton onClick={onClose} size="small">
+          <IconButton onClick={handleCloseSidebarWithCleanup} size="small">
             <CloseIcon />
           </IconButton>
         </Box>

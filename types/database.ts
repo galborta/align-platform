@@ -818,24 +818,27 @@ export interface Database {
         Row: {
           id: string
           job_id: string
-          commenter_wallet: string
-          comment_text: string
+          wallet_address: string
+          message: string
+          parent_comment_id: string | null
           created_at: string
           updated_at: string
         }
         Insert: {
           id?: string
           job_id: string
-          commenter_wallet: string
-          comment_text: string
+          wallet_address: string
+          message: string
+          parent_comment_id?: string | null
           created_at?: string
           updated_at?: string
         }
         Update: {
           id?: string
           job_id?: string
-          commenter_wallet?: string
-          comment_text?: string
+          wallet_address?: string
+          message?: string
+          parent_comment_id?: string | null
           created_at?: string
           updated_at?: string
         }

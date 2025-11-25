@@ -4,11 +4,16 @@ import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
 import { getJobComments, postJobComment } from '@/lib/job-comments'
 import { useWallet, useConnection } from '@solana/wallet-adapter-react'
-import { Box, TextField, Button, Typography, Avatar, Paper, CircularProgress } from '@mui/material'
+import { Box, TextField, Button, Typography, Avatar, Paper, CircularProgress, IconButton, Tooltip } from '@mui/material'
+import MessageIcon from '@mui/icons-material/Message'
+import LocalAtmIcon from '@mui/icons-material/LocalAtm'
+import ReplyIcon from '@mui/icons-material/Reply'
 import { formatDistanceToNow } from 'date-fns'
 import { toast } from 'react-hot-toast'
 import { SupporterBadgeFetcher } from './SupporterBadgeFetcher'
 import { getHolderInfo } from '@/lib/token-balance'
+import { useMessaging } from '@/lib/MessagingContext'
+import TipModal from './TipModal'
 
 interface JobCommentsProps {
   jobId: string
@@ -20,19 +25,31 @@ interface Comment {
   job_id: string
   wallet_address: string
   message: string
+  parent_comment_id: string | null
   created_at: string
   updated_at: string
+}
+
+interface CommentWithReplies extends Comment {
+  replies: Comment[]
 }
 
 export default function JobComments({ jobId, projectId }: JobCommentsProps) {
   const { publicKey } = useWallet()
   const { connection } = useConnection()
+  const { openMessages } = useMessaging()
   const [comments, setComments] = useState<Comment[]>([])
   const [newComment, setNewComment] = useState('')
+  const [replyingTo, setReplyingTo] = useState<string | null>(null)
+  const [replyTexts, setReplyTexts] = useState<Record<string, string>>({})
   const [isHolder, setIsHolder] = useState(false)
   const [posting, setPosting] = useState(false)
+  const [postingReply, setPostingReply] = useState<string | null>(null)
   const [checkingHolder, setCheckingHolder] = useState(true)
   const [tokenMint, setTokenMint] = useState<string | null>(null)
+  const [tipModalOpen, setTipModalOpen] = useState(false)
+  const [tipRecipient, setTipRecipient] = useState<string>('')
+  const [openingMessageFor, setOpeningMessageFor] = useState<string | null>(null)
 
   // Fetch project token mint
   useEffect(() => {
@@ -116,6 +133,16 @@ export default function JobComments({ jobId, projectId }: JobCommentsProps) {
     setComments(data as Comment[])
   }
 
+  // Organize comments into top-level and replies
+  const organizeComments = (): CommentWithReplies[] => {
+    const topLevelComments = comments.filter(c => !c.parent_comment_id)
+    
+    return topLevelComments.map(comment => ({
+      ...comment,
+      replies: comments.filter(c => c.parent_comment_id === comment.id)
+    }))
+  }
+
   async function handleSubmit() {
     if (!newComment.trim() || !publicKey || !tokenMint || posting) return
 
@@ -132,7 +159,7 @@ export default function JobComments({ jobId, projectId }: JobCommentsProps) {
       if (result.success) {
         toast.success('Comment posted!')
         setNewComment('')
-        await fetchComments() // Refresh comments list
+        await fetchComments()
       } else {
         toast.error(result.error || 'Failed to post comment')
       }
@@ -144,9 +171,296 @@ export default function JobComments({ jobId, projectId }: JobCommentsProps) {
     }
   }
 
+  async function handleReplySubmit(parentId: string) {
+    const replyText = replyTexts[parentId]?.trim()
+    if (!replyText || !publicKey || !tokenMint || postingReply) return
+
+    setPostingReply(parentId)
+    
+    try {
+      const result = await postJobComment(
+        jobId,
+        publicKey.toString(),
+        replyText,
+        tokenMint,
+        parentId
+      )
+
+      if (result.success) {
+        toast.success('Reply posted!')
+        setReplyTexts(prev => ({ ...prev, [parentId]: '' }))
+        setReplyingTo(null)
+        await fetchComments()
+      } else {
+        toast.error(result.error || 'Failed to post reply')
+      }
+    } catch (error) {
+      console.error('Error posting reply:', error)
+      toast.error('Failed to post reply')
+    } finally {
+      setPostingReply(null)
+    }
+  }
+
   const formatWalletAddress = (address: string) => {
     return `${address.slice(0, 4)}...${address.slice(-4)}`
   }
+
+  const handleOpenMessage = async (targetWallet: string) => {
+    if (!publicKey) {
+      toast.error('Please connect your wallet to send messages')
+      return
+    }
+
+    if (publicKey.toString() === targetWallet) {
+      return
+    }
+
+    setOpeningMessageFor(targetWallet)
+    try {
+      await openMessages(targetWallet)
+    } catch (error) {
+      console.error('Error opening messages:', error)
+      toast.error('Failed to open messages')
+    } finally {
+      setOpeningMessageFor(null)
+    }
+  }
+
+  const handleOpenTipModal = (targetWallet: string) => {
+    if (!publicKey) {
+      toast.error('Please connect your wallet to send tips')
+      return
+    }
+
+    if (publicKey.toString() === targetWallet) {
+      toast.error("You can't tip yourself")
+      return
+    }
+
+    setTipRecipient(targetWallet)
+    setTipModalOpen(true)
+  }
+
+  // Helper to render message and tip buttons
+  const renderMessageTipButtons = (targetWallet: string) => {
+    if (!publicKey || publicKey.toString() === targetWallet) return null
+
+    return (
+      <>
+        {/* Message Button */}
+        <Tooltip title="Send message" arrow>
+          <IconButton
+            size="small"
+            onClick={() => handleOpenMessage(targetWallet)}
+            disabled={openingMessageFor === targetWallet}
+            sx={{
+              padding: '2px',
+              ml: 0.5,
+              color: '#7C4DFF',
+              '&:hover': { 
+                bgcolor: 'rgba(124, 77, 255, 0.1)',
+                boxShadow: '0 0 8px rgba(124, 77, 255, 0.4)'
+              },
+              transition: 'all 0.2s ease-in-out',
+              '&:disabled': {
+                color: '#9E9E9E'
+              }
+            }}
+          >
+            {openingMessageFor === targetWallet ? (
+              <CircularProgress size={14} sx={{ color: '#7C4DFF' }} />
+            ) : (
+              <MessageIcon sx={{ fontSize: 14 }} />
+            )}
+          </IconButton>
+        </Tooltip>
+
+        {/* Tip Button */}
+        <Tooltip title="Send tip" arrow>
+          <IconButton
+            size="small"
+            onClick={() => handleOpenTipModal(targetWallet)}
+            sx={{
+              padding: '2px',
+              ml: 0.5,
+              color: '#36C170',
+              '&:hover': { 
+                bgcolor: 'rgba(54, 193, 112, 0.1)',
+                boxShadow: '0 0 8px rgba(54, 193, 112, 0.4)'
+              },
+              transition: 'all 0.2s ease-in-out'
+            }}
+          >
+            <LocalAtmIcon sx={{ fontSize: 14 }} />
+          </IconButton>
+        </Tooltip>
+      </>
+    )
+  }
+
+  // Render a single comment (top-level or reply)
+  const renderComment = (comment: Comment, isReply: boolean = false) => (
+    <Box
+      key={comment.id}
+      sx={{
+        ml: isReply ? 4 : 0,
+        mb: isReply ? 1.5 : 0
+      }}
+    >
+      <Paper 
+        sx={{ 
+          p: 2.5, 
+          bgcolor: isReply ? '#F8F9FC' : '#FAFBFC',
+          border: '1px solid #E5E7F0',
+          borderRadius: '8px',
+          borderLeft: isReply ? '3px solid #7C4DFF' : undefined
+        }}
+      >
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mb: 1.5 }}>
+          <Avatar 
+            sx={{ 
+              width: 28, 
+              height: 28, 
+              bgcolor: '#7C4DFF',
+              fontSize: '14px',
+              fontWeight: 600
+            }}
+          >
+            {comment.wallet_address.slice(0, 1).toUpperCase()}
+          </Avatar>
+          <Typography 
+            variant="body2" 
+            sx={{ 
+              fontWeight: 600,
+              fontFamily: 'monospace',
+              color: '#1A1A1E'
+            }}
+          >
+            {formatWalletAddress(comment.wallet_address)}
+          </Typography>
+          <SupporterBadgeFetcher 
+            walletAddress={comment.wallet_address} 
+            projectId={projectId}
+            size="small"
+          />
+          {renderMessageTipButtons(comment.wallet_address)}
+          <Typography 
+            variant="caption" 
+            sx={{ 
+              color: '#A3A7B5',
+              ml: 'auto'
+            }}
+          >
+            {formatDistanceToNow(new Date(comment.created_at), { addSuffix: true })}
+          </Typography>
+        </Box>
+        <Typography 
+          variant="body2" 
+          sx={{ 
+            whiteSpace: 'pre-wrap',
+            color: '#1A1A1E',
+            lineHeight: 1.6,
+            fontSize: '15px',
+            mb: 1
+          }}
+        >
+          {comment.message}
+        </Typography>
+
+        {/* Reply button (only for top-level comments) */}
+        {!isReply && publicKey && isHolder && (
+          <Box sx={{ mt: 1 }}>
+            <Button
+              size="small"
+              startIcon={<ReplyIcon sx={{ fontSize: 16 }} />}
+              onClick={() => setReplyingTo(replyingTo === comment.id ? null : comment.id)}
+              sx={{
+                textTransform: 'none',
+                color: '#7C4DFF',
+                fontSize: '13px',
+                fontWeight: 600,
+                p: 0.5,
+                minWidth: 'auto',
+                '&:hover': {
+                  bgcolor: 'rgba(124, 77, 255, 0.1)'
+                }
+              }}
+            >
+              Reply
+            </Button>
+          </Box>
+        )}
+
+        {/* Reply input (shown when replying to this comment) */}
+        {replyingTo === comment.id && !isReply && (
+          <Box sx={{ mt: 2, pl: 4, borderLeft: '2px solid #7C4DFF' }}>
+            <TextField
+              fullWidth
+              multiline
+              rows={2}
+              value={replyTexts[comment.id] || ''}
+              onChange={(e) => setReplyTexts(prev => ({ 
+                ...prev, 
+                [comment.id]: e.target.value.slice(0, 2000) 
+              }))}
+              placeholder="Write a reply..."
+              disabled={postingReply === comment.id}
+              sx={{ 
+                mb: 1,
+                '& .MuiOutlinedInput-root': {
+                  bgcolor: '#fff',
+                  '&:hover fieldset': {
+                    borderColor: '#7C4DFF',
+                  },
+                  '&.Mui-focused fieldset': {
+                    borderColor: '#7C4DFF',
+                  }
+                }
+              }}
+            />
+            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <Typography variant="caption" sx={{ color: '#6F7280' }}>
+                {(replyTexts[comment.id] || '').length}/2,000
+              </Typography>
+              <Box sx={{ display: 'flex', gap: 1 }}>
+                <Button
+                  size="small"
+                  onClick={() => {
+                    setReplyingTo(null)
+                    setReplyTexts(prev => ({ ...prev, [comment.id]: '' }))
+                  }}
+                  sx={{ 
+                    textTransform: 'none',
+                    color: '#6F7280'
+                  }}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  variant="contained"
+                  size="small"
+                  onClick={() => handleReplySubmit(comment.id)}
+                  disabled={!replyTexts[comment.id]?.trim() || postingReply === comment.id}
+                  sx={{ 
+                    bgcolor: '#7C4DFF',
+                    '&:hover': { bgcolor: '#6A3FE8' },
+                    '&:disabled': { bgcolor: '#E5E7F0' },
+                    textTransform: 'none',
+                    fontWeight: 600
+                  }}
+                >
+                  {postingReply === comment.id ? 'Posting...' : 'Post Reply'}
+                </Button>
+              </Box>
+            </Box>
+          </Box>
+        )}
+      </Paper>
+    </Box>
+  )
+
+  const organizedComments = organizeComments()
 
   return (
     <Box sx={{ mt: 4 }}>
@@ -164,66 +478,18 @@ export default function JobComments({ jobId, projectId }: JobCommentsProps) {
 
       {/* Comments list */}
       <Box sx={{ mb: 3, maxHeight: '500px', overflowY: 'auto' }}>
-        {comments.map(comment => (
-          <Paper 
-            key={comment.id} 
-            sx={{ 
-              p: 2.5, 
-              mb: 2, 
-              bgcolor: '#FAFBFC',
-              border: '1px solid #E5E7F0',
-              borderRadius: '8px'
-            }}
-          >
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mb: 1.5 }}>
-              <Avatar 
-                sx={{ 
-                  width: 28, 
-                  height: 28, 
-                  bgcolor: '#7C4DFF',
-                  fontSize: '14px',
-                  fontWeight: 600
-                }}
-              >
-                {comment.wallet_address.slice(0, 1).toUpperCase()}
-              </Avatar>
-              <Typography 
-                variant="body2" 
-                sx={{ 
-                  fontWeight: 600,
-                  fontFamily: 'monospace',
-                  color: '#1A1A1E'
-                }}
-              >
-                {formatWalletAddress(comment.wallet_address)}
-              </Typography>
-              <SupporterBadgeFetcher 
-                walletAddress={comment.wallet_address} 
-                projectId={projectId}
-                size="small"
-              />
-              <Typography 
-                variant="caption" 
-                sx={{ 
-                  color: '#A3A7B5',
-                  ml: 'auto'
-                }}
-              >
-                {formatDistanceToNow(new Date(comment.created_at), { addSuffix: true })}
-              </Typography>
-            </Box>
-            <Typography 
-              variant="body2" 
-              sx={{ 
-                whiteSpace: 'pre-wrap',
-                color: '#1A1A1E',
-                lineHeight: 1.6,
-                fontSize: '15px'
-              }}
-            >
-              {comment.message}
-            </Typography>
-          </Paper>
+        {organizedComments.map(comment => (
+          <Box key={comment.id} sx={{ mb: 2 }}>
+            {/* Top-level comment */}
+            {renderComment(comment, false)}
+            
+            {/* Replies to this comment */}
+            {comment.replies.length > 0 && (
+              <Box sx={{ mt: 1.5 }}>
+                {comment.replies.map(reply => renderComment(reply, true))}
+              </Box>
+            )}
+          </Box>
         ))}
         {comments.length === 0 && (
           <Paper
@@ -241,7 +507,7 @@ export default function JobComments({ jobId, projectId }: JobCommentsProps) {
         )}
       </Box>
 
-      {/* Comment input */}
+      {/* New comment input */}
       {publicKey ? (
         isHolder ? (
           <Box>
@@ -336,7 +602,17 @@ export default function JobComments({ jobId, projectId }: JobCommentsProps) {
           </Typography>
         </Paper>
       )}
+
+      {/* Tip Modal */}
+      {tokenMint && (
+        <TipModal
+          open={tipModalOpen}
+          onClose={() => setTipModalOpen(false)}
+          recipientWallet={tipRecipient}
+          projectId={projectId}
+          tokenMint={tokenMint}
+        />
+      )}
     </Box>
   )
 }
-

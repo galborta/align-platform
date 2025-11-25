@@ -12,6 +12,7 @@ import { OpenDisputeModal } from '@/components/OpenDisputeModal'
 import { SupporterBadge } from '@/components/SupporterBadge'
 import { SupporterBadgeFetcher } from '@/components/SupporterBadgeFetcher'
 import JobComments from '@/components/JobComments'
+import TipModal from '@/components/TipModal'
 import { supabase } from '@/lib/supabase'
 import { getJobById } from '@/lib/jobs'
 import { upvoteApplication, getApplicationVotes, hasUserVoted } from '@/lib/job-upvoting'
@@ -20,10 +21,13 @@ import { Database } from '@/types/database'
 import { useWallet } from '@solana/wallet-adapter-react'
 import { formatDistanceToNow, addDays, format } from 'date-fns'
 import { toast } from 'react-hot-toast'
+import { useMessaging } from '@/lib/MessagingContext'
 import ArrowBackIcon from '@mui/icons-material/ArrowBack'
 import CircularProgress from '@mui/material/CircularProgress'
 import Chip from '@mui/material/Chip'
 import ContentCopyIcon from '@mui/icons-material/ContentCopy'
+import MessageIcon from '@mui/icons-material/Message'
+import LocalAtmIcon from '@mui/icons-material/LocalAtm'
 import IconButton from '@mui/material/IconButton'
 import Tooltip from '@mui/material/Tooltip'
 import SearchIcon from '@mui/icons-material/Search'
@@ -88,12 +92,16 @@ export default function JobDetailPage() {
   const params = useParams()
   const router = useRouter()
   const { publicKey } = useWallet()
+  const { openMessages } = useMessaging()
   const [job, setJob] = useState<Job | null>(null)
   const [project, setProject] = useState<Project | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [copiedAddress, setCopiedAddress] = useState<string | null>(null)
   const [posterJobCount, setPosterJobCount] = useState<number>(0)
+  const [tipModalOpen, setTipModalOpen] = useState(false)
+  const [tipRecipient, setTipRecipient] = useState<string>('')
+  const [openingMessageFor, setOpeningMessageFor] = useState<string | null>(null)
   const [applications, setApplications] = useState<ApplicationWithStats[]>([])
   const [selectedApplication, setSelectedApplication] = useState<ApplicationWithStats | null>(null)
   const [showAssignConfirm, setShowAssignConfirm] = useState(false)
@@ -404,8 +412,101 @@ export default function JobDetailPage() {
     setTimeout(() => setCopiedAddress(null), 2000)
   }
 
+  const handleOpenMessage = async (targetWallet: string) => {
+    if (!publicKey) {
+      toast.error('Please connect your wallet to send messages')
+      return
+    }
+
+    if (publicKey.toString() === targetWallet) {
+      return // Can't message yourself
+    }
+
+    setOpeningMessageFor(targetWallet)
+    try {
+      await openMessages(targetWallet)
+    } catch (error) {
+      console.error('Error opening messages:', error)
+      toast.error('Failed to open messages')
+    } finally {
+      setOpeningMessageFor(null)
+    }
+  }
+
+  const handleOpenTipModal = (targetWallet: string) => {
+    if (!publicKey) {
+      toast.error('Please connect your wallet to send tips')
+      return
+    }
+
+    if (publicKey.toString() === targetWallet) {
+      toast.error("You can't tip yourself")
+      return
+    }
+
+    setTipRecipient(targetWallet)
+    setTipModalOpen(true)
+  }
+
   const formatWalletAddress = (address: string) => {
     return `${address.slice(0, 4)}...${address.slice(-4)}`
+  }
+
+  // Helper to render message and tip buttons
+  const renderMessageTipButtons = (targetWallet: string) => {
+    if (!publicKey || publicKey.toString() === targetWallet) return null
+
+    return (
+      <>
+        {/* Message Button */}
+        <Tooltip title="Send message" arrow>
+          <IconButton
+            size="small"
+            onClick={() => handleOpenMessage(targetWallet)}
+            disabled={openingMessageFor === targetWallet}
+            sx={{
+              padding: '2px',
+              ml: 0.5,
+              color: '#7C4DFF',
+              '&:hover': { 
+                bgcolor: 'rgba(124, 77, 255, 0.1)',
+                boxShadow: '0 0 8px rgba(124, 77, 255, 0.4)'
+              },
+              transition: 'all 0.2s ease-in-out',
+              '&:disabled': {
+                color: '#9E9E9E'
+              }
+            }}
+          >
+            {openingMessageFor === targetWallet ? (
+              <CircularProgress size={14} sx={{ color: '#7C4DFF' }} />
+            ) : (
+              <MessageIcon sx={{ fontSize: 14 }} />
+            )}
+          </IconButton>
+        </Tooltip>
+
+        {/* Tip Button */}
+        <Tooltip title="Send tip" arrow>
+          <IconButton
+            size="small"
+            onClick={() => handleOpenTipModal(targetWallet)}
+            sx={{
+              padding: '2px',
+              ml: 0.5,
+              color: '#36C170',
+              '&:hover': { 
+                bgcolor: 'rgba(54, 193, 112, 0.1)',
+                boxShadow: '0 0 8px rgba(54, 193, 112, 0.4)'
+              },
+              transition: 'all 0.2s ease-in-out'
+            }}
+          >
+            <LocalAtmIcon sx={{ fontSize: 14 }} />
+          </IconButton>
+        </Tooltip>
+      </>
+    )
   }
 
   const fetchUserStats = async () => {
@@ -837,27 +938,28 @@ export default function JobDetailPage() {
                             WORKER
                           </span>
                         </div>
-                        <div className="flex items-center gap-2">
-                          <span 
-                            className="text-sm font-mono"
-                            style={{ color: '#1A1A1E' }}
-                          >
-                            {formatWalletAddress(job.assigned_to)}
-                          </span>
-                          <Tooltip title="Copy address">
-                            <IconButton
-                              size="small"
-                              onClick={() => handleCopyAddress(job.assigned_to!)}
-                              sx={{ 
-                                padding: '2px',
-                                color: '#6F7280',
-                                '&:hover': { color: '#36C170' }
-                              }}
-                            >
-                              <ContentCopyIcon sx={{ fontSize: 14 }} />
-                            </IconButton>
-                          </Tooltip>
-                        </div>
+                         <div className="flex items-center gap-2">
+                           <span 
+                             className="text-sm font-mono"
+                             style={{ color: '#1A1A1E' }}
+                           >
+                             {formatWalletAddress(job.assigned_to)}
+                           </span>
+                           <Tooltip title="Copy address">
+                             <IconButton
+                               size="small"
+                               onClick={() => handleCopyAddress(job.assigned_to!)}
+                               sx={{ 
+                                 padding: '2px',
+                                 color: '#6F7280',
+                                 '&:hover': { color: '#36C170' }
+                               }}
+                             >
+                               <ContentCopyIcon sx={{ fontSize: 14 }} />
+                             </IconButton>
+                           </Tooltip>
+                           {renderMessageTipButtons(job.assigned_to)}
+                         </div>
                         <p className="text-sm font-bold mt-1" style={{ color: '#16A34A' }}>
                           Earned +{(job.payment_amount_usd * 50).toLocaleString()} karma
                         </p>
@@ -874,27 +976,28 @@ export default function JobDetailPage() {
                           POSTER
                         </span>
                       </div>
-                      <div className="flex items-center gap-2">
-                        <span 
-                          className="text-sm font-mono"
-                          style={{ color: '#1A1A1E' }}
-                        >
-                          {formatWalletAddress(job.poster_wallet)}
-                        </span>
-                        <Tooltip title="Copy address">
-                          <IconButton
-                            size="small"
-                            onClick={() => handleCopyAddress(job.poster_wallet)}
-                            sx={{ 
-                              padding: '2px',
-                              color: '#6F7280',
-                              '&:hover': { color: '#36C170' }
-                            }}
-                          >
-                            <ContentCopyIcon sx={{ fontSize: 14 }} />
-                          </IconButton>
-                        </Tooltip>
-                      </div>
+                       <div className="flex items-center gap-2">
+                         <span 
+                           className="text-sm font-mono"
+                           style={{ color: '#1A1A1E' }}
+                         >
+                           {formatWalletAddress(job.poster_wallet)}
+                         </span>
+                         <Tooltip title="Copy address">
+                           <IconButton
+                             size="small"
+                             onClick={() => handleCopyAddress(job.poster_wallet)}
+                             sx={{ 
+                               padding: '2px',
+                               color: '#6F7280',
+                               '&:hover': { color: '#36C170' }
+                             }}
+                           >
+                             <ContentCopyIcon sx={{ fontSize: 14 }} />
+                           </IconButton>
+                         </Tooltip>
+                         {renderMessageTipButtons(job.poster_wallet)}
+                       </div>
                       <p className="text-sm font-bold mt-1" style={{ color: '#16A34A' }}>
                         Earned +{(job.payment_amount_usd * 50).toLocaleString()} karma
                       </p>
@@ -1343,25 +1446,26 @@ export default function JobDetailPage() {
                   <span className="text-sm" style={{ color: '#6F7280' }}>
                     Posted by:
                   </span>
-                  <span 
-                    className="text-sm font-mono font-medium"
-                    style={{ color: '#1A1A1E' }}
-                  >
-                    {formatWalletAddress(job.poster_wallet)}
-                  </span>
-                  <Tooltip title={copiedAddress === job.poster_wallet ? "Copied!" : "Copy address"}>
-                    <IconButton
-                      size="small"
-                      onClick={() => handleCopyAddress(job.poster_wallet)}
-                      sx={{ 
-                        padding: '2px',
-                        color: '#6F7280',
-                        '&:hover': { color: '#7C4DFF' }
-                      }}
-                    >
-                      <ContentCopyIcon sx={{ fontSize: 14 }} />
-                    </IconButton>
-                  </Tooltip>
+                   <span 
+                     className="text-sm font-mono font-medium"
+                     style={{ color: '#1A1A1E' }}
+                   >
+                     {formatWalletAddress(job.poster_wallet)}
+                   </span>
+                   <Tooltip title={copiedAddress === job.poster_wallet ? "Copied!" : "Copy address"}>
+                     <IconButton
+                       size="small"
+                       onClick={() => handleCopyAddress(job.poster_wallet)}
+                       sx={{ 
+                         padding: '2px',
+                         color: '#6F7280',
+                         '&:hover': { color: '#7C4DFF' }
+                       }}
+                     >
+                       <ContentCopyIcon sx={{ fontSize: 14 }} />
+                     </IconButton>
+                   </Tooltip>
+                   {renderMessageTipButtons(job.poster_wallet)}
                   {posterJobCount > 0 && (
                     <Chip
                       icon={<WorkIcon sx={{ fontSize: 14 }} />}
@@ -1494,27 +1598,28 @@ export default function JobDetailPage() {
                       >
                         Assigned to:
                       </span>
-                      <div className="flex items-center gap-2 mt-1">
-                        <span 
-                          className="text-base font-mono font-semibold"
-                          style={{ color: '#1A1A1E' }}
-                        >
-                          {formatWalletAddress(job.assigned_to)}
-                        </span>
-                        <Tooltip title="Copy address">
-                          <IconButton
-                            size="small"
-                            onClick={() => handleCopyAddress(job.assigned_to!)}
-                            sx={{ 
-                              padding: '2px',
-                              color: '#6F7280',
-                              '&:hover': { color: '#7C4DFF' }
-                            }}
-                          >
-                            <ContentCopyIcon sx={{ fontSize: 14 }} />
-                          </IconButton>
-                        </Tooltip>
-                      </div>
+                        <div className="flex items-center gap-2 mt-1">
+                         <span 
+                           className="text-base font-mono font-semibold"
+                           style={{ color: '#1A1A1E' }}
+                         >
+                           {formatWalletAddress(job.assigned_to)}
+                         </span>
+                         <Tooltip title="Copy address">
+                           <IconButton
+                             size="small"
+                             onClick={() => handleCopyAddress(job.assigned_to!)}
+                             sx={{ 
+                               padding: '2px',
+                               color: '#6F7280',
+                               '&:hover': { color: '#7C4DFF' }
+                             }}
+                           >
+                             <ContentCopyIcon sx={{ fontSize: 14 }} />
+                           </IconButton>
+                         </Tooltip>
+                         {renderMessageTipButtons(job.assigned_to)}
+                        </div>
                     </div>
                     {job.assigned_at && applications.find(a => a.applicant_wallet === job.assigned_to) && (
                       <div>
@@ -1577,25 +1682,26 @@ export default function JobDetailPage() {
                     <span className="text-sm" style={{ color: '#6F7280' }}>
                       Submitted by:
                     </span>
-                    <span 
-                      className="text-sm font-mono font-semibold"
-                      style={{ color: '#1A1A1E' }}
-                    >
-                      {formatWalletAddress(submission.worker_wallet)}
-                    </span>
-                    <Tooltip title="Copy address">
-                      <IconButton
-                        size="small"
-                        onClick={() => handleCopyAddress(submission.worker_wallet)}
-                        sx={{ 
-                          padding: '2px',
-                          color: '#6F7280',
-                          '&:hover': { color: '#7C4DFF' }
-                        }}
-                      >
-                        <ContentCopyIcon sx={{ fontSize: 14 }} />
-                      </IconButton>
-                    </Tooltip>
+                     <span 
+                       className="text-sm font-mono font-semibold"
+                       style={{ color: '#1A1A1E' }}
+                     >
+                       {formatWalletAddress(submission.worker_wallet)}
+                     </span>
+                     <Tooltip title="Copy address">
+                       <IconButton
+                         size="small"
+                         onClick={() => handleCopyAddress(submission.worker_wallet)}
+                         sx={{ 
+                           padding: '2px',
+                           color: '#6F7280',
+                           '&:hover': { color: '#7C4DFF' }
+                         }}
+                       >
+                         <ContentCopyIcon sx={{ fontSize: 14 }} />
+                       </IconButton>
+                     </Tooltip>
+                     {renderMessageTipButtons(submission.worker_wallet)}
                     <span className="text-sm" style={{ color: '#6F7280' }}>
                       {formatDistanceToNow(new Date(submission.submitted_at), { addSuffix: true })}
                     </span>
@@ -2126,25 +2232,26 @@ export default function JobDetailPage() {
                       <div className="flex items-start justify-between mb-4">
                         <div className="flex-1">
                           <div className="flex items-center gap-2 mb-2">
-                            <span 
-                              className="text-lg font-mono font-semibold"
-                              style={{ color: '#1A1A1E' }}
-                            >
-                              {formatWalletAddress(app.applicant_wallet)}
-                            </span>
-                            <Tooltip title="Copy address">
-                              <IconButton
-                                size="small"
-                                onClick={() => handleCopyAddress(app.applicant_wallet)}
-                                sx={{ 
-                                  padding: '2px',
-                                  color: '#6F7280',
-                                  '&:hover': { color: '#7C4DFF' }
-                                }}
-                              >
-                                <ContentCopyIcon sx={{ fontSize: 14 }} />
-                              </IconButton>
-                            </Tooltip>
+                             <span 
+                               className="text-lg font-mono font-semibold"
+                               style={{ color: '#1A1A1E' }}
+                             >
+                               {formatWalletAddress(app.applicant_wallet)}
+                             </span>
+                             <Tooltip title="Copy address">
+                               <IconButton
+                                 size="small"
+                                 onClick={() => handleCopyAddress(app.applicant_wallet)}
+                                 sx={{ 
+                                   padding: '2px',
+                                   color: '#6F7280',
+                                   '&:hover': { color: '#7C4DFF' }
+                                 }}
+                               >
+                                 <ContentCopyIcon sx={{ fontSize: 14 }} />
+                               </IconButton>
+                             </Tooltip>
+                             {renderMessageTipButtons(app.applicant_wallet)}
                             {app.applicant_completed_jobs > 0 && (
                               <SupporterBadge 
                                 completedJobsCount={app.applicant_completed_jobs} 
@@ -2200,38 +2307,23 @@ export default function JobDetailPage() {
 
                         {/* Upvote and Pick Buttons */}
                         <div className="flex items-center gap-2">
-                          {/* Upvote Button - NEW */}
+                          {/* Upvote Button */}
                           {job.status === 'open' && publicKey && !isPoster && (
                             <Button
-                              variant={votes.hasVoted ? "contained" : "outlined"}
-                              size="small"
+                              variant={votes.hasVoted ? "secondary" : "outline"}
+                              size="sm"
                               onClick={() => handleUpvote(app.id)}
                               disabled={upvoting === app.id || votes.hasVoted}
-                              startIcon={<ThumbUpIcon />}
-                              sx={{
-                                color: votes.hasVoted ? '#fff' : '#7C4DFF',
-                                backgroundColor: votes.hasVoted ? '#7C4DFF' : 'transparent',
-                                borderColor: '#7C4DFF',
-                                textTransform: 'none',
-                                minWidth: '100px',
-                                '&:hover': {
-                                  backgroundColor: votes.hasVoted ? '#6B3FEE' : '#F8F5FF'
-                                },
-                                '&:disabled': {
-                                  backgroundColor: '#E5E7F0',
-                                  color: '#A3A7B5'
-                                }
-                              }}
+                              startIcon={<ThumbUpIcon sx={{ fontSize: 18 }} />}
+                              className={`min-w-[110px] font-body ${votes.hasVoted ? 'cursor-default' : ''}`}
                             >
                               {upvoting === app.id ? (
-                                <CircularProgress size={16} sx={{ color: '#fff' }} />
+                                <CircularProgress size={16} sx={{ color: '#7C4DFF' }} />
                               ) : (
-                                <>
-                                  {votes.totalWeight.toFixed(2)}%
-                                  <span style={{ fontSize: '11px', marginLeft: '4px' }}>
-                                    ({votes.voterCount})
-                                  </span>
-                                </>
+                                <span className="flex items-center gap-1">
+                                  <span className="font-semibold">{votes.totalWeight.toFixed(2)}%</span>
+                                  <span className="text-xs opacity-75">({votes.voterCount})</span>
+                                </span>
                               )}
                             </Button>
                           )}
@@ -2841,6 +2933,17 @@ export default function JobDetailPage() {
           </Button>
         </DialogActions>
       </Dialog>
+
+      {/* Tip Modal */}
+      {project && (
+        <TipModal
+          open={tipModalOpen}
+          onClose={() => setTipModalOpen(false)}
+          recipientWallet={tipRecipient}
+          projectId={project.id}
+          tokenMint={project.token_mint}
+        />
+      )}
     </div>
   )
 }

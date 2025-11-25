@@ -12,8 +12,9 @@ import { getHolderInfo } from './token-balance'
 export type JobComment = Database['public']['Tables']['job_comments']['Row']
 
 /**
- * Get all comments for a specific job
+ * Get all comments for a specific job with replies
  * Returns comments ordered by created_at ASC (oldest first, chat-style)
+ * Includes both top-level comments and replies
  */
 export async function getJobComments(jobId: string): Promise<JobComment[]> {
   try {
@@ -36,14 +37,15 @@ export async function getJobComments(jobId: string): Promise<JobComment[]> {
 }
 
 /**
- * Post a new comment on a job
+ * Post a new comment on a job or reply to an existing comment
  * Validates token holdings on-chain before posting
  */
 export async function postJobComment(
   jobId: string,
   walletAddress: string,
   commentText: string,
-  tokenMint: string
+  tokenMint: string,
+  parentCommentId?: string
 ): Promise<{ success: boolean; error?: string }> {
   try {
     // Validate message
@@ -75,16 +77,25 @@ export async function postJobComment(
     console.log(`Holder validated: ${walletAddress} holds ${Number(holderInfo.balance)} tokens (${holderInfo.percentage.toFixed(6)}%)`)
 
     // Insert comment
+    const insertData: any = {
+      job_id: jobId,
+      wallet_address: walletAddress,
+      message: trimmedMessage
+    }
+    
+    // Only add parent_comment_id if provided (for replies)
+    if (parentCommentId) {
+      insertData.parent_comment_id = parentCommentId
+    }
+    
     const { error } = await supabase
       .from('job_comments')
-      .insert({
-        job_id: jobId,
-        wallet_address: walletAddress,
-        message: trimmedMessage
-      })
+      .insert(insertData)
 
     if (error) {
       console.error('Error posting job comment:', error)
+      console.error('Error details:', JSON.stringify(error, null, 2))
+      console.error('Insert data:', insertData)
       return { success: false, error: 'Failed to post comment. Please try again.' }
     }
 

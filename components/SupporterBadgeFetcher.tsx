@@ -31,10 +31,15 @@ export function SupporterBadgeFetcher({
         .eq('project_id', projectId)
         .maybeSingle()
 
-      if (error) throw error
+      // Only log if there's an actual error with content (not empty object or null)
+      if (error && Object.keys(error).length > 0) {
+        console.error('Error fetching completed jobs:', error)
+      }
+      
+      // Set completed jobs (0 if no record exists)
       setCompletedJobs(data?.jobs_completed_as_worker_count || 0)
     } catch (error) {
-      console.error('Error fetching completed jobs:', error)
+      console.error('Unexpected error fetching completed jobs:', error)
       setCompletedJobs(0)
     } finally {
       setLoading(false)
@@ -45,4 +50,5 @@ export function SupporterBadgeFetcher({
 
   return <SupporterBadge completedJobsCount={completedJobs} size={size} />
 }
+
 

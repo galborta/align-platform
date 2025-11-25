@@ -5,6 +5,7 @@
 
 import { supabase } from './supabase'
 import { Database } from '@/types/database'
+import { getWalletTokenData } from './token-balance'
 
 type Vote = Database['public']['Tables']['job_application_votes']['Row']
 type VoteInsert = Database['public']['Tables']['job_application_votes']['Insert']
@@ -29,26 +30,32 @@ export async function upvoteApplication(
   projectId: string
 ): Promise<{ success: boolean; error?: string; karma?: number }> {
   try {
-    // 1. Query wallet_token_balances for voter's token_percentage
-    const { data: balanceData, error: balanceError } = await supabase
-      .from('wallet_token_balances')
-      .select('token_percentage')
-      .eq('wallet_address', voterWallet)
-      .eq('project_id', projectId)
-      .maybeSingle()
+    // 1. Get project to find token_mint
+    const { data: projectData, error: projectError } = await supabase
+      .from('projects')
+      .select('token_mint')
+      .eq('id', projectId)
+      .single()
 
-    if (balanceError) {
-      console.error('Error fetching token balance:', balanceError)
+    if (projectError) {
+      console.error('Error fetching project:', projectError)
+      return { success: false, error: 'Failed to fetch project details' }
+    }
+
+    // 2. Use real-time token balance lookup
+    const tokenData = await getWalletTokenData(voterWallet, projectData.token_mint)
+    
+    if (!tokenData) {
       return { success: false, error: 'Failed to fetch token balance' }
     }
 
-    // 2. Validate percentage > 0 (must hold tokens)
-    const tokenPercentage = balanceData?.token_percentage || 0
+    // 3. Validate percentage > 0 (must hold tokens)
+    const tokenPercentage = tokenData.percentage
     if (tokenPercentage <= 0) {
       return { success: false, error: 'Must hold tokens to upvote' }
     }
 
-    // 3. Check job_application_votes - prevent duplicate votes
+    // 4. Check job_application_votes - prevent duplicate votes
     const { data: existingVote, error: voteCheckError } = await supabase
       .from('job_application_votes')
       .select('id')
@@ -65,10 +72,10 @@ export async function upvoteApplication(
       return { success: false, error: 'Already voted on this application' }
     }
 
-    // 4. Calculate tierMultiplier
+    // 5. Calculate tierMultiplier
     const tierMultiplier = calculateTierMultiplier(tokenPercentage)
 
-    // 5. Insert vote
+    // 6. Insert vote
     const voteData: VoteInsert = {
       application_id: applicationId,
       voter_wallet: voterWallet,
@@ -84,7 +91,7 @@ export async function upvoteApplication(
       return { success: false, error: 'Failed to record vote' }
     }
 
-    // 6. Award immediate karma: 5 × tierMultiplier
+    // 7. Award immediate karma: 5 × tierMultiplier
     const karmaAmount = 5 * tierMultiplier
 
     // Get or create wallet_karma record

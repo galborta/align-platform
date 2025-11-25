@@ -30,16 +30,22 @@ export interface ButtonProps
   extends React.ButtonHTMLAttributes<HTMLButtonElement>,
     VariantProps<typeof buttonVariants> {
   asChild?: boolean
+  startIcon?: React.ReactNode
+  endIcon?: React.ReactNode
 }
 
 const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
-  ({ className, variant, size, ...props }, ref) => {
+  ({ className, variant, size, startIcon, endIcon, children, ...props }, ref) => {
     return (
       <button
         className={buttonVariants({ variant, size, className })}
         ref={ref}
         {...props}
-      />
+      >
+        {startIcon && <span className="mr-2 inline-flex items-center">{startIcon}</span>}
+        {children}
+        {endIcon && <span className="ml-2 inline-flex items-center">{endIcon}</span>}
+      </button>
     )
   }
 )
