@@ -9,9 +9,13 @@ import { JobApplicationModal } from '@/components/JobApplicationModal'
 import { WorkSubmissionModal } from '@/components/WorkSubmissionModal'
 import { CreateJobModal } from '@/components/CreateJobModal'
 import { OpenDisputeModal } from '@/components/OpenDisputeModal'
+import { SupporterBadge } from '@/components/SupporterBadge'
+import { SupporterBadgeFetcher } from '@/components/SupporterBadgeFetcher'
 import { supabase } from '@/lib/supabase'
 import { getJobById } from '@/lib/jobs'
 import { upvoteApplication, getApplicationVotes, hasUserVoted } from '@/lib/job-upvoting'
+import { awardApplicationUpvoterBonuses } from '@/lib/job-karma'
+import { getJobComments, postJobComment, JobComment } from '@/lib/job-comments'
 import { Database } from '@/types/database'
 import { useWallet } from '@solana/wallet-adapter-react'
 import { formatDistanceToNow, addDays, format } from 'date-fns'
@@ -118,6 +122,10 @@ export default function JobDetailPage() {
   const [reassigning, setReassigning] = useState(false)
   const [applicationVotes, setApplicationVotes] = useState<Record<string, { totalWeight: number; voterCount: number; hasVoted: boolean }>>({})
   const [upvoting, setUpvoting] = useState<string | null>(null)
+  const [sortBy, setSortBy] = useState<'votes' | 'karma' | 'recent'>('votes')
+  const [comments, setComments] = useState<JobComment[]>([])
+  const [newComment, setNewComment] = useState('')
+  const [postingComment, setPostingComment] = useState(false)
 
   useEffect(() => {
     if (params.jobId && params.id) {
@@ -231,6 +239,10 @@ export default function JobDetailPage() {
       if (jobData.status === 'disputed') {
         await fetchDisputeData(params.jobId as string, jobData.project_id)
       }
+
+      // Fetch job comments
+      const commentsData = await getJobComments(params.jobId as string)
+      setComments(commentsData)
 
     } catch (err) {
       console.error('Error fetching job data:', err)
@@ -625,9 +637,11 @@ export default function JobDetailPage() {
       // TODO: Award karma to both parties
       // const completionKarma = calculateJobCompletionKarma(job.payment_amount_usd)
       // await awardJobCompletionKarma(job.poster_wallet, job.assigned_to, job.project_id, completionKarma)
-      // await awardApplicationUpvoterBonuses(job.id, job.payment_amount_usd)
 
-      toast.success('🎉 Payment released! Both parties earned karma', {
+      // Award upvoter bonuses
+      await awardApplicationUpvoterBonuses(job.id, job.payment_amount_usd)
+
+      toast.success('🎉 Payment released! Karma awarded to all parties', {
         duration: 5000,
         style: {
           background: '#36C170',
@@ -644,6 +658,41 @@ export default function JobDetailPage() {
       toast.error('Failed to release payment')
     } finally {
       setReleasing(false)
+    }
+  }
+
+  const handlePostComment = async () => {
+    if (!publicKey) {
+      toast.error('Please connect your wallet to comment')
+      return
+    }
+
+    if (!newComment.trim()) {
+      toast.error('Comment cannot be empty')
+      return
+    }
+
+    setPostingComment(true)
+    
+    try {
+      const result = await postJobComment(
+        job.id,
+        publicKey.toString(),
+        newComment
+      )
+      
+      if (result.success) {
+        toast.success('Comment posted!')
+        setNewComment('')
+        await fetchJobData() // Refresh to show new comment
+      } else {
+        toast.error(result.error || 'Failed to post comment')
+      }
+    } catch (error) {
+      console.error('Error posting comment:', error)
+      toast.error('Failed to post comment')
+    } finally {
+      setPostingComment(false)
     }
   }
 
@@ -714,6 +763,40 @@ export default function JobDetailPage() {
   const truncateUrl = (url: string, maxLength: number = 40): string => {
     if (url.length <= maxLength) return url
     return url.slice(0, maxLength) + '...'
+  }
+
+  const getSortedApplications = () => {
+    // Combine applications with their vote data
+    const appsWithVotes = applications.map(app => ({
+      ...app,
+      votes: applicationVotes[app.id] || { totalWeight: 0, voterCount: 0, hasVoted: false }
+    }))
+
+    switch (sortBy) {
+      case 'votes':
+        // Sort by total vote weight DESC, then by karma DESC (tie-breaker)
+        return appsWithVotes.sort((a, b) => {
+          const voteDiff = b.votes.totalWeight - a.votes.totalWeight
+          if (voteDiff !== 0) return voteDiff
+          // Tie-breaker: use karma
+          return (b.applicant_karma || 0) - (a.applicant_karma || 0)
+        })
+      
+      case 'karma':
+        // Sort by applicant karma DESC
+        return appsWithVotes.sort((a, b) => 
+          (b.applicant_karma || 0) - (a.applicant_karma || 0)
+        )
+      
+      case 'recent':
+        // Sort by application created_at DESC (newest first)
+        return appsWithVotes.sort((a, b) => 
+          new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+        )
+      
+      default:
+        return appsWithVotes
+    }
   }
 
   if (loading) {
@@ -1980,6 +2063,74 @@ export default function JobDetailPage() {
               </h2>
             )}
 
+            {/* Sort Controls - NEW */}
+            {job.status === 'open' && applications.length > 1 && (
+              <div className="mb-6 flex items-center gap-3">
+                <span 
+                  className="text-sm font-semibold uppercase tracking-wide"
+                  style={{ color: '#6F7280' }}
+                >
+                  SORT BY:
+                </span>
+                <div className="flex gap-2">
+                  <Button
+                    variant={sortBy === 'votes' ? 'contained' : 'outlined'}
+                    size="small"
+                    onClick={() => setSortBy('votes')}
+                    sx={{
+                      textTransform: 'none',
+                      fontSize: '14px',
+                      height: '32px',
+                      backgroundColor: sortBy === 'votes' ? '#7C4DFF' : 'transparent',
+                      color: sortBy === 'votes' ? '#fff' : '#7C4DFF',
+                      borderColor: '#7C4DFF',
+                      '&:hover': {
+                        backgroundColor: sortBy === 'votes' ? '#6B3FEE' : '#F8F5FF'
+                      }
+                    }}
+                  >
+                    Community Votes
+                  </Button>
+                  <Button
+                    variant={sortBy === 'karma' ? 'contained' : 'outlined'}
+                    size="small"
+                    onClick={() => setSortBy('karma')}
+                    sx={{
+                      textTransform: 'none',
+                      fontSize: '14px',
+                      height: '32px',
+                      backgroundColor: sortBy === 'karma' ? '#7C4DFF' : 'transparent',
+                      color: sortBy === 'karma' ? '#fff' : '#7C4DFF',
+                      borderColor: '#7C4DFF',
+                      '&:hover': {
+                        backgroundColor: sortBy === 'karma' ? '#6B3FEE' : '#F8F5FF'
+                      }
+                    }}
+                  >
+                    Karma
+                  </Button>
+                  <Button
+                    variant={sortBy === 'recent' ? 'contained' : 'outlined'}
+                    size="small"
+                    onClick={() => setSortBy('recent')}
+                    sx={{
+                      textTransform: 'none',
+                      fontSize: '14px',
+                      height: '32px',
+                      backgroundColor: sortBy === 'recent' ? '#7C4DFF' : 'transparent',
+                      color: sortBy === 'recent' ? '#fff' : '#7C4DFF',
+                      borderColor: '#7C4DFF',
+                      '&:hover': {
+                        backgroundColor: sortBy === 'recent' ? '#6B3FEE' : '#F8F5FF'
+                      }
+                    }}
+                  >
+                    Most Recent
+                  </Button>
+                </div>
+              </div>
+            )}
+
             {/* Applications List */}
             {applications.length === 0 ? (
               <div 
@@ -1997,9 +2148,10 @@ export default function JobDetailPage() {
               </div>
             ) : (
               <div className="space-y-4">
-                {applications.map((app) => {
+                {getSortedApplications().map((app) => {
                   const isAssigned = job.assigned_to === app.applicant_wallet
                   const isOtherAssigned = job.status === 'assigned' && !isAssigned
+                  const votes = applicationVotes[app.id] || { totalWeight: 0, voterCount: 0, hasVoted: false }
                   
                   return (
                     <div
@@ -2035,6 +2187,12 @@ export default function JobDetailPage() {
                                 <ContentCopyIcon sx={{ fontSize: 14 }} />
                               </IconButton>
                             </Tooltip>
+                            {app.applicant_completed_jobs > 0 && (
+                              <SupporterBadge 
+                                completedJobsCount={app.applicant_completed_jobs} 
+                                size="small" 
+                              />
+                            )}
                             {isAssigned && (
                               <Chip
                                 icon={<CheckCircleIcon sx={{ fontSize: 16 }} />}
@@ -2082,19 +2240,73 @@ export default function JobDetailPage() {
                           </div>
                         </div>
 
-                        {/* Pick Button */}
-                        {isPoster && 
-                         job.status === 'open' && 
-                         job.assignment_mode === 'review' && (
-                          <Button
-                            variant="primary"
-                            onClick={() => handlePickApplicant(app)}
-                            className="shadow-md"
-                          >
-                            Pick This Applicant
-                          </Button>
-                        )}
+                        {/* Upvote and Pick Buttons */}
+                        <div className="flex items-center gap-2">
+                          {/* Upvote Button - NEW */}
+                          {job.status === 'open' && publicKey && !isPoster && (
+                            <Button
+                              variant={votes.hasVoted ? "contained" : "outlined"}
+                              size="small"
+                              onClick={() => handleUpvote(app.id)}
+                              disabled={upvoting === app.id || votes.hasVoted}
+                              startIcon={<ThumbUpIcon />}
+                              sx={{
+                                color: votes.hasVoted ? '#fff' : '#7C4DFF',
+                                backgroundColor: votes.hasVoted ? '#7C4DFF' : 'transparent',
+                                borderColor: '#7C4DFF',
+                                textTransform: 'none',
+                                minWidth: '100px',
+                                '&:hover': {
+                                  backgroundColor: votes.hasVoted ? '#6B3FEE' : '#F8F5FF'
+                                },
+                                '&:disabled': {
+                                  backgroundColor: '#E5E7F0',
+                                  color: '#A3A7B5'
+                                }
+                              }}
+                            >
+                              {upvoting === app.id ? (
+                                <CircularProgress size={16} sx={{ color: '#fff' }} />
+                              ) : (
+                                <>
+                                  {votes.totalWeight.toFixed(2)}%
+                                  <span style={{ fontSize: '11px', marginLeft: '4px' }}>
+                                    ({votes.voterCount})
+                                  </span>
+                                </>
+                              )}
+                            </Button>
+                          )}
+                          {/* Existing Pick Button */}
+                          {isPoster && job.status === 'open' && job.assignment_mode === 'review' && (
+                            <Button
+                              variant="primary"
+                              onClick={() => handlePickApplicant(app)}
+                              className="shadow-md"
+                            >
+                              Pick This Applicant
+                            </Button>
+                          )}
+                        </div>
                       </div>
+
+                      {/* Vote Status Display - NEW */}
+                      {votes.totalWeight > 0 && (
+                        <div 
+                          className="mb-3 p-3 rounded-lg"
+                          style={{ backgroundColor: '#F8F5FF' }}
+                        >
+                          <div className="flex items-center gap-2">
+                            <ThumbUpIcon sx={{ fontSize: 18, color: '#7C4DFF' }} />
+                            <span className="text-sm font-medium" style={{ color: '#7C4DFF' }}>
+                              <strong>{votes.totalWeight.toFixed(2)}%</strong> of token supply upvoted this
+                            </span>
+                            <span className="text-xs" style={{ color: '#6F7280' }}>
+                              ({votes.voterCount} {votes.voterCount === 1 ? 'voter' : 'voters'})
+                            </span>
+                          </div>
+                        </div>
+                      )}
 
                       {/* Pitch */}
                       <div className="mb-3">
@@ -2182,6 +2394,141 @@ export default function JobDetailPage() {
                     📤 Submit Your Completed Work
                   </Button>
                 </div>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* Job Comments Section - NEW */}
+        <Card className="mt-6">
+          <CardContent className="p-6">
+            <h2 
+              className="text-2xl font-bold mb-4"
+              style={{ 
+                fontFamily: 'var(--font-display), Space Grotesk, sans-serif',
+                color: '#1A1A1E'
+              }}
+            >
+              Discussion ({comments.length})
+            </h2>
+
+            {/* Comment Input */}
+            {publicKey ? (
+              <div className="mb-6">
+                <textarea
+                  value={newComment}
+                  onChange={(e) => setNewComment(e.target.value)}
+                  placeholder="Add a comment or ask a question..."
+                  className="w-full p-4 rounded-lg border-2 resize-none"
+                  style={{
+                    borderColor: '#E5E7F0',
+                    minHeight: '100px',
+                    fontFamily: 'Inter, sans-serif',
+                    fontSize: '15px',
+                    lineHeight: '1.6'
+                  }}
+                  maxLength={1000}
+                />
+                <div className="flex justify-between items-center mt-2">
+                  <span 
+                    className="text-xs"
+                    style={{ color: '#6F7280' }}
+                  >
+                    {newComment.length}/1,000
+                  </span>
+                  <Button
+                    variant="primary"
+                    onClick={handlePostComment}
+                    disabled={postingComment || !newComment.trim()}
+                  >
+                    {postingComment ? (
+                      <>
+                        <CircularProgress size={16} sx={{ mr: 1, color: '#fff' }} />
+                        Posting...
+                      </>
+                    ) : (
+                      'Post Comment'
+                    )}
+                  </Button>
+                </div>
+              </div>
+            ) : (
+              <div 
+                className="p-4 rounded-lg text-center mb-6"
+                style={{ backgroundColor: '#F8F9FC' }}
+              >
+                <p className="text-sm" style={{ color: '#6F7280' }}>
+                  Connect your wallet to join the discussion
+                </p>
+              </div>
+            )}
+
+            {/* Comments List */}
+            {comments.length === 0 ? (
+              <div 
+                className="text-center py-12"
+                style={{ color: '#A3A7B5' }}
+              >
+                <p className="text-lg">
+                  No comments yet. Be the first to comment!
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {comments.map((comment) => (
+                  <div 
+                    key={comment.id}
+                    className="p-4 rounded-lg border"
+                    style={{ 
+                      borderColor: '#E5E7F0',
+                      backgroundColor: '#FAFBFC'
+                    }}
+                  >
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="flex items-center gap-2">
+                        <span 
+                          className="text-sm font-mono font-semibold"
+                          style={{ color: '#1A1A1E' }}
+                        >
+                          {formatWalletAddress(comment.wallet_address)}
+                        </span>
+                        <Tooltip title="Copy address">
+                          <IconButton
+                            size="small"
+                            onClick={() => handleCopyAddress(comment.wallet_address)}
+                            sx={{ 
+                              padding: '2px',
+                              color: '#6F7280',
+                              '&:hover': { color: '#7C4DFF' }
+                            }}
+                          >
+                            <ContentCopyIcon sx={{ fontSize: 12 }} />
+                          </IconButton>
+                        </Tooltip>
+                        <SupporterBadgeFetcher 
+                          walletAddress={comment.wallet_address} 
+                          projectId={project.id}
+                          size="small"
+                        />
+                      </div>
+                      <span 
+                        className="text-xs"
+                        style={{ color: '#A3A7B5' }}
+                      >
+                        {formatDistanceToNow(new Date(comment.created_at), { addSuffix: true })}
+                      </span>
+                    </div>
+                    <p 
+                      className="text-base whitespace-pre-wrap"
+                      style={{ 
+                        color: '#1A1A1E',
+                        lineHeight: '1.6'
+                      }}
+                    >
+                      {comment.message}
+                    </p>
+                  </div>
+                ))}
               </div>
             )}
           </CardContent>

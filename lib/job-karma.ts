@@ -375,4 +375,91 @@ export async function getJobKarmaStats(walletAddress: string, projectId: string)
   }
 }
 
+/**
+ * Calculate tier multiplier based on token percentage
+ */
+function calculateTierMultiplier(tokenPercentage: number): number {
+  if (tokenPercentage >= 3) return 7 // Mega holder
+  if (tokenPercentage >= 1) return 5.5 // Whale
+  if (tokenPercentage >= 0.1) return 3 // Holder
+  return 1 // Small holder
+}
+
+/**
+ * Award bonus karma to voters who upvoted the winning application
+ * Called when a job completes successfully
+ */
+export async function awardApplicationUpvoterBonuses(
+  jobId: string,
+  jobUsdValue: number
+): Promise<void> {
+  try {
+    // Get job details to find the winning worker
+    const { data: job, error: jobError } = await supabase
+      .from('jobs')
+      .select('assigned_to, project_id')
+      .eq('id', jobId)
+      .single()
+
+    if (jobError) throw jobError
+    if (!job || !job.assigned_to) {
+      console.log('No worker assigned, skipping upvoter bonuses')
+      return
+    }
+
+    // Find the winning application (the one that got assigned)
+    const { data: winningApp, error: appError } = await supabase
+      .from('job_applications')
+      .select('id')
+      .eq('job_id', jobId)
+      .eq('applicant_wallet', job.assigned_to)
+      .maybeSingle()
+
+    if (appError) throw appError
+    if (!winningApp) {
+      console.log('No winning application found')
+      return
+    }
+
+    // Get all voters who upvoted the winning application
+    const { data: votes, error: votesError } = await supabase
+      .from('job_application_votes')
+      .select('voter_wallet, vote_weight')
+      .eq('application_id', winningApp.id)
+
+    if (votesError) throw votesError
+    if (!votes || votes.length === 0) {
+      console.log('No upvotes on winning application')
+      return
+    }
+
+    // Award bonus karma to each voter
+    for (const vote of votes) {
+      // Calculate tier multiplier based on token percentage
+      const tierMultiplier = calculateTierMultiplier(vote.vote_weight)
+      
+      // Bonus formula: job_usd_value × 5 × tier_multiplier
+      const bonusKarma = jobUsdValue * 5 * tierMultiplier
+
+      // Award karma
+      const { error: karmaError } = await supabase.rpc('increment_karma', {
+        p_wallet_address: vote.voter_wallet,
+        p_project_id: job.project_id,
+        p_karma_points: bonusKarma,
+        p_reason: 'application_upvote_bonus'
+      })
+
+      if (karmaError) {
+        console.error(`Failed to award bonus to ${vote.voter_wallet}:`, karmaError)
+      } else {
+        console.log(`✅ Awarded ${bonusKarma.toFixed(1)} bonus karma to ${vote.voter_wallet}`)
+      }
+    }
+
+    console.log(`Completed upvoter bonus distribution for job ${jobId} (${votes.length} voters)`)
+  } catch (error) {
+    console.error('Error awarding upvoter bonuses:', error)
+  }
+}
+
 
