@@ -19,8 +19,13 @@ import {
   Alert,
   CircularProgress,
   InputAdornment,
-  Checkbox
+  Checkbox,
+  Box,
+  Typography,
+  Chip
 } from '@mui/material'
+import InfoIcon from '@mui/icons-material/Info'
+import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown'
 import { createJob } from '@/lib/jobs'
 import { supabase } from '@/lib/supabase'
 import { getTokenPriceUsd, validateMinimumUsdValue } from '@/lib/helius'
@@ -63,6 +68,7 @@ export function CreateJobModal({
   const [checkingPrice, setCheckingPrice] = useState(false)
   const [applicationCount, setApplicationCount] = useState(0)
   const [understoodInvalidation, setUnderstoodInvalidation] = useState(false)
+  const [hasScrolled, setHasScrolled] = useState(false)
   
   // Form fields
   const [title, setTitle] = useState('')
@@ -314,6 +320,16 @@ export function CreateJobModal({
   }
 
   const belowMinimum = usdValue !== null && usdValue < 5
+  
+  // Handle scroll to detect if user has scrolled
+  const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
+    const target = e.target as HTMLDivElement
+    if (target.scrollTop > 20) {
+      setHasScrolled(true)
+    } else {
+      setHasScrolled(false)
+    }
+  }
 
   return (
     <Dialog 
@@ -323,7 +339,8 @@ export function CreateJobModal({
       fullWidth
       PaperProps={{
         sx: {
-          borderRadius: '12px'
+          borderRadius: '12px',
+          maxHeight: '90vh'
         }
       }}
     >
@@ -331,12 +348,120 @@ export function CreateJobModal({
         fontFamily: 'var(--font-display), Space Grotesk, sans-serif',
         fontSize: '24px',
         fontWeight: 700,
-        color: '#1A1A1E'
+        color: '#1A1A1E',
+        pb: 1
       }}>
         {mode === 'edit' ? 'Edit Job' : 'Post a Job'}
       </DialogTitle>
 
-      <DialogContent sx={{ pt: 2 }}>
+      <DialogContent 
+        sx={{ pt: 3 }}
+        onScroll={handleScroll}
+      >
+        {/* Field Counter and Scroll Hint */}
+        <Box 
+          sx={{ 
+            mb: 3, 
+            p: 2, 
+            bgcolor: '#F8F5FF',
+            borderRadius: '8px',
+            border: '1px solid #E5DEFF',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between'
+          }}
+        >
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+            <InfoIcon sx={{ fontSize: 20, color: '#7C4DFF' }} />
+            <Typography variant="body2" sx={{ fontWeight: 500, color: '#1A1A1E' }}>
+              Complete all required fields to post
+            </Typography>
+          </Box>
+          <Box sx={{ display: 'flex', gap: 1 }}>
+            <Chip 
+              label="Title" 
+              size="small" 
+              sx={{ 
+                bgcolor: title ? '#E3F8ED' : '#E5E7F0',
+                color: title ? '#36C170' : '#6F7280',
+                fontSize: '11px'
+              }}
+            />
+            <Chip 
+              label="Category" 
+              size="small" 
+              sx={{ 
+                bgcolor: category ? '#E3F8ED' : '#E5E7F0',
+                color: category ? '#36C170' : '#6F7280',
+                fontSize: '11px'
+              }}
+            />
+            <Chip 
+              label="Description" 
+              size="small" 
+              sx={{ 
+                bgcolor: description ? '#E3F8ED' : '#E5E7F0',
+                color: description ? '#36C170' : '#6F7280',
+                fontSize: '11px'
+              }}
+            />
+            <Chip 
+              label="KPIs" 
+              size="small" 
+              sx={{ 
+                bgcolor: kpis ? '#E3F8ED' : '#E5E7F0',
+                color: kpis ? '#36C170' : '#6F7280',
+                fontSize: '11px'
+              }}
+            />
+            <Chip 
+              label="Payment" 
+              size="small" 
+              sx={{ 
+                bgcolor: paymentAmount && !belowMinimum ? '#E3F8ED' : '#E5E7F0',
+                color: paymentAmount && !belowMinimum ? '#36C170' : '#6F7280',
+                fontSize: '11px'
+              }}
+            />
+          </Box>
+        </Box>
+        
+        {/* Scroll Hint - Only show when not scrolled */}
+        {!hasScrolled && (
+          <Box
+            sx={{
+              position: 'absolute',
+              bottom: 80,
+              left: 0,
+              right: 0,
+              display: 'flex',
+              justifyContent: 'center',
+              pointerEvents: 'none',
+              zIndex: 1,
+              animation: 'bounce 2s infinite'
+            }}
+          >
+            <Box
+              sx={{
+                bgcolor: '#7C4DFF',
+                color: '#fff',
+                px: 2,
+                py: 1,
+                borderRadius: '20px',
+                display: 'flex',
+                alignItems: 'center',
+                gap: 0.5,
+                fontSize: '13px',
+                fontWeight: 500,
+                boxShadow: '0 4px 12px rgba(124, 77, 255, 0.3)'
+              }}
+            >
+              Scroll for payment & mode
+              <KeyboardArrowDownIcon sx={{ fontSize: 18 }} />
+            </Box>
+          </Box>
+        )}
+        
         {/* Warning for editing with applications */}
         {mode === 'edit' && applicationCount > 0 && (
           <Alert 

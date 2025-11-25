@@ -6,6 +6,8 @@
 
 import { supabase } from './supabase'
 import { Database } from '@/types/database'
+import { Connection } from '@solana/web3.js'
+import { getHolderInfo } from './token-balance'
 
 export type JobComment = Database['public']['Tables']['job_comments']['Row']
 
@@ -35,13 +37,13 @@ export async function getJobComments(jobId: string): Promise<JobComment[]> {
 
 /**
  * Post a new comment on a job
- * Validates message content before inserting
- * Note: RLS policy will verify token holder status
+ * Validates token holdings on-chain before posting
  */
 export async function postJobComment(
   jobId: string,
   walletAddress: string,
-  commentText: string
+  commentText: string,
+  tokenMint: string
 ): Promise<{ success: boolean; error?: string }> {
   try {
     // Validate message
@@ -55,21 +57,34 @@ export async function postJobComment(
       return { success: false, error: 'Comment is too long (max 2000 characters)' }
     }
 
-    // Insert comment (RLS will check token holder status)
+    // Verify token holdings on-chain (same as chat)
+    const rpcEndpoint = process.env.NEXT_PUBLIC_RPC_ENDPOINT || 'https://api.devnet.solana.com'
+    const connection = new Connection(rpcEndpoint, 'confirmed')
+
+    console.log(`Checking token holdings for comment: ${walletAddress}`)
+    const holderInfo = await getHolderInfo(walletAddress, tokenMint, connection)
+
+    if (!holderInfo) {
+      console.error(`No holder info returned for wallet ${walletAddress}`)
+      return { 
+        success: false, 
+        error: 'You must hold project tokens to comment. Make sure you are connected to the correct network.' 
+      }
+    }
+
+    console.log(`Holder validated: ${walletAddress} holds ${Number(holderInfo.balance)} tokens (${holderInfo.percentage.toFixed(6)}%)`)
+
+    // Insert comment
     const { error } = await supabase
       .from('job_comments')
       .insert({
         job_id: jobId,
-        commenter_wallet: walletAddress,
-        comment_text: trimmedMessage
+        wallet_address: walletAddress,
+        message: trimmedMessage
       })
 
     if (error) {
       console.error('Error posting job comment:', error)
-      // Check if it's a token holder restriction error
-      if (error.message?.includes('policy')) {
-        return { success: false, error: 'You must hold project tokens to comment' }
-      }
       return { success: false, error: 'Failed to post comment. Please try again.' }
     }
 

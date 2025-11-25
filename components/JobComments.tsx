@@ -17,8 +17,8 @@ interface JobCommentsProps {
 interface Comment {
   id: string
   job_id: string
-  commenter_wallet: string
-  comment_text: string
+  wallet_address: string
+  message: string
   created_at: string
   updated_at: string
 }
@@ -30,6 +30,23 @@ export default function JobComments({ jobId, projectId }: JobCommentsProps) {
   const [isHolder, setIsHolder] = useState(false)
   const [posting, setPosting] = useState(false)
   const [checkingHolder, setCheckingHolder] = useState(true)
+  const [tokenMint, setTokenMint] = useState<string | null>(null)
+
+  // Fetch project token mint
+  useEffect(() => {
+    async function fetchProjectTokenMint() {
+      const { data } = await supabase
+        .from('projects')
+        .select('token_mint')
+        .eq('id', projectId)
+        .single()
+      
+      if (data) {
+        setTokenMint(data.token_mint)
+      }
+    }
+    fetchProjectTokenMint()
+  }, [projectId])
 
   // Fetch comments with real-time subscription
   useEffect(() => {
@@ -57,55 +74,19 @@ export default function JobComments({ jobId, projectId }: JobCommentsProps) {
     }
   }, [jobId])
 
-  // Check if user is token holder
+  // Check if user has wallet connected
   useEffect(() => {
-    if (publicKey) {
-      checkHolderStatus()
-    } else {
-      setIsHolder(false)
-      setCheckingHolder(false)
-    }
-  }, [publicKey, projectId])
+    setIsHolder(!!publicKey && !!tokenMint)
+    setCheckingHolder(!tokenMint) // Still checking if we don't have token mint yet
+  }, [publicKey, tokenMint])
 
   async function fetchComments() {
     const data = await getJobComments(jobId)
     setComments(data as Comment[])
   }
 
-  async function checkHolderStatus() {
-    setCheckingHolder(true)
-    try {
-      // Get project's token mint
-      const { data: project } = await supabase
-        .from('projects')
-        .select('token_mint')
-        .eq('id', projectId)
-        .single()
-
-      if (!project) {
-        setIsHolder(false)
-        return
-      }
-
-      // Check if user holds tokens
-      const { data: holding } = await supabase
-        .from('wallet_token_holdings')
-        .select('balance')
-        .eq('wallet_address', publicKey!.toString())
-        .eq('token_mint', project.token_mint)
-        .single()
-
-      setIsHolder(holding && holding.balance > 0)
-    } catch (error) {
-      console.error('Error checking holder status:', error)
-      setIsHolder(false)
-    } finally {
-      setCheckingHolder(false)
-    }
-  }
-
   async function handleSubmit() {
-    if (!newComment.trim() || !publicKey || !isHolder || posting) return
+    if (!newComment.trim() || !publicKey || !tokenMint || posting) return
 
     setPosting(true)
     
@@ -113,12 +94,14 @@ export default function JobComments({ jobId, projectId }: JobCommentsProps) {
       const result = await postJobComment(
         jobId,
         publicKey.toString(),
-        newComment
+        newComment,
+        tokenMint
       )
 
       if (result.success) {
         toast.success('Comment posted!')
         setNewComment('')
+        await fetchComments() // Refresh comments list
       } else {
         toast.error(result.error || 'Failed to post comment')
       }
@@ -171,7 +154,7 @@ export default function JobComments({ jobId, projectId }: JobCommentsProps) {
                   fontWeight: 600
                 }}
               >
-                {comment.commenter_wallet.slice(0, 1).toUpperCase()}
+                {comment.wallet_address.slice(0, 1).toUpperCase()}
               </Avatar>
               <Typography 
                 variant="body2" 
@@ -181,10 +164,10 @@ export default function JobComments({ jobId, projectId }: JobCommentsProps) {
                   color: '#1A1A1E'
                 }}
               >
-                {formatWalletAddress(comment.commenter_wallet)}
+                {formatWalletAddress(comment.wallet_address)}
               </Typography>
               <SupporterBadgeFetcher 
-                walletAddress={comment.commenter_wallet} 
+                walletAddress={comment.wallet_address} 
                 projectId={projectId}
                 size="small"
               />
@@ -207,7 +190,7 @@ export default function JobComments({ jobId, projectId }: JobCommentsProps) {
                 fontSize: '15px'
               }}
             >
-              {comment.comment_text}
+              {comment.message}
             </Typography>
           </Paper>
         ))}
@@ -273,17 +256,33 @@ export default function JobComments({ jobId, projectId }: JobCommentsProps) {
               </Button>
             </Box>
           </Box>
+        ) : checkingHolder ? (
+          <Paper 
+            sx={{ 
+              p: 3, 
+              bgcolor: '#F8F9FC', 
+              textAlign: 'center',
+              border: '1px solid #E5E7F0'
+            }}
+          >
+            <Typography variant="body2" sx={{ color: '#6F7280', fontWeight: 600 }}>
+              Checking token balance...
+            </Typography>
+          </Paper>
         ) : (
           <Paper 
             sx={{ 
               p: 3, 
-              bgcolor: '#EEE7FF', 
+              bgcolor: '#FFF4E6', 
               textAlign: 'center',
-              border: '1px solid #D4C5FF'
+              border: '1px solid #FFE5B4'
             }}
           >
-            <Typography variant="body2" sx={{ color: '#7C4DFF', fontWeight: 600 }}>
-              {checkingHolder ? 'Checking token balance...' : 'Hold project tokens to comment'}
+            <Typography variant="body2" sx={{ color: '#D97706', fontWeight: 600 }}>
+              You must hold project tokens to comment
+            </Typography>
+            <Typography variant="caption" sx={{ color: '#6F7280', mt: 1, display: 'block' }}>
+              Token holders can participate in discussions
             </Typography>
           </Paper>
         )
