@@ -20,7 +20,16 @@ export function getTier(supplyPercentage: number): {
 export const BASE_KARMA = {
   ADD_ASSET: 100,
   UPVOTE: 10,
-  REPORT: 5
+  REPORT: 5,
+  // Job System Karma
+  POST_JOB: 50,              // Posting a job
+  APPLY_TO_JOB: 50,          // Applying to a job
+  UPVOTE_APPLICATION: 10,    // Upvoting an application
+  COMPLETE_JOB_POSTER: 0,    // Base for poster (calculated from USD)
+  COMPLETE_JOB_WORKER: 0,    // Base for worker (calculated from USD)
+  VOTE_ON_DISPUTE: 5,        // Voting on a dispute
+  CANCEL_JOB: -50,           // Cancelling a job (penalty)
+  FAIL_TO_DELIVER: -50       // Worker ghost/dispute lost
 }
 
 // Immediate reward percentage (rest awarded on verification)
@@ -138,6 +147,60 @@ export function checkBanStatus(
   }
   
   return { shouldBan: false }
+}
+
+// ==================== JOB SYSTEM KARMA FUNCTIONS ====================
+
+/**
+ * Calculate karma for job completion based on USD value
+ * Both poster and worker earn: (USD value × 50) karma
+ * Example: $50 job = 2,500 karma each
+ */
+export function calculateJobCompletionKarma(usdValue: number): number {
+  return Math.floor(usdValue * 50)
+}
+
+/**
+ * Calculate bonus karma for correct application upvote
+ * Voter earns: (USD value × 10) karma if their pick wins and completes
+ * Example: $50 job completes, you upvoted winner = +500 bonus
+ */
+export function calculateApplicationUpvoteBonusKarma(usdValue: number): number {
+  return Math.floor(usdValue * 10)
+}
+
+/**
+ * Calculate bonus karma for correct dispute vote
+ * Voter earns: (USD value × 10) karma if they voted with winning side
+ */
+export function calculateDisputeVoteBonusKarma(usdValue: number): number {
+  return Math.floor(usdValue * 10)
+}
+
+/**
+ * Calculate total karma for job-related action
+ * Applies tier multiplier to base karma (except USD-based calculations)
+ * 
+ * @param action - The job action being performed
+ * @param tokenPercentage - User's token percentage of supply
+ * @param isImmediate - True for immediate 25%, false for delayed 75%
+ * @returns Calculated karma points
+ */
+export function calculateJobKarma(
+  action: keyof typeof BASE_KARMA,
+  tokenPercentage: number,
+  isImmediate: boolean = true
+): number {
+  const baseKarma = BASE_KARMA[action]
+  if (baseKarma === 0) return 0 // USD-based, calculated separately
+
+  const tier = getTier(tokenPercentage)
+  const multiplier = tier.multiplier
+
+  // Apply immediate/delayed split (25% immediate, 75% delayed)
+  const splitMultiplier = isImmediate ? 0.25 : 0.75
+
+  return Math.floor(baseKarma * multiplier * splitMultiplier)
 }
 
 

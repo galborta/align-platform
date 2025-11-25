@@ -56,6 +56,9 @@ export default function AdminPage() {
   const [processing, setProcessing] = useState<Record<string, boolean>>({})
   const [isVerified, setIsVerified] = useState(false)
   const [verifying, setVerifying] = useState(false)
+  const [disputeCount, setDisputeCount] = useState(0)
+  const [resolvingDisputes, setResolvingDisputes] = useState(false)
+  const [disputeResults, setDisputeResults] = useState<any>(null)
 
   const isAdmin = isAdminWallet(publicKey)
 
@@ -75,8 +78,48 @@ export default function AdminPage() {
   useEffect(() => {
     if (isVerified) {
       fetchPendingItems()
+      fetchDisputeCount()
     }
   }, [isVerified])
+
+  const fetchDisputeCount = async () => {
+    try {
+      const response = await fetch('/api/jobs/resolve-disputes')
+      const data = await response.json()
+      setDisputeCount(data.count || 0)
+    } catch (error) {
+      console.error('Error fetching dispute count:', error)
+    }
+  }
+
+  const handleResolveDisputes = async () => {
+    if (!confirm(`Are you sure you want to resolve ${disputeCount} expired dispute(s)? This action cannot be undone.`)) {
+      return
+    }
+
+    setResolvingDisputes(true)
+    setDisputeResults(null)
+
+    try {
+      const response = await fetch('/api/jobs/resolve-disputes', {
+        method: 'POST'
+      })
+
+      const data = await response.json()
+      setDisputeResults(data)
+      
+      // Refresh dispute count
+      await fetchDisputeCount()
+      
+      // Show success message
+      alert(`Successfully resolved ${data.results?.filter((r: any) => !r.error).length || 0} dispute(s)`)
+    } catch (error) {
+      console.error('Error resolving disputes:', error)
+      alert('Failed to resolve disputes. Check console for details.')
+    } finally {
+      setResolvingDisputes(false)
+    }
+  }
 
   const verifyAdmin = async () => {
     if (!signMessage || !publicKey) return
@@ -454,6 +497,82 @@ export default function AdminPage() {
         </div>
 
         <div className="space-y-6">
+          {/* Dispute Resolution Section */}
+          {disputeCount > 0 && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="font-display text-2xl flex items-center gap-2">
+                  ⚖️ Dispute Resolution
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 mb-4">
+                  <p className="font-body text-text-primary mb-2">
+                    <strong>{disputeCount}</strong> dispute{disputeCount > 1 ? 's' : ''} ready to resolve
+                  </p>
+                  <p className="font-body text-text-secondary text-sm">
+                    These disputes have passed their 14-day voting period and can now be resolved based on community votes.
+                  </p>
+                </div>
+
+                <Button
+                  onClick={handleResolveDisputes}
+                  disabled={resolvingDisputes}
+                  className="mb-4"
+                  style={{
+                    backgroundColor: '#7C4DFF',
+                    color: '#fff'
+                  }}
+                >
+                  {resolvingDisputes ? (
+                    <>
+                      <span className="animate-spin mr-2">⏳</span>
+                      Resolving...
+                    </>
+                  ) : (
+                    <>⚖️ Resolve Expired Disputes ({disputeCount})</>
+                  )}
+                </Button>
+
+                {/* Results Display */}
+                {disputeResults && (
+                  <div className="mt-4 p-4 bg-green-50 border border-green-200 rounded-lg">
+                    <p className="font-body font-semibold text-green-800 mb-2">
+                      ✓ {disputeResults.message}
+                    </p>
+                    {disputeResults.results && disputeResults.results.length > 0 && (
+                      <div className="space-y-2 mt-3">
+                        {disputeResults.results.map((result: any, idx: number) => (
+                          <div 
+                            key={idx}
+                            className="text-sm font-body p-2 bg-white rounded border border-green-100"
+                          >
+                            {result.error ? (
+                              <p className="text-red-600">
+                                ❌ Dispute {result.disputeId}: {result.error}
+                              </p>
+                            ) : (
+                              <div>
+                                <p className="font-semibold">
+                                  Job {result.jobId}: {result.outcome === 'release_to_worker' ? '📦 Released to Worker' : '💰 Refunded to Poster'}
+                                </p>
+                                <p className="text-text-secondary">
+                                  Release: {result.releaseWeight.toFixed(1)}% | 
+                                  Refund: {result.refundWeight.toFixed(1)}% | 
+                                  Voters: {result.totalVoters}
+                                </p>
+                              </div>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          )}
+
           {/* All Projects with Moderation Tools */}
           {pendingProjects.length === 0 && orphanedSocials.length === 0 ? (
             <Card>

@@ -10,6 +10,7 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzd
 NEXT_PUBLIC_SOLANA_NETWORK=devnet
 NEXT_PUBLIC_RPC_ENDPOINT=https://api.devnet.solana.com
 NEXT_PUBLIC_HELIUS_API_URL=https://mainnet.helius-rpc.com/?api-key=YOUR_HELIUS_API_KEY
+NEXT_PUBLIC_HELIUS_API_KEY=YOUR_HELIUS_API_KEY
 ```
 
 ## Quick Setup Command
@@ -23,6 +24,7 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzd
 NEXT_PUBLIC_SOLANA_NETWORK=devnet
 NEXT_PUBLIC_RPC_ENDPOINT=https://api.devnet.solana.com
 NEXT_PUBLIC_HELIUS_API_URL=https://mainnet.helius-rpc.com/?api-key=YOUR_HELIUS_API_KEY
+NEXT_PUBLIC_HELIUS_API_KEY=YOUR_HELIUS_API_KEY
 EOF
 ```
 
@@ -43,6 +45,16 @@ The following tables have been created in Supabase:
 ### Storage
 
 - **project-assets** bucket for image uploads (50MB limit, public access)
+
+## Helius API Key (Optional)
+
+The platform uses Helius API for:
+- Token holder queries
+- Advanced RPC features
+
+**Note:** Token price validation uses **DexScreener** (free, no key needed).
+
+Get your free Helius API key at [https://helius.dev](https://helius.dev) if you need token holder features. Add it to your `.env.local` file as `NEXT_PUBLIC_HELIUS_API_KEY`.
 
 
 

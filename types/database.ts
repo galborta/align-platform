@@ -303,6 +303,12 @@ export interface Database {
           banned_at: string | null
           ban_expires_at: string | null
           warnings: Array<{ timestamp: string; reason: string }>
+          // Job System Tracking
+          applications_submitted_count: number
+          jobs_completed_as_worker_count: number
+          jobs_posted_as_poster_count: number
+          dispute_votes_cast_count: number
+          dispute_votes_won_count: number
           created_at: string
           updated_at: string
         }
@@ -319,6 +325,12 @@ export interface Database {
           banned_at?: string | null
           ban_expires_at?: string | null
           warnings?: Array<{ timestamp: string; reason: string }>
+          // Job System Tracking
+          applications_submitted_count?: number
+          jobs_completed_as_worker_count?: number
+          jobs_posted_as_poster_count?: number
+          dispute_votes_cast_count?: number
+          dispute_votes_won_count?: number
           created_at?: string
           updated_at?: string
         }
@@ -335,6 +347,12 @@ export interface Database {
           banned_at?: string | null
           ban_expires_at?: string | null
           warnings?: Array<{ timestamp: string; reason: string }>
+          // Job System Tracking
+          applications_submitted_count?: number
+          jobs_completed_as_worker_count?: number
+          jobs_posted_as_poster_count?: number
+          dispute_votes_cast_count?: number
+          dispute_votes_won_count?: number
           created_at?: string
           updated_at?: string
         }
@@ -561,6 +579,239 @@ export interface Database {
           conversation_id?: string
           wallet_address?: string
           last_typed_at?: string
+        }
+      }
+      jobs: {
+        Row: {
+          id: string
+          project_id: string
+          poster_wallet: string
+          title: string
+          description: string
+          kpis: string
+          category: 'design' | 'marketing' | 'development' | 'content' | 'community' | 'other'
+          payment_amount_tokens: number
+          payment_amount_usd: number
+          status: 'open' | 'assigned' | 'submitted' | 'completed' | 'disputed' | 'cancelled'
+          assignment_mode: 'first_come' | 'review'
+          assigned_to: string | null
+          assigned_at: string | null
+          submitted_at: string | null
+          completed_at: string | null
+          cancelled_at: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          project_id: string
+          poster_wallet: string
+          title: string
+          description: string
+          kpis: string
+          category: 'design' | 'marketing' | 'development' | 'content' | 'community' | 'other'
+          payment_amount_tokens: number
+          payment_amount_usd: number
+          status?: 'open' | 'assigned' | 'submitted' | 'completed' | 'disputed' | 'cancelled'
+          assignment_mode?: 'first_come' | 'review'
+          assigned_to?: string | null
+          assigned_at?: string | null
+          submitted_at?: string | null
+          completed_at?: string | null
+          cancelled_at?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          project_id?: string
+          poster_wallet?: string
+          title?: string
+          description?: string
+          kpis?: string
+          category?: 'design' | 'marketing' | 'development' | 'content' | 'community' | 'other'
+          payment_amount_tokens?: number
+          payment_amount_usd?: number
+          status?: 'open' | 'assigned' | 'submitted' | 'completed' | 'disputed' | 'cancelled'
+          assignment_mode?: 'first_come' | 'review'
+          assigned_to?: string | null
+          assigned_at?: string | null
+          submitted_at?: string | null
+          completed_at?: string | null
+          cancelled_at?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+      }
+      job_applications: {
+        Row: {
+          id: string
+          job_id: string
+          applicant_wallet: string
+          pitch: string
+          image_urls: string[]
+          estimated_completion: string
+          is_invalidated: boolean
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          job_id: string
+          applicant_wallet: string
+          pitch: string
+          image_urls?: string[]
+          estimated_completion: string
+          is_invalidated?: boolean
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          job_id?: string
+          applicant_wallet?: string
+          pitch?: string
+          image_urls?: string[]
+          estimated_completion?: string
+          is_invalidated?: boolean
+          created_at?: string
+          updated_at?: string
+        }
+      }
+      job_application_votes: {
+        Row: {
+          id: string
+          application_id: string
+          voter_wallet: string
+          vote_weight: number
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          application_id: string
+          voter_wallet: string
+          vote_weight: number
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          application_id?: string
+          voter_wallet?: string
+          vote_weight?: number
+          created_at?: string
+        }
+      }
+      job_submissions: {
+        Row: {
+          id: string
+          job_id: string
+          worker_wallet: string
+          message: string
+          image_urls: string[]
+          external_links: string[]
+          submitted_at: string
+        }
+        Insert: {
+          id?: string
+          job_id: string
+          worker_wallet: string
+          message: string
+          image_urls?: string[]
+          external_links?: string[]
+          submitted_at?: string
+        }
+        Update: {
+          id?: string
+          job_id?: string
+          worker_wallet?: string
+          message?: string
+          image_urls?: string[]
+          external_links?: string[]
+          submitted_at?: string
+        }
+      }
+      job_disputes: {
+        Row: {
+          id: string
+          job_id: string
+          opened_by: 'poster' | 'worker'
+          reason: string
+          status: 'active' | 'resolved'
+          outcome: 'release_to_worker' | 'refund_to_poster' | null
+          created_at: string
+          ends_at: string | null
+          resolved_at: string | null
+        }
+        Insert: {
+          id?: string
+          job_id: string
+          opened_by: 'poster' | 'worker'
+          reason: string
+          status?: 'active' | 'resolved'
+          outcome?: 'release_to_worker' | 'refund_to_poster' | null
+          created_at?: string
+          ends_at?: string | null
+          resolved_at?: string | null
+        }
+        Update: {
+          id?: string
+          job_id?: string
+          opened_by?: 'poster' | 'worker'
+          reason?: string
+          status?: 'active' | 'resolved'
+          outcome?: 'release_to_worker' | 'refund_to_poster' | null
+          created_at?: string
+          ends_at?: string | null
+          resolved_at?: string | null
+        }
+      }
+      job_dispute_votes: {
+        Row: {
+          id: string
+          dispute_id: string
+          voter_wallet: string
+          vote: 'release' | 'refund'
+          vote_weight: number
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          dispute_id: string
+          voter_wallet: string
+          vote: 'release' | 'refund'
+          vote_weight: number
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          dispute_id?: string
+          voter_wallet?: string
+          vote?: 'release' | 'refund'
+          vote_weight?: number
+          created_at?: string
+        }
+      }
+      job_failures: {
+        Row: {
+          id: string
+          job_id: string
+          worker_wallet: string
+          failure_type: 'disputed_lost' | 'reassigned' | 'ghosted'
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          job_id: string
+          worker_wallet: string
+          failure_type: 'disputed_lost' | 'reassigned' | 'ghosted'
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          job_id?: string
+          worker_wallet?: string
+          failure_type?: 'disputed_lost' | 'reassigned' | 'ghosted'
+          created_at?: string
         }
       }
     }

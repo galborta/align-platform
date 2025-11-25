@@ -25,3 +25,5 @@ COMMENT ON COLUMN conversations.archived_by_participant_2 IS 'Whether participan
 -- 3. Messages are preserved for debugging/support
 -- 4. Better user experience with reversible actions
 
+
+

@@ -177,3 +177,5 @@ const ArchivedConversationsPage = () => {
 - **Performance Impact**: Minimal - indexed queries remain fast
 - **Data Safety**: Messages are never deleted, improving data integrity
 
+
+
