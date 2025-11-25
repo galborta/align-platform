@@ -3,11 +3,12 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
 import { getJobComments, postJobComment } from '@/lib/job-comments'
-import { useWallet } from '@solana/wallet-adapter-react'
-import { Box, TextField, Button, Typography, Avatar, Paper } from '@mui/material'
+import { useWallet, useConnection } from '@solana/wallet-adapter-react'
+import { Box, TextField, Button, Typography, Avatar, Paper, CircularProgress } from '@mui/material'
 import { formatDistanceToNow } from 'date-fns'
 import { toast } from 'react-hot-toast'
 import { SupporterBadgeFetcher } from './SupporterBadgeFetcher'
+import { getHolderInfo } from '@/lib/token-balance'
 
 interface JobCommentsProps {
   jobId: string
@@ -25,6 +26,7 @@ interface Comment {
 
 export default function JobComments({ jobId, projectId }: JobCommentsProps) {
   const { publicKey } = useWallet()
+  const { connection } = useConnection()
   const [comments, setComments] = useState<Comment[]>([])
   const [newComment, setNewComment] = useState('')
   const [isHolder, setIsHolder] = useState(false)
@@ -74,11 +76,40 @@ export default function JobComments({ jobId, projectId }: JobCommentsProps) {
     }
   }, [jobId])
 
-  // Check if user has wallet connected
+  // Check if user actually holds tokens
   useEffect(() => {
-    setIsHolder(!!publicKey && !!tokenMint)
-    setCheckingHolder(!tokenMint) // Still checking if we don't have token mint yet
-  }, [publicKey, tokenMint])
+    async function checkTokenHoldings() {
+      if (!publicKey || !tokenMint) {
+        setIsHolder(false)
+        setCheckingHolder(false)
+        return
+      }
+
+      setCheckingHolder(true)
+      try {
+        const holderInfo = await getHolderInfo(
+          publicKey.toString(),
+          tokenMint,
+          connection
+        )
+        
+        setIsHolder(!!holderInfo)
+        
+        if (!holderInfo) {
+          console.log('User does not hold tokens:', publicKey.toString())
+        } else {
+          console.log('User holds tokens:', holderInfo.percentage.toFixed(6), '%')
+        }
+      } catch (error) {
+        console.error('Error checking token holdings:', error)
+        setIsHolder(false)
+      } finally {
+        setCheckingHolder(false)
+      }
+    }
+
+    checkTokenHoldings()
+  }, [publicKey, tokenMint, connection])
 
   async function fetchComments() {
     const data = await getJobComments(jobId)
@@ -262,11 +293,16 @@ export default function JobComments({ jobId, projectId }: JobCommentsProps) {
               p: 3, 
               bgcolor: '#F8F9FC', 
               textAlign: 'center',
-              border: '1px solid #E5E7F0'
+              border: '1px solid #E5E7F0',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: 2
             }}
           >
+            <CircularProgress size={20} sx={{ color: '#7C4DFF' }} />
             <Typography variant="body2" sx={{ color: '#6F7280', fontWeight: 600 }}>
-              Checking token balance...
+              Checking token holdings...
             </Typography>
           </Paper>
         ) : (
@@ -278,11 +314,11 @@ export default function JobComments({ jobId, projectId }: JobCommentsProps) {
               border: '1px solid #FFE5B4'
             }}
           >
-            <Typography variant="body2" sx={{ color: '#D97706', fontWeight: 600 }}>
-              You must hold project tokens to comment
+            <Typography variant="body2" sx={{ color: '#D97706', fontWeight: 600, mb: 0.5 }}>
+              You must hold tokens of this project to comment
             </Typography>
-            <Typography variant="caption" sx={{ color: '#6F7280', mt: 1, display: 'block' }}>
-              Token holders can participate in discussions
+            <Typography variant="caption" sx={{ color: '#6F7280', display: 'block' }}>
+              Only token holders can participate in job discussions
             </Typography>
           </Paper>
         )
