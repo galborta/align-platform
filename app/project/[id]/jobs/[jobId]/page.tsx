@@ -11,6 +11,7 @@ import { CreateJobModal } from '@/components/CreateJobModal'
 import { OpenDisputeModal } from '@/components/OpenDisputeModal'
 import { supabase } from '@/lib/supabase'
 import { getJobById } from '@/lib/jobs'
+import { upvoteApplication, getApplicationVotes, hasUserVoted } from '@/lib/job-upvoting'
 import { Database } from '@/types/database'
 import { useWallet } from '@solana/wallet-adapter-react'
 import { formatDistanceToNow, addDays, format } from 'date-fns'
@@ -30,6 +31,7 @@ import WarningIcon from '@mui/icons-material/Warning'
 import CloseIcon from '@mui/icons-material/Close'
 import GavelIcon from '@mui/icons-material/Gavel'
 import OpenInNewIcon from '@mui/icons-material/OpenInNew'
+import ThumbUpIcon from '@mui/icons-material/ThumbUp'
 import Dialog from '@mui/material/Dialog'
 import DialogTitle from '@mui/material/DialogTitle'
 import DialogContent from '@mui/material/DialogContent'
@@ -114,6 +116,8 @@ export default function JobDetailPage() {
   const [showReassignDialog, setShowReassignDialog] = useState(false)
   const [selectedReassignApplicant, setSelectedReassignApplicant] = useState<string | null>(null)
   const [reassigning, setReassigning] = useState(false)
+  const [applicationVotes, setApplicationVotes] = useState<Record<string, { totalWeight: number; voterCount: number; hasVoted: boolean }>>({})
+  const [upvoting, setUpvoting] = useState<string | null>(null)
 
   useEffect(() => {
     if (params.jobId && params.id) {
@@ -193,6 +197,16 @@ export default function JobDetailPage() {
             }
           })
         )
+
+        // Fetch votes for each application
+        const votesData: Record<string, any> = {}
+        for (const app of appsWithStats) {
+          const votes = await getApplicationVotes(app.id)
+          const hasVoted = publicKey ? await hasUserVoted(app.id, publicKey.toString()) : false
+          votesData[app.id] = { ...votes, hasVoted }
+        }
+        setApplicationVotes(votesData)
+
         setApplications(appsWithStats)
       }
 
@@ -223,6 +237,47 @@ export default function JobDetailPage() {
       setError('Failed to load job')
     } finally {
       setLoading(false)
+    }
+  }
+
+  const handleUpvote = async (applicationId: string) => {
+    if (!publicKey) {
+      toast.error('Please connect your wallet to vote')
+      return
+    }
+
+    if (!project) return
+
+    const votes = applicationVotes[applicationId]
+    if (votes?.hasVoted) {
+      toast.error('You have already upvoted this application')
+      return
+    }
+
+    setUpvoting(applicationId)
+    
+    try {
+      const result = await upvoteApplication(
+        applicationId, 
+        publicKey.toString(), 
+        project.id
+      )
+      
+      if (result.success) {
+        toast.success('Vote recorded! Karma earned 👍', {
+          duration: 4000,
+          icon: '⬆️'
+        })
+        // Refresh data to show updated votes
+        await fetchJobData()
+      } else {
+        toast.error(result.error || 'Failed to vote')
+      }
+    } catch (error) {
+      console.error('Error upvoting:', error)
+      toast.error('Failed to submit vote')
+    } finally {
+      setUpvoting(null)
     }
   }
 
