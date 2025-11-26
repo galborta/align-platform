@@ -353,7 +353,7 @@ export default function ProjectDetailPage() {
             {project.status === 'live' && showMockFeed && (
               <Card>
                 <CardContent className="pt-4">
-                  <ActivityFeed projectId={project.id} />
+                  <ActivityFeed projectId={project.id} tokenMint={project.token_mint} />
                 </CardContent>
               </Card>
             )}

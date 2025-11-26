@@ -22,10 +22,12 @@ import {
 import { FeedItem as FeedItemType, ActivityType } from '@/types/feed'
 import { isFreshItem } from '@/lib/feed-utils'
 import { getDeepLink, buildUrlWithHash, scrollToElement } from '@/lib/feed-navigation'
+import { WalletAddressWithButtons } from '@/components/WalletAddressWithButtons'
 
 interface FeedItemProps {
   item: FeedItemType
   projectId: string
+  tokenMint?: string | null
   onClickBatched?: (item: FeedItemType) => void
 }
 
@@ -78,20 +80,38 @@ function getIconColor(type: ActivityType): string {
 /**
  * Generate formatted activity content text
  */
-function getActivityContent(item: FeedItemType): React.ReactNode {
+function getActivityContent(item: FeedItemType, projectId: string, tokenMint?: string | null): React.ReactNode {
   const { type, data, batchedCount } = item
   
   switch (type) {
     case 'job_posted':
       return (
         <>
-          <strong>{truncateAddress(data.actorWallet)}</strong> posted job: <span className="feed-item-link">{data.jobTitle}</span>
+          <WalletAddressWithButtons 
+            address={data.actorWallet}
+            showMessage
+            showTip
+            compact
+            projectId={projectId}
+            tokenMint={tokenMint}
+          />
+          {' posted job: '}
+          <span className="feed-item-link">{data.jobTitle}</span>
         </>
       )
     case 'job_applied':
       return (
         <>
-          <strong>{truncateAddress(data.actorWallet)}</strong> applied to <span className="feed-item-link">{data.jobTitle}</span>
+          <WalletAddressWithButtons 
+            address={data.actorWallet}
+            showMessage
+            showTip
+            compact
+            projectId={projectId}
+            tokenMint={tokenMint}
+          />
+          {' applied to '}
+          <span className="feed-item-link">{data.jobTitle}</span>
         </>
       )
     case 'job_application_upvoted':
@@ -108,31 +128,88 @@ function getActivityContent(item: FeedItemType): React.ReactNode {
               }}
             >
               {batchedCount} holders
-            </span> upvoted <strong>{truncateAddress(data.applicantWallet)}</strong>'s application for <span className="feed-item-link">{data.jobTitle}</span>
+            </span>
+            {' upvoted '}
+            <WalletAddressWithButtons 
+              address={data.applicantWallet}
+              showMessage
+              showTip
+              compact
+              projectId={projectId}
+              tokenMint={tokenMint}
+            />
+            {"'s application for "}
+            <span className="feed-item-link">{data.jobTitle}</span>
           </>
         )
       }
       return (
         <>
-          <strong>{truncateAddress(data.actorWallet)}</strong> upvoted <strong>{truncateAddress(data.applicantWallet)}</strong>'s application for <span className="feed-item-link">{data.jobTitle}</span>
+          <WalletAddressWithButtons 
+            address={data.actorWallet}
+            showMessage
+            showTip
+            compact
+            projectId={projectId}
+            tokenMint={tokenMint}
+          />
+          {' upvoted '}
+          <WalletAddressWithButtons 
+            address={data.applicantWallet}
+            showMessage
+            showTip
+            compact
+            projectId={projectId}
+            tokenMint={tokenMint}
+          />
+          {"'s application for "}
+          <span className="feed-item-link">{data.jobTitle}</span>
         </>
       )
     case 'job_assigned':
       return (
         <>
-          <span className="feed-item-link">{data.jobTitle}</span> assigned to <strong>{truncateAddress(data.assignedTo)}</strong>
+          <span className="feed-item-link">{data.jobTitle}</span>
+          {' assigned to '}
+          <WalletAddressWithButtons 
+            address={data.assignedTo}
+            showMessage
+            showTip
+            compact
+            projectId={projectId}
+            tokenMint={tokenMint}
+          />
         </>
       )
     case 'job_submitted':
       return (
         <>
-          <strong>{truncateAddress(data.actorWallet)}</strong> submitted work for <span className="feed-item-link">{data.jobTitle}</span>
+          <WalletAddressWithButtons 
+            address={data.actorWallet}
+            showMessage
+            showTip
+            compact
+            projectId={projectId}
+            tokenMint={tokenMint}
+          />
+          {' submitted work for '}
+          <span className="feed-item-link">{data.jobTitle}</span>
         </>
       )
     case 'job_completed':
       return (
         <>
-          <span className="feed-item-link">{data.jobTitle}</span> completed by <strong>{truncateAddress(data.actorWallet)}</strong> 🎉
+          <span className="feed-item-link">{data.jobTitle}</span>
+          {' completed by '}
+          <WalletAddressWithButtons 
+            address={data.actorWallet}
+            showMessage
+            showTip
+            compact
+            projectId={projectId}
+            tokenMint={tokenMint}
+          />
+          {' 🎉'}
         </>
       )
     case 'job_disputed':
@@ -155,19 +232,39 @@ function getActivityContent(item: FeedItemType): React.ReactNode {
               }}
             >
               {batchedCount} comments
-            </span> on <span className="feed-item-link">{data.jobTitle}</span>
+            </span>
+            {' on '}
+            <span className="feed-item-link">{data.jobTitle}</span>
           </>
         )
       }
       return (
         <>
-          <strong>{truncateAddress(data.actorWallet)}</strong> commented on <span className="feed-item-link">{data.jobTitle}</span>
+          <WalletAddressWithButtons 
+            address={data.actorWallet}
+            showMessage
+            showTip
+            compact
+            projectId={projectId}
+            tokenMint={tokenMint}
+          />
+          {' commented on '}
+          <span className="feed-item-link">{data.jobTitle}</span>
         </>
       )
     case 'asset_submitted':
       return (
         <>
-          <strong>{truncateAddress(data.submitterWallet)}</strong> submitted <span className="feed-item-link">{data.assetType} asset</span>
+          <WalletAddressWithButtons 
+            address={data.submitterWallet}
+            showMessage
+            showTip
+            compact
+            projectId={projectId}
+            tokenMint={tokenMint}
+          />
+          {' submitted '}
+          <span className="feed-item-link">{data.assetType} asset</span>
         </>
       )
     case 'asset_upvoted':
@@ -184,13 +281,24 @@ function getActivityContent(item: FeedItemType): React.ReactNode {
               }}
             >
               {batchedCount} holders
-            </span> upvoted <span className="feed-item-link">{data.assetType} asset</span>
+            </span>
+            {' upvoted '}
+            <span className="feed-item-link">{data.assetType} asset</span>
           </>
         )
       }
       return (
         <>
-          <strong>{truncateAddress(data.voterWallet)}</strong> upvoted <span className="feed-item-link">{data.assetType} asset</span>
+          <WalletAddressWithButtons 
+            address={data.voterWallet}
+            showMessage
+            showTip
+            compact
+            projectId={projectId}
+            tokenMint={tokenMint}
+          />
+          {' upvoted '}
+          <span className="feed-item-link">{data.assetType} asset</span>
         </>
       )
     case 'asset_backed':
@@ -214,7 +322,24 @@ function getActivityContent(item: FeedItemType): React.ReactNode {
     case 'tip_sent':
       return (
         <>
-          <strong>{truncateAddress(data.fromWallet)}</strong> tipped <strong>{truncateAddress(data.toWallet)}</strong> {data.amountTokens} {data.tokenSymbol}
+          <WalletAddressWithButtons 
+            address={data.fromWallet}
+            showMessage
+            showTip
+            compact
+            projectId={projectId}
+            tokenMint={tokenMint}
+          />
+          {' tipped '}
+          <WalletAddressWithButtons 
+            address={data.toWallet}
+            showMessage
+            showTip
+            compact
+            projectId={projectId}
+            tokenMint={tokenMint}
+          />
+          {` ${data.amountTokens} ${data.tokenSymbol}`}
         </>
       )
     case 'karma_milestone':
@@ -231,13 +356,26 @@ function getActivityContent(item: FeedItemType): React.ReactNode {
               }}
             >
               {batchedCount} holders
-            </span> reached {formatNumber(data.milestone)} karma 🏆
+            </span>
+            {' reached '}
+            {formatNumber(data.milestone)}
+            {' karma 🏆'}
           </>
         )
       }
       return (
         <>
-          <strong>{truncateAddress(data.wallet)}</strong> reached {formatNumber(data.milestone)} karma 🏆
+          <WalletAddressWithButtons 
+            address={data.wallet}
+            showMessage
+            showTip
+            compact
+            projectId={projectId}
+            tokenMint={tokenMint}
+          />
+          {' reached '}
+          {formatNumber(data.milestone)}
+          {' karma 🏆'}
         </>
       )
     default:
@@ -266,6 +404,7 @@ function formatRelativeTime(date: Date): string {
 
 /**
  * Truncate wallet address for display
+ * @deprecated Use WalletAddressWithButtons component instead
  */
 function truncateAddress(address: string): string {
   if (!address) return '...'
@@ -306,7 +445,7 @@ function formatNumber(num: number): string {
  * />
  * ```
  */
-export function FeedItem({ item, projectId, onClickBatched }: FeedItemProps) {
+export function FeedItem({ item, projectId, tokenMint, onClickBatched }: FeedItemProps) {
   const router = useRouter()
   const iconColor = getIconColor(item.type)
   const iconBgColor = getIconBgColor(item.type)
@@ -432,7 +571,7 @@ export function FeedItem({ item, projectId, onClickBatched }: FeedItemProps) {
               }
             }}
           >
-            {getActivityContent(item)}
+            {getActivityContent(item, projectId, tokenMint)}
           </Typography>
           
           {/* New badge for fresh items */}

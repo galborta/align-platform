@@ -21,12 +21,14 @@ import { Close as CloseIcon } from '@mui/icons-material'
 import { FeedItem } from '@/types/feed'
 import { useRouter } from 'next/navigation'
 import { getDeepLink } from '@/lib/feed-navigation'
+import { WalletAddressWithButtons } from '@/components/WalletAddressWithButtons'
 
 interface BatchedActivityModalProps {
   item: FeedItem
   open: boolean
   onClose: () => void
   projectId: string
+  tokenMint?: string | null
 }
 
 /**
@@ -58,7 +60,7 @@ interface BatchedActivityModalProps {
  * />
  * ```
  */
-export function BatchedActivityModal({ item, open, onClose, projectId }: BatchedActivityModalProps) {
+export function BatchedActivityModal({ item, open, onClose, projectId, tokenMint }: BatchedActivityModalProps) {
   const router = useRouter()
   const [participants, setParticipants] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
@@ -118,6 +120,10 @@ export function BatchedActivityModal({ item, open, onClose, projectId }: Batched
     return num.toString()
   }
   
+  /**
+   * Truncate wallet address for display
+   * @deprecated Use WalletAddressWithButtons component instead
+   */
   const truncateAddress = (address: string): string => {
     if (!address) return '...'
     return `${address.slice(0, 4)}...${address.slice(-4)}`
@@ -194,12 +200,14 @@ export function BatchedActivityModal({ item, open, onClose, projectId }: Batched
                 
                 <ListItemText
                   primary={
-                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                      <Typography variant="body2" sx={{ fontWeight: 500 }}>
-                        {truncateAddress(participant.wallet)}
-                      </Typography>
-                      {/* Placeholder for future WalletAddressWithButtons integration */}
-                    </Box>
+                    <WalletAddressWithButtons 
+                      address={participant.wallet}
+                      showMessage
+                      showTip
+                      tierBadge
+                      projectId={projectId}
+                      tokenMint={tokenMint}
+                    />
                   }
                   secondary={
                     <>

@@ -46,6 +46,7 @@ export type ActivityType =
  */
 export interface ActivityFeedProps {
   projectId: string
+  tokenMint?: string | null
 }
 
 /**

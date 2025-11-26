@@ -40,7 +40,7 @@ import {
  * <ActivityFeed projectId="project-uuid-123" />
  * ```
  */
-export function ActivityFeed({ projectId }: ActivityFeedProps) {
+export function ActivityFeed({ projectId, tokenMint }: ActivityFeedProps) {
   const [feedItems, setFeedItems] = useState<FeedItemType[]>([])
   const [loading, setLoading] = useState(true)
   const [hasMore, setHasMore] = useState(true)
@@ -478,6 +478,7 @@ export function ActivityFeed({ projectId }: ActivityFeedProps) {
               key={item.id} 
               item={item}
               projectId={projectId}
+              tokenMint={tokenMint}
               onClickBatched={handleBatchedItemClick}
             />
           ))}
@@ -559,6 +560,7 @@ export function ActivityFeed({ projectId }: ActivityFeedProps) {
             setSelectedItem(null)
           }}
           projectId={projectId}
+          tokenMint={tokenMint}
         />
       )}
     </Box>
