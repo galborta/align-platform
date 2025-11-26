@@ -106,19 +106,26 @@ export interface RawActivityData {
  * Handles errors gracefully - if one query fails, others still succeed.
  * 
  * @param projectId - UUID of the project to fetch activities for
- * @param limit - Number of items to fetch per table (default: 50)
+ * @param limit - Number of items to display (default: 20)
+ * @param offset - Pagination offset (default: 0)
  * @returns Promise resolving to RawActivityData with all fetched data
  * 
  * @example
  * ```typescript
- * const data = await fetchInitialFeed('project-uuid-123', 50)
- * console.log(`Fetched ${data.jobs.length} jobs`)
+ * // Initial load
+ * const data = await fetchInitialFeed('project-uuid-123', 20, 0)
+ * 
+ * // Load more (pagination)
+ * const more = await fetchInitialFeed('project-uuid-123', 20, 20)
  * ```
  */
 export async function fetchInitialFeed(
   projectId: string,
-  limit: number = 50
+  limit: number = 20,
+  offset: number = 0
 ): Promise<RawActivityData> {
+  // When paginating, fetch fewer items per table for performance
+  const limitPerTable = offset === 0 ? 50 : 20
   // Execute all queries in parallel for maximum performance
   const [
     jobsRes,
@@ -138,7 +145,7 @@ export async function fetchInitialFeed(
       .select('id, poster_wallet, title, category, status, created_at, completed_at, assigned_to')
       .eq('project_id', projectId)
       .order('created_at', { ascending: false })
-      .limit(limit)
+      .range(offset, offset + limitPerTable - 1)
       .then(res => {
         if (res.error) console.error('Error fetching jobs:', res.error)
         return res
@@ -155,7 +162,7 @@ export async function fetchInitialFeed(
       `)
       .eq('jobs.project_id', projectId)
       .order('created_at', { ascending: false })
-      .limit(limit)
+      .range(offset, offset + limitPerTable - 1)
       .then(res => {
         if (res.error) console.error('Error fetching applications:', res.error)
         return res
@@ -177,7 +184,7 @@ export async function fetchInitialFeed(
       `)
       .eq('application.jobs.project_id', projectId)
       .order('created_at', { ascending: false })
-      .limit(100) // More votes for batching logic
+      .range(offset, offset + (limitPerTable * 2) - 1) // More votes for batching logic
       .then(res => {
         if (res.error) console.error('Error fetching application votes:', res.error)
         return res
@@ -195,7 +202,7 @@ export async function fetchInitialFeed(
       `)
       .eq('jobs.project_id', projectId)
       .order('created_at', { ascending: false })
-      .limit(limit)
+      .range(offset, offset + limitPerTable - 1)
       .then(res => {
         if (res.error) console.error('Error fetching job comments:', res.error)
         return res
@@ -212,7 +219,7 @@ export async function fetchInitialFeed(
       `)
       .eq('jobs.project_id', projectId)
       .order('submitted_at', { ascending: false })
-      .limit(limit)
+      .range(offset, offset + limitPerTable - 1)
       .then(res => {
         if (res.error) console.error('Error fetching job submissions:', res.error)
         return res
@@ -230,7 +237,7 @@ export async function fetchInitialFeed(
       .eq('jobs.project_id', projectId)
       .eq('status', 'active')
       .order('created_at', { ascending: false })
-      .limit(limit)
+      .range(offset, offset + limitPerTable - 1)
       .then(res => {
         if (res.error) console.error('Error fetching job disputes:', res.error)
         return res
@@ -242,7 +249,7 @@ export async function fetchInitialFeed(
       .select('id, submitter_wallet, asset_type, asset_data, verification_status, created_at, verified_at, hidden_at')
       .eq('project_id', projectId)
       .order('created_at', { ascending: false })
-      .limit(limit)
+      .range(offset, offset + limitPerTable - 1)
       .then(res => {
         if (res.error) console.error('Error fetching pending assets:', res.error)
         return res
@@ -262,7 +269,7 @@ export async function fetchInitialFeed(
       .eq('pending_assets.project_id', projectId)
       .eq('vote_type', 'upvote')
       .order('created_at', { ascending: false })
-      .limit(100) // More for batching logic
+      .range(offset, offset + (limitPerTable * 2) - 1) // More for batching logic
       .then(res => {
         if (res.error) console.error('Error fetching asset votes:', res.error)
         return res
@@ -275,7 +282,7 @@ export async function fetchInitialFeed(
       .eq('project_id', projectId)
       .eq('is_public', true)
       .order('created_at', { ascending: false })
-      .limit(limit)
+      .range(offset, offset + limitPerTable - 1)
       .then(res => {
         if (res.error) console.error('Error fetching chat tips:', res.error)
         return res
@@ -289,7 +296,7 @@ export async function fetchInitialFeed(
       .eq('project_id', projectId)
       .gte('total_karma_points', 1000) // At least 1k karma
       .order('updated_at', { ascending: false })
-      .limit(limit)
+      .range(offset, offset + limitPerTable - 1)
       .then(res => {
         if (res.error) console.error('Error fetching karma milestones:', res.error)
         return res

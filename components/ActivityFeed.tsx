@@ -49,6 +49,23 @@ export function ActivityFeed({ projectId }: ActivityFeedProps) {
   const [error, setError] = useState<string | null>(null)
   const [isConnected, setIsConnected] = useState(false)
   const subscriptionCleanup = useRef<(() => void) | null>(null)
+  
+  // Pagination state
+  const [currentOffset, setCurrentOffset] = useState(0)
+  const [loadingMore, setLoadingMore] = useState(false)
+  const [allItemsLoaded, setAllItemsLoaded] = useState(false)
+  const [retryCount, setRetryCount] = useState(0)
+  
+  // Refs for optimization
+  const loadMoreTimeoutRef = useRef<NodeJS.Timeout | null>(null)
+  const loadMoreTriggerRef = useRef<HTMLDivElement>(null)
+  
+  // Analytics tracking
+  const initialLoadTime = useRef<number>(Date.now())
+  
+  // Adaptive batch size based on screen height
+  const ITEMS_PER_PAGE = typeof window !== 'undefined' && window.innerHeight > 1000 ? 30 : 20
+  const MAX_RETRIES = 3
 
   // Handler for new real-time events
   const handleNewActivity = useCallback((event: any) => {
@@ -64,6 +81,10 @@ export function ActivityFeed({ projectId }: ActivityFeedProps) {
     
     const newItem = newItems[0]
     
+    // Real-time items are prepended to the TOP of the feed
+    // This does NOT affect pagination offset tracking
+    // Pagination offset tracks items loaded via "load more" only
+    // This separation ensures pagination stays consistent even with real-time updates
     setFeedItems(prevItems => {
       // Check if this item should batch with an existing item
       const batchTarget = findBatchTarget(newItem, prevItems)
@@ -78,7 +99,7 @@ export function ActivityFeed({ projectId }: ActivityFeedProps) {
         // Sort to move updated batch to top
         return sortFeedItems(updated)
       } else {
-        // Add as new item at top
+        // Add as new item at top (prepend)
         console.log('➕ Adding new feed item:', newItem.id)
         const combined = [newItem, ...prevItems]
         
@@ -97,12 +118,16 @@ export function ActivityFeed({ projectId }: ActivityFeedProps) {
 
       setLoading(true)
       setError(null)
+      
+      // Reset analytics timestamp for this load
+      initialLoadTime.current = Date.now()
 
       try {
         console.log('🔄 Starting feed load for project:', projectId)
 
         // Fetch raw data from all tables (10 parallel queries)
-        const rawData = await fetchInitialFeed(projectId, 20)
+        // Using adaptive batch size based on screen height
+        const rawData = await fetchInitialFeed(projectId, ITEMS_PER_PAGE, 0)
         console.log('✅ Raw data fetched:', {
           jobs: rawData.jobs.length,
           applications: rawData.applications.length,
@@ -128,11 +153,13 @@ export function ActivityFeed({ projectId }: ActivityFeedProps) {
           reduction: `${Math.round(((items.length - batched.length) / items.length) * 100)}%`
         })
 
-        // Take first 20 items for initial display
-        const initialItems = batched.slice(0, 20)
+        // Take first batch of items for initial display (adaptive based on screen size)
+        const initialItems = batched.slice(0, ITEMS_PER_PAGE)
 
         setFeedItems(initialItems)
-        setHasMore(batched.length > 20)
+        setHasMore(batched.length > ITEMS_PER_PAGE)
+        setCurrentOffset(0) // Reset offset for pagination
+        setAllItemsLoaded(false) // Reset all loaded flag
         setLoading(false)
 
         console.log('Feed loading state:', {
@@ -184,23 +211,182 @@ export function ActivityFeed({ projectId }: ActivityFeedProps) {
     }
   }, [projectId, handleNewActivity])
 
-  const handleLoadMore = async () => {
-    if (!hasMore || loading) return
+  const handleLoadMore = useCallback(async () => {
+    if (loadingMore || allItemsLoaded || !projectId) return
 
-    setLoading(true)
+    setLoadingMore(true)
+    const nextOffset = currentOffset + ITEMS_PER_PAGE
+    console.log('📖 Loading more items, offset:', nextOffset, 'batch size:', ITEMS_PER_PAGE)
+
+    // Analytics: Track performance
+    const loadStartTime = Date.now()
 
     try {
-      // TODO: Implement pagination with fetchPaginatedFeed
-      // For now, just disable "Load more" after first load
-      console.log('⏳ Load more not yet implemented')
-      setHasMore(false)
-    } catch (error) {
-      console.error('Error loading more items:', error)
-      setError('Failed to load more activities.')
+      // Fetch next batch of items (adaptive batch size)
+      const rawData = await fetchInitialFeed(projectId, ITEMS_PER_PAGE, nextOffset)
+      const newItems = transformToFeedItems(rawData)
+      const batched = applyBatchingLogic(newItems)
+
+      console.log(`📥 Loaded ${batched.length} new items`)
+
+      // Analytics: Calculate performance metrics
+      const loadTime = Date.now() - loadStartTime
+      console.log('⚡ Pagination Performance:', {
+        loadTimeMs: loadTime,
+        itemsLoaded: batched.length,
+        itemsPerSecond: batched.length / (loadTime / 1000)
+      })
+
+      // Alert if performance is slow
+      if (loadTime > 2000) {
+        console.warn('⚠️ Slow pagination load detected:', loadTime, 'ms')
+      }
+
+      if (batched.length === 0) {
+        // No more items to load
+        setAllItemsLoaded(true)
+        setHasMore(false)
+        setLoadingMore(false)
+        
+        // Analytics: Track end of feed reached
+        console.log('🏁 User reached end of feed:', {
+          totalItemsViewed: feedItems.length,
+          paginationLoads: Math.floor(currentOffset / ITEMS_PER_PAGE),
+          timeFromInitialLoad: Date.now() - initialLoadTime.current,
+          timestamp: new Date().toISOString()
+        })
+        
+        return
+      }
+
+      // Append new items to existing feed
+      setFeedItems(prevItems => {
+        const combined = [...prevItems, ...batched]
+
+        // Deduplicate in case of overlap with real-time items
+        const deduplicated = deduplicateFeedItems(combined)
+
+        // Limit to 200 total items in memory to prevent bloat
+        const limited = limitFeedItems(deduplicated, 200)
+
+        return limited
+      })
+
+      // Update offset for next load (tracks pagination items only, not real-time)
+      setCurrentOffset(nextOffset)
+
+      // Analytics: Track successful pagination usage
+      // TODO: Replace console.log with actual analytics service
+      // analytics.track('pagination_load_more', { items_loaded: batched.length, current_offset: nextOffset })
+      console.log('📊 Pagination Analytics:', {
+        event: 'load_more_clicked',
+        currentItemsCount: feedItems.length,
+        newItemsLoaded: batched.length,
+        currentOffset: nextOffset,
+        batchSize: ITEMS_PER_PAGE,
+        timestamp: new Date().toISOString()
+      })
+
+      // Check if we should disable load more
+      if (batched.length < ITEMS_PER_PAGE) {
+        setAllItemsLoaded(true)
+        setHasMore(false)
+        
+        // Analytics: Track end of feed reached (partial batch)
+        console.log('🏁 User reached end of feed (partial batch):', {
+          totalItemsViewed: feedItems.length + batched.length,
+          paginationLoads: Math.floor(nextOffset / ITEMS_PER_PAGE),
+          timeFromInitialLoad: Date.now() - initialLoadTime.current,
+          lastBatchSize: batched.length,
+          timestamp: new Date().toISOString()
+        })
+      } else {
+        setHasMore(true)
+      }
+
+      // Reset retry count on success
+      setRetryCount(0)
+
+    } catch (err) {
+      console.error('❌ Error loading more items:', err)
+      
+      // Analytics: Track pagination errors
+      // TODO: Replace console.error with actual analytics/error tracking service
+      // errorTracking.log('pagination_error', { error: err, offset: nextOffset })
+      console.error('❌ Pagination Error:', {
+        error: err instanceof Error ? err.message : String(err),
+        offset: nextOffset,
+        retryAttempt: retryCount,
+        batchSize: ITEMS_PER_PAGE,
+        timestamp: new Date().toISOString()
+      })
+      
+      // Retry logic with exponential backoff
+      if (retryCount < MAX_RETRIES) {
+        console.log(`🔄 Retrying... (${retryCount + 1}/${MAX_RETRIES})`)
+        setRetryCount(prev => prev + 1)
+        setLoadingMore(false)
+        
+        // Exponential backoff: 1s, 2s, 3s
+        setTimeout(() => handleLoadMore(), 1000 * (retryCount + 1))
+      } else {
+        // Max retries reached, show error to user
+        setError('Failed to load more activities. Please try again later.')
+        setLoadingMore(false)
+        
+        // Analytics: Track max retries reached
+        console.error('❌ Max retries reached:', {
+          offset: nextOffset,
+          totalAttempts: MAX_RETRIES + 1,
+          timestamp: new Date().toISOString()
+        })
+      }
     } finally {
-      setLoading(false)
+      // Only set loading false if not retrying
+      if (retryCount >= MAX_RETRIES || retryCount === 0) {
+        setLoadingMore(false)
+      }
     }
-  }
+  }, [loadingMore, allItemsLoaded, projectId, currentOffset, ITEMS_PER_PAGE, retryCount, MAX_RETRIES])
+
+  // Debounced version to prevent rapid clicking
+  const handleLoadMoreDebounced = useCallback(() => {
+    if (loadMoreTimeoutRef.current) {
+      clearTimeout(loadMoreTimeoutRef.current)
+    }
+    
+    loadMoreTimeoutRef.current = setTimeout(() => {
+      handleLoadMore()
+    }, 300)
+  }, [handleLoadMore])
+
+  // Cleanup timeout on unmount
+  useEffect(() => {
+    return () => {
+      if (loadMoreTimeoutRef.current) {
+        clearTimeout(loadMoreTimeoutRef.current)
+      }
+    }
+  }, [])
+
+  // Intersection Observer for infinite scroll (optional enhancement)
+  useEffect(() => {
+    if (!loadMoreTriggerRef.current || allItemsLoaded) return
+    
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting && !loadingMore && hasMore) {
+          console.log('📍 Intersection triggered - loading more')
+          handleLoadMore()
+        }
+      },
+      { threshold: 0.5, rootMargin: '100px' }
+    )
+    
+    observer.observe(loadMoreTriggerRef.current)
+    
+    return () => observer.disconnect()
+  }, [allItemsLoaded, loadingMore, hasMore, handleLoadMore])
 
   const handleBatchedItemClick = (item: FeedItemType) => {
     setSelectedItem(item)
@@ -297,30 +483,68 @@ export function ActivityFeed({ projectId }: ActivityFeedProps) {
         </Box>
       )}
       
-      {hasMore && !loading && feedItems.length > 0 && (
-        <Button 
-          variant="outlined" 
-          fullWidth 
-          sx={{ 
-            mt: 2,
-            borderColor: '#7C4DFF',
-            color: '#7C4DFF',
-            '&:hover': {
-              borderColor: '#7C4DFF',
-              bgcolor: 'rgba(124, 77, 255, 0.08)'
-            }
-          }}
-          onClick={handleLoadMore}
-        >
-          Load more
-        </Button>
-      )}
-      
-      {loading && feedItems.length > 0 && (
+      {/* Load More Section */}
+      {!loading && feedItems.length > 0 && (
         <Box sx={{ mt: 2, textAlign: 'center' }}>
-          <Typography variant="body2" color="text.secondary">
-            Loading more activities...
-          </Typography>
+          {/* Intersection Observer Trigger (for infinite scroll) */}
+          {!allItemsLoaded && hasMore && (
+            <div 
+              ref={loadMoreTriggerRef} 
+              style={{ height: 1, visibility: 'hidden' }} 
+              aria-hidden="true"
+            />
+          )}
+          
+          {/* Loading State with Skeleton */}
+          {loadingMore && (
+            <Box sx={{ mt: 2 }}>
+              <FeedSkeleton count={3} />
+              <Typography 
+                variant="caption" 
+                color="text.secondary" 
+                sx={{ display: 'block', textAlign: 'center', mt: 1 }}
+              >
+                Loading more activities...
+              </Typography>
+            </Box>
+          )}
+          
+          {/* Load More Button */}
+          {!loadingMore && !allItemsLoaded && hasMore && (
+            <Button 
+              variant="outlined" 
+              fullWidth 
+              onClick={handleLoadMoreDebounced}
+              sx={{ 
+                borderColor: 'divider',
+                color: 'text.primary',
+                '&:hover': {
+                  borderColor: 'primary.main',
+                  bgcolor: 'action.hover'
+                }
+              }}
+            >
+              Load more activity
+            </Button>
+          )}
+          
+          {/* All Caught Up Message */}
+          {allItemsLoaded && (
+            <Box sx={{ py: 2 }}>
+              <Typography 
+                variant="body2" 
+                color="text.secondary" 
+                sx={{ 
+                  display: 'flex', 
+                  alignItems: 'center', 
+                  justifyContent: 'center', 
+                  gap: 1 
+                }}
+              >
+                <span>🎉</span> You're all caught up!
+              </Typography>
+            </Box>
+          )}
         </Box>
       )}
 
