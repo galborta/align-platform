@@ -7,6 +7,9 @@ import { FeedItem } from './FeedItem'
 import { FeedSkeleton } from './FeedSkeleton'
 import { FeedEmptyState } from './FeedEmptyState'
 import { BatchedActivityModal } from './BatchedActivityModal'
+import { fetchInitialFeed } from '@/lib/feed-queries'
+import { transformToFeedItems } from '@/lib/feed-transform'
+import { applyBatchingLogic } from '@/lib/feed-batching'
 
 
 /**
@@ -34,116 +37,89 @@ export function ActivityFeed({ projectId }: ActivityFeedProps) {
   const [hasMore, setHasMore] = useState(true)
   const [modalOpen, setModalOpen] = useState(false)
   const [selectedItem, setSelectedItem] = useState<FeedItemType | null>(null)
+  const [error, setError] = useState<string | null>(null)
 
   // Load initial feed items
   useEffect(() => {
-    loadFeedItems()
+    async function loadFeed() {
+      if (!projectId) return
+
+      setLoading(true)
+      setError(null)
+
+      try {
+        console.log('🔄 Starting feed load for project:', projectId)
+
+        // Fetch raw data from all tables (10 parallel queries)
+        const rawData = await fetchInitialFeed(projectId, 50)
+        console.log('✅ Raw data fetched:', {
+          jobs: rawData.jobs.length,
+          applications: rawData.applications.length,
+          applicationVotes: rawData.applicationVotes.length,
+          comments: rawData.comments.length,
+          submissions: rawData.submissions.length,
+          disputes: rawData.disputes.length,
+          assets: rawData.assets.length,
+          assetVotes: rawData.assetVotes.length,
+          tips: rawData.tips.length,
+          karmaMilestones: rawData.karmaMilestones.length
+        })
+
+        // Transform to unified FeedItem format
+        const items = transformToFeedItems(rawData)
+        console.log('✅ Items transformed:', items.length)
+
+        // Apply intelligent batching
+        const batched = applyBatchingLogic(items)
+        console.log('✅ Batching applied:', {
+          before: items.length,
+          after: batched.length,
+          reduction: `${Math.round(((items.length - batched.length) / items.length) * 100)}%`
+        })
+
+        // Take first 20 items
+        const initialItems = batched.slice(0, 20)
+
+        setFeedItems(initialItems)
+        setHasMore(batched.length > 20)
+        setLoading(false)
+
+        console.log('Feed loading state:', {
+          loading: false,
+          itemsCount: initialItems.length,
+          hasMore: batched.length > 20,
+          error: null
+        })
+      } catch (err) {
+        console.error('❌ Error loading feed:', err)
+        setError('Failed to load activity feed. Please try refreshing.')
+        setLoading(false)
+
+        console.log('Feed loading state:', {
+          loading: false,
+          itemsCount: 0,
+          hasMore: false,
+          error: 'Failed to load activity feed'
+        })
+      }
+    }
+
+    loadFeed()
   }, [projectId])
 
-  const loadFeedItems = async () => {
-    setLoading(true)
-    
-    try {
-      // TODO: Implement API call to fetch feed items
-      // const response = await fetch(`/api/feed?projectId=${projectId}`)
-      // const data = await response.json()
-      
-      // Mock data for Sprint 1 testing
-      await new Promise(resolve => setTimeout(resolve, 500))
-      
-      const mockFeedItems: FeedItemType[] = [
-        {
-          id: 'mock-1',
-          type: 'job_posted',
-          timestamp: new Date(Date.now() - 5 * 60 * 1000), // 5 mins ago
-          data: {
-            actorWallet: '7xKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsU',
-            jobId: 'job-1',
-            jobTitle: 'Logo Design',
-            category: 'design'
-          }
-        },
-        {
-          id: 'mock-2',
-          type: 'job_applied',
-          timestamp: new Date(Date.now() - 15 * 60 * 1000), // 15 mins ago
-          data: {
-            actorWallet: '8yKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsV',
-            jobId: 'job-1',
-            jobTitle: 'Logo Design',
-            applicationId: 'app-1'
-          }
-        },
-        {
-          id: 'mock-3',
-          type: 'job_application_upvoted',
-          timestamp: new Date(Date.now() - 30 * 60 * 1000), // 30 mins ago
-          data: {
-            actorWallet: '9zKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsW',
-            voteWeight: 1.2,
-            applicationId: 'app-1',
-            applicantWallet: '8yKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsV',
-            jobId: 'job-1',
-            jobTitle: 'Logo Design'
-          },
-          batchedCount: 3
-        },
-        {
-          id: 'mock-4',
-          type: 'asset_submitted',
-          timestamp: new Date(Date.now() - 60 * 60 * 1000), // 1 hour ago
-          data: {
-            submitterWallet: '7xKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsU',
-            assetType: 'social',
-            assetName: 'Twitter @example'
-          }
-        },
-        {
-          id: 'mock-5',
-          type: 'tip_sent',
-          timestamp: new Date(Date.now() - 2 * 60 * 60 * 1000), // 2 hours ago
-          data: {
-            fromWallet: '7xKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsU',
-            toWallet: '8yKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsV',
-            amountTokens: 1000,
-            tokenSymbol: 'NUBCAT'
-          }
-        },
-        {
-          id: 'mock-6',
-          type: 'karma_milestone',
-          timestamp: new Date(Date.now() - 3 * 60 * 60 * 1000), // 3 hours ago
-          data: {
-            wallet: '9zKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsW',
-            milestone: 1000
-          }
-        }
-      ]
-      
-      setFeedItems(mockFeedItems)
-      setHasMore(false)
-    } catch (error) {
-      console.error('Error loading feed items:', error)
-    } finally {
-      setLoading(false)
-    }
-  }
-
   const handleLoadMore = async () => {
+    if (!hasMore || loading) return
+
     setLoading(true)
-    
+
     try {
-      // TODO: Implement pagination
-      // const oldestItem = feedItems[feedItems.length - 1]
-      // const response = await fetch(`/api/feed?projectId=${projectId}&before=${oldestItem.timestamp}`)
-      // const data = await response.json()
-      
-      // Mock data for now
-      await new Promise(resolve => setTimeout(resolve, 1000))
-      
+      // TODO: Implement pagination with fetchPaginatedFeed
+      // For now, just disable "Load more" after first load
+      console.log('⏳ Load more not yet implemented')
       setHasMore(false)
     } catch (error) {
       console.error('Error loading more items:', error)
+      setError('Failed to load more activities.')
     } finally {
       setLoading(false)
     }
@@ -173,11 +149,33 @@ export function ActivityFeed({ projectId }: ActivityFeedProps) {
       
       {loading && feedItems.length === 0 && <FeedSkeleton count={5} />}
       
-      {!loading && feedItems.length === 0 && (
+      {error && !loading && (
+        <Box 
+          sx={{ 
+            p: 3, 
+            textAlign: 'center',
+            bgcolor: 'error.light',
+            borderRadius: 2
+          }}
+        >
+          <Typography variant="body2" color="error">
+            {error}
+          </Typography>
+          <Button 
+            size="small" 
+            onClick={() => window.location.reload()}
+            sx={{ mt: 1 }}
+          >
+            Refresh Page
+          </Button>
+        </Box>
+      )}
+      
+      {!loading && !error && feedItems.length === 0 && (
         <FeedEmptyState projectId={projectId} />
       )}
       
-      {!loading && feedItems.length > 0 && (
+      {!loading && !error && feedItems.length > 0 && (
         <Box 
           className="feed-items" 
           sx={{ 
