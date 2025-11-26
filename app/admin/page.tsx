@@ -1,9 +1,11 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import Link from 'next/link'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { AppHeader } from '@/components/AppHeader'
+import { WalletButton } from '@/components/WalletButton'
 import { supabase } from '@/lib/supabase'
 import { Database } from '@/types/database'
 import { ADMIN_WALLET, isAdminWallet } from '@/lib/admin-auth'
