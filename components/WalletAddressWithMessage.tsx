@@ -186,7 +186,13 @@ export function WalletAddressWithMessage({
       {/* Profile View Modal */}
       <Dialog
         open={showProfileView}
-        onClose={() => setShowProfileView(false)}
+        onClose={(event, reason) => {
+          // Stop propagation when clicking backdrop to prevent click-through
+          if (reason === 'backdropClick' && event) {
+            event.stopPropagation()
+          }
+          setShowProfileView(false)
+        }}
         maxWidth="md"
         fullWidth
         PaperProps={{
@@ -196,6 +202,7 @@ export function WalletAddressWithMessage({
           }
         }}
         BackdropProps={{
+          onClick: (e) => e.stopPropagation(), // Additional safety layer
           sx: {
             backgroundColor: 'rgba(0, 0, 0, 0.7)'
           }

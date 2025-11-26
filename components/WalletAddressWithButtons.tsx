@@ -358,7 +358,13 @@ export const WalletAddressWithButtons = memo(function WalletAddressWithButtons({
       {/* Profile View Modal */}
       <Dialog
         open={showProfileModal}
-        onClose={() => setShowProfileModal(false)}
+        onClose={(event, reason) => {
+          // Stop propagation when clicking backdrop to prevent click-through to FeedItem
+          if (reason === 'backdropClick' && event) {
+            event.stopPropagation()
+          }
+          setShowProfileModal(false)
+        }}
         maxWidth="md"
         fullWidth
         PaperProps={{
@@ -368,6 +374,7 @@ export const WalletAddressWithButtons = memo(function WalletAddressWithButtons({
           }
         }}
         BackdropProps={{
+          onClick: (e) => e.stopPropagation(), // Additional safety layer
           sx: {
             backgroundColor: 'rgba(0, 0, 0, 0.7)'
           }

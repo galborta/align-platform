@@ -637,7 +637,11 @@ export function ProjectChat({ projectId, tokenMint }: ProjectChatProps) {
       {selectedProfileWallet && (
         <Dialog
           open={showProfileView}
-          onClose={() => {
+          onClose={(event, reason) => {
+            // Stop propagation when clicking backdrop to prevent click-through
+            if (reason === 'backdropClick' && event) {
+              event.stopPropagation()
+            }
             setShowProfileView(false)
             setSelectedProfileWallet(null)
           }}
@@ -650,6 +654,7 @@ export function ProjectChat({ projectId, tokenMint }: ProjectChatProps) {
             }
           }}
           BackdropProps={{
+            onClick: (e) => e.stopPropagation(), // Additional safety layer
             sx: {
               backgroundColor: 'rgba(0, 0, 0, 0.7)'
             }
