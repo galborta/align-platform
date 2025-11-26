@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabase } from '@/lib/supabase'
+import { getOrCreateConversation, canMessageUser } from '@/lib/messaging'
 
 /**
  * POST /api/tips/record
@@ -126,10 +127,53 @@ export async function POST(request: NextRequest) {
       throw tipError
     }
 
-    // TODO: Send DM if message provided (integrate with existing messaging system)
+    // Send DM if message provided (integrate with existing messaging system)
     if (message?.trim()) {
-      console.log('📩 TODO: Send DM to recipient with tip message')
-      // await sendTipMessage(projectId, fromWallet, toWallet, tip.id, message)
+      try {
+        // Check if sender can message recipient
+        const messageCheck = await canMessageUser(fromWallet, toWallet, projectId)
+        
+        if (messageCheck.canMessage) {
+          // Get or create conversation
+          const conversation = await getOrCreateConversation(fromWallet, toWallet)
+          
+          if (conversation) {
+            // Format tip message with tip details
+            const usdText = amountUsd ? ` ($${amountUsd.toFixed(2)})` : ''
+            const tipDetails = `🎁 **Tip Received**: ${amountTokens} ${tokenSymbol}${usdText}\n\n${message}`
+            
+            // Insert message into messages table
+            const { error: messageError } = await supabase
+              .from('messages')
+              .insert({
+                conversation_id: conversation.id,
+                sender_wallet: fromWallet,
+                content: tipDetails,
+                is_read: false
+              })
+            
+            if (messageError) {
+              console.error('Error sending tip DM:', messageError)
+            } else {
+              // Update conversation's last_message_at
+              await supabase
+                .from('conversations')
+                .update({
+                  last_message_at: new Date().toISOString(),
+                  updated_at: new Date().toISOString()
+                })
+                .eq('id', conversation.id)
+              
+              console.log('📩 Tip DM sent successfully')
+            }
+          }
+        } else {
+          console.log('📩 Cannot send DM:', messageCheck.reason)
+        }
+      } catch (dmError) {
+        console.error('Error sending tip DM:', dmError)
+        // Don't fail the tip if DM fails
+      }
     }
 
     // TODO: Create feed event if isPublic (integrate with activity feed)
