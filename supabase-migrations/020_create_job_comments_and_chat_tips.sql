@@ -59,3 +59,4 @@ COMMENT ON TABLE job_comments IS 'Comments on job postings for questions and dis
 COMMENT ON TABLE chat_tips IS 'Tips sent between users in chat conversations';
 COMMENT ON COLUMN chat_tips.amount_nub IS 'Amount in NUB tokens (project native token)';
 
+

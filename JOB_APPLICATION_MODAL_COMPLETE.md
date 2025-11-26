@@ -689,3 +689,4 @@ The job application modal is fully functional and ready for integration!
 **Sprint:** 2.2 (Application Submission)
 
 
+

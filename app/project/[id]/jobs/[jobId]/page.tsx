@@ -895,7 +895,8 @@ export default function JobDetailPage() {
 
   const isPoster = publicKey && publicKey.toString() === job.poster_wallet
   const isAssignedWorker = publicKey && job.assigned_to && publicKey.toString() === job.assigned_to
-  const canApply = job.status === 'open' && publicKey && !isPoster
+  // Allow applications to open OR assigned jobs (as backup applicants)
+  const canApply = (job.status === 'open' || job.status === 'assigned') && publicKey && !isPoster
 
   return (
     <div className="min-h-screen" style={{ backgroundColor: '#FFFFFF' }}>
@@ -1004,13 +1005,16 @@ export default function JobDetailPage() {
                     </div>
                   </div>
 
-                  {/* TODO: Voter Bonus Karma Section (Sprint 2.3) */}
+                  {/* Voter Bonus Karma Section */}
                   <div 
                     className="p-3 rounded-lg"
-                    style={{ backgroundColor: '#FEF3C7' }}
+                    style={{ backgroundColor: '#DCFCE7' }}
                   >
-                    <p className="text-sm font-medium" style={{ color: '#92400E' }}>
-                      🏆 Bonus karma distributed to voters who upvoted the winning application (coming in Sprint 2.3)
+                    <p className="text-sm font-medium" style={{ color: '#166534' }}>
+                      🏆 Bonus karma distributed to voters who upvoted the winning application
+                    </p>
+                    <p className="text-xs mt-1" style={{ color: '#166534' }}>
+                      Voters earned: ${job.payment_amount_usd.toFixed(0)} × 5 × tier multiplier karma
                     </p>
                   </div>
                 </div>
@@ -1913,6 +1917,39 @@ export default function JobDetailPage() {
 
           {/* Right Column (1/3 width) */}
           <div className="lg:col-span-1 space-y-6">
+            {/* Voting Bonus Info (only for open review jobs) */}
+            {job.status === 'open' && job.assignment_mode === 'review' && publicKey && !isPoster && (
+              <Card style={{ borderColor: '#E5DEFF', borderWidth: '2px' }}>
+                <CardContent className="p-5" style={{ backgroundColor: '#FEFBFF' }}>
+                  <div className="flex items-start gap-3 mb-3">
+                    <span className="text-2xl">💎</span>
+                    <div>
+                      <h4 
+                        className="text-sm font-bold mb-1"
+                        style={{ color: '#7C4DFF' }}
+                      >
+                        Earn Bonus Karma!
+                      </h4>
+                      <p className="text-xs leading-relaxed" style={{ color: '#1A1A1E' }}>
+                        Vote for the applicant you think will deliver best work. If they're chosen AND successfully complete the job, you'll earn:
+                      </p>
+                    </div>
+                  </div>
+                  <div 
+                    className="p-3 rounded-lg text-center"
+                    style={{ backgroundColor: '#F8F5FF' }}
+                  >
+                    <div className="text-lg font-bold" style={{ color: '#7C4DFF' }}>
+                      ${job.payment_amount_usd.toFixed(0)} × 5 × tier
+                    </div>
+                    <div className="text-xs mt-1" style={{ color: '#6F7280' }}>
+                      = {(job.payment_amount_usd * 5).toFixed(0)}+ bonus karma
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+
             {/* 2. Payment Card */}
             <Card 
               className="border-4"
@@ -1963,16 +2000,26 @@ export default function JobDetailPage() {
                   Actions
                 </h3>
 
-                {/* If job is Open and user is NOT poster */}
+                {/* If job is Open/Assigned and user is NOT poster */}
                 {canApply && (
                   <div className="space-y-3">
+                    {job.status === 'assigned' && (
+                      <div 
+                        className="p-3 rounded-lg mb-2"
+                        style={{ backgroundColor: '#FFF4E6', borderLeft: '4px solid #FB923C' }}
+                      >
+                        <p className="text-sm font-medium" style={{ color: '#1A1A1E' }}>
+                          ⚠️ This job is currently assigned. Apply as backup in case the current worker doesn't deliver.
+                        </p>
+                      </div>
+                    )}
                     <Button
                       variant="primary"
                       size="lg"
                       onClick={handleApply}
                       className="w-full shadow-lg"
                     >
-                      Apply for This Job
+                      {job.status === 'assigned' ? 'Apply as Backup' : 'Apply for This Job'}
                     </Button>
                     <p 
                       className="text-sm text-center"
@@ -2106,7 +2153,7 @@ export default function JobDetailPage() {
             {job.status === 'assigned' && job.assigned_to ? (
               <div className="mb-6">
                 <h2 
-                  className="text-2xl font-bold mb-4"
+                  className="text-2xl font-bold mb-2"
                   style={{ 
                     fontFamily: 'var(--font-display), Space Grotesk, sans-serif',
                     color: '#1A1A1E'
@@ -2114,6 +2161,11 @@ export default function JobDetailPage() {
                 >
                   Assigned to:
                 </h2>
+                {applications.length > 1 && (
+                  <p className="text-sm" style={{ color: '#6F7280' }}>
+                    {applications.length - 1} backup applicant{applications.length > 2 ? 's' : ''} available if needed
+                  </p>
+                )}
               </div>
             ) : (
               <h2 
@@ -2125,6 +2177,29 @@ export default function JobDetailPage() {
               >
                 Applications {applications.length > 0 && `(${applications.length})`}
               </h2>
+            )}
+
+            {/* Voting Info Banner */}
+            {job.status === 'open' && applications.length > 0 && publicKey && !isPoster && (
+              <div 
+                className="mb-4 p-3 rounded-lg border-2"
+                style={{ 
+                  backgroundColor: '#F8F5FF',
+                  borderColor: '#E5DEFF'
+                }}
+              >
+                <div className="flex items-start gap-2">
+                  <span className="text-lg">💎</span>
+                  <div className="flex-1">
+                    <p className="text-sm font-semibold mb-1" style={{ color: '#7C4DFF' }}>
+                      Earn Bonus Karma by Voting
+                    </p>
+                    <p className="text-xs" style={{ color: '#6F7280' }}>
+                      Upvote applicants you think will deliver best. If your pick gets chosen AND completes the job, you'll earn <strong>${job.payment_amount_usd.toFixed(0)} × 5 × tier multiplier</strong> bonus karma!
+                    </p>
+                  </div>
+                </div>
+              </div>
             )}
 
             {/* Sort Controls - NEW */}
@@ -2271,6 +2346,20 @@ export default function JobDetailPage() {
                                 }}
                               />
                             )}
+                            {/* Show "Backup" badge for applications submitted after job was assigned */}
+                            {!isAssigned && job.assigned_at && new Date(app.created_at) > new Date(job.assigned_at) && (
+                              <Chip
+                                label="Backup"
+                                size="small"
+                                sx={{
+                                  backgroundColor: '#FFF4E6',
+                                  color: '#FB923C',
+                                  fontWeight: 600,
+                                  fontSize: '11px',
+                                  border: '1px solid #FB923C'
+                                }}
+                              />
+                            )}
                           </div>
                           
                           {/* Stats */}
@@ -2309,23 +2398,30 @@ export default function JobDetailPage() {
                         <div className="flex items-center gap-2">
                           {/* Upvote Button */}
                           {job.status === 'open' && publicKey && !isPoster && (
-                            <Button
-                              variant={votes.hasVoted ? "secondary" : "outline"}
-                              size="sm"
-                              onClick={() => handleUpvote(app.id)}
-                              disabled={upvoting === app.id || votes.hasVoted}
-                              startIcon={<ThumbUpIcon sx={{ fontSize: 18 }} />}
-                              className={`min-w-[110px] font-body ${votes.hasVoted ? 'cursor-default' : ''}`}
+                            <Tooltip 
+                              title={votes.hasVoted ? "Already voted" : `Vote for this applicant. If they're chosen and deliver, you earn ${(job.payment_amount_usd * 5).toFixed(0)}+ bonus karma!`}
+                              arrow
                             >
-                              {upvoting === app.id ? (
-                                <CircularProgress size={16} sx={{ color: '#7C4DFF' }} />
-                              ) : (
-                                <span className="flex items-center gap-1">
-                                  <span className="font-semibold">{votes.totalWeight.toFixed(2)}%</span>
-                                  <span className="text-xs opacity-75">({votes.voterCount})</span>
-                                </span>
-                              )}
-                            </Button>
+                              <span>
+                                <Button
+                                  variant={votes.hasVoted ? "secondary" : "outline"}
+                                  size="sm"
+                                  onClick={() => handleUpvote(app.id)}
+                                  disabled={upvoting === app.id || votes.hasVoted}
+                                  startIcon={<ThumbUpIcon sx={{ fontSize: 18 }} />}
+                                  className={`min-w-[110px] font-body ${votes.hasVoted ? 'cursor-default' : ''}`}
+                                >
+                                  {upvoting === app.id ? (
+                                    <CircularProgress size={16} sx={{ color: '#7C4DFF' }} />
+                                  ) : (
+                                    <span className="flex items-center gap-1">
+                                      <span className="font-semibold">{votes.totalWeight.toFixed(2)}%</span>
+                                      <span className="text-xs opacity-75">({votes.voterCount})</span>
+                                    </span>
+                                  )}
+                                </Button>
+                              </span>
+                            </Tooltip>
                           )}
                           {/* Existing Pick Button */}
                           {isPoster && job.status === 'open' && job.assignment_mode === 'review' && (
@@ -2883,13 +2979,30 @@ export default function JobDetailPage() {
                       onClick={() => setSelectedReassignApplicant(app.applicant_wallet)}
                     >
                       <div className="flex items-center justify-between">
-                        <div>
-                          <p 
-                            className="text-sm font-mono font-medium"
-                            style={{ color: '#1A1A1E' }}
-                          >
-                            {formatWalletAddress(app.applicant_wallet)}
-                          </p>
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2 mb-1">
+                            <p 
+                              className="text-sm font-mono font-medium"
+                              style={{ color: '#1A1A1E' }}
+                            >
+                              {formatWalletAddress(app.applicant_wallet)}
+                            </p>
+                            {/* Show "Backup" badge for applications submitted after assignment */}
+                            {job?.assigned_at && new Date(app.created_at) > new Date(job.assigned_at) && (
+                              <Chip
+                                label="Backup"
+                                size="small"
+                                sx={{
+                                  backgroundColor: '#FFF4E6',
+                                  color: '#FB923C',
+                                  fontWeight: 600,
+                                  fontSize: '10px',
+                                  height: '18px',
+                                  border: '1px solid #FB923C'
+                                }}
+                              />
+                            )}
+                          </div>
                           <p className="text-xs" style={{ color: '#6F7280' }}>
                             {app.applicant_karma.toLocaleString()} karma • {app.applicant_completed_jobs} jobs completed
                           </p>

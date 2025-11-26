@@ -60,7 +60,7 @@ export async function postJobComment(
     }
 
     // Verify token holdings on-chain (same as chat)
-    const rpcEndpoint = process.env.NEXT_PUBLIC_RPC_ENDPOINT || 'https://api.devnet.solana.com'
+    const rpcEndpoint = process.env.NEXT_PUBLIC_RPC_ENDPOINT || 'https://api.mainnet-beta.solana.com'
     const connection = new Connection(rpcEndpoint, 'confirmed')
 
     console.log(`Checking token holdings for comment: ${walletAddress}`)

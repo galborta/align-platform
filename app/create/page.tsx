@@ -170,7 +170,7 @@ export default function CreatePage() {
     setTokenData(null)
 
     try {
-      // Use the wallet's connection (devnet as configured in wallet-config.tsx)
+      // Use the wallet's connection (mainnet as configured in wallet-config.tsx)
       const metadata = await getTokenMetadata(mintAddress.trim(), connection)
       setTokenData(metadata)
     } catch (err) {

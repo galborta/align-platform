@@ -44,3 +44,4 @@ COMMENT ON TABLE job_comments IS 'Comments on job postings - token holder discus
 COMMENT ON COLUMN job_comments.commenter_wallet IS 'Wallet address of the commenter (must hold project tokens)';
 COMMENT ON COLUMN job_comments.comment_text IS 'Comment content (max 2000 characters)';
 
+

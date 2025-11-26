@@ -18,3 +18,4 @@ CREATE POLICY "Anyone can read user profiles" ON user_profiles
 COMMENT ON POLICY "Anyone can read user profiles" ON user_profiles IS 
   'Allows reading all user profiles for presence tracking, messaging, and profile viewing. Privacy is controlled at application level via privacy_level field.';
 
+

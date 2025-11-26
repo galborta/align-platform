@@ -667,3 +667,4 @@ const calculateStats = (workerJobs: Job[], posterJobs: Job[]) => {
 
 Built with ❤️ for transparent job completion tracking! ✅👤
 
+

@@ -27,13 +27,15 @@ CREATE TABLE chat_tips (
   project_id UUID REFERENCES projects(id),
   from_wallet TEXT NOT NULL,
   to_wallet TEXT NOT NULL,
-  amount_nub NUMERIC NOT NULL,
+  amount_nub NUMERIC NOT NULL,  -- ⚠️ RENAMED to amount_tokens in migration 20241126
   message TEXT,
   token_mint TEXT,          -- NEW
   tx_signature TEXT,        -- NEW
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 ```
+
+**⚠️ UPDATE (Nov 26, 2024)**: The `amount_nub` field has been renamed to `amount_tokens` and enhanced with additional fields. See `ENHANCED_TIP_SYSTEM_SCHEMA.md` for current schema.
 
 ### 2. **TipModal Component** ✅
 📄 `/components/TipModal.tsx`
@@ -111,13 +113,15 @@ interface ChatTip {
   project_id: string
   from_wallet: string
   to_wallet: string
-  amount_nub: number
+  amount_nub: number  // ⚠️ RENAMED to amount_tokens in migration 20241126
   message: string | null
   token_mint: string | null    // NEW
   tx_signature: string | null  // NEW
   created_at: string
 }
 ```
+
+**⚠️ UPDATE (Nov 26, 2024)**: See `types/database.ts` for the current TypeScript interface with new fields (`token_symbol`, `amount_usd`, `is_public`, `karma_awarded_sender`, `karma_awarded_recipient`).
 
 ### Example Insert
 
@@ -126,8 +130,9 @@ await supabase.from('chat_tips').insert({
   project_id: 'abc-123',
   from_wallet: 'Sender...',
   to_wallet: 'Recipient...',
-  amount_nub: 10.5,
+  amount_tokens: 10.5,  // ⚠️ RENAMED from amount_nub
   token_mint: 'NUBtoken...',
+  token_symbol: 'NUB',  // NEW: Required field
   message: 'Great contribution!',
   tx_signature: 'tx_sig...'
 })
@@ -282,7 +287,7 @@ With `chat_tips` table, you can now build:
 SELECT 
   from_wallet,
   COUNT(*) as tip_count,
-  SUM(amount_nub) as total_tipped
+  SUM(amount_tokens) as total_tipped  -- ⚠️ RENAMED from amount_nub
 FROM chat_tips
 WHERE project_id = 'project_id'
 GROUP BY from_wallet
@@ -468,4 +473,5 @@ ProjectChat integrated ✅
 Committed & Pushed ✅ (commit: `dadbc39`)
 
 🎊 **Token tipping is now live in the Align platform!**
+
 

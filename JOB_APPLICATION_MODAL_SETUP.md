@@ -548,3 +548,4 @@ The job application modal is **complete and ready for integration**. Just follow
 **Next**: Apply migration + integrate into job detail page
 
 
+

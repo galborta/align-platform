@@ -15,3 +15,4 @@ CREATE INDEX IF NOT EXISTS idx_chat_tips_token_mint ON chat_tips(token_mint);
 COMMENT ON COLUMN chat_tips.token_mint IS 'SPL token mint address for the tipped token';
 COMMENT ON COLUMN chat_tips.tx_signature IS 'Solana transaction signature for on-chain verification';
 
+

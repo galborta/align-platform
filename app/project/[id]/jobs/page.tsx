@@ -81,7 +81,7 @@ export default function ProjectJobsPage() {
 
   useEffect(() => {
     // Fetch user's applications when My Applications tab is selected
-    if (activeTab === 3 && publicKey) {
+    if (activeTab === 1 && publicKey) {
       fetchMyApplications()
     }
   }, [activeTab, publicKey])
@@ -228,17 +228,18 @@ export default function ProjectJobsPage() {
     // Start with base tab filter
     let filtered: JobWithApplicationCount[] = []
     switch (activeTab) {
-      case 0: // Open Jobs
-        filtered = jobs.filter(job => job.status === 'open')
+      case 0: // All Jobs
+        filtered = jobs
         break
-      case 1: // Assigned
-        filtered = jobs.filter(job => job.status === 'assigned' || job.status === 'submitted')
-        break
-      case 2: // Completed
-        filtered = jobs.filter(job => job.status === 'completed')
-        break
-      case 3: // My Applications
+      case 1: // My Applications
         filtered = myApplicationJobs
+        break
+      case 2: // My Posted Jobs
+        if (publicKey) {
+          filtered = jobs.filter(job => job.poster_wallet === publicKey.toString())
+        } else {
+          filtered = []
+        }
         break
       default:
         filtered = jobs
@@ -341,7 +342,7 @@ export default function ProjectJobsPage() {
       <main className="max-w-7xl mx-auto px-4 py-8">
         {/* Header Section */}
         <div className="mb-8 flex items-center justify-between">
-          <div>
+          <div className="flex-1">
             <h1 
               className="text-4xl font-bold mb-2"
               style={{ 
@@ -351,9 +352,16 @@ export default function ProjectJobsPage() {
             >
               Jobs & Bounties
             </h1>
-            <p className="text-lg" style={{ color: '#6F7280' }}>
+            <p className="text-lg mb-2" style={{ color: '#6F7280' }}>
               Commission work from the community. Pay in {project.token_symbol}.
             </p>
+            <div 
+              className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-sm"
+              style={{ backgroundColor: '#F8F5FF', color: '#7C4DFF' }}
+            >
+              <span className="text-base">💎</span>
+              <span className="font-medium">Vote on applicants to earn bonus karma when they deliver</span>
+            </div>
           </div>
           
           <Button
@@ -387,10 +395,9 @@ export default function ProjectJobsPage() {
               borderBottom: '1px solid #E5E7F0'
             }}
           >
-            <Tab label="Open Jobs" />
-            <Tab label="Assigned" />
-            <Tab label="Completed" />
+            <Tab label="All Jobs" />
             <Tab label="My Applications" />
+            <Tab label="My Posted Jobs" />
           </Tabs>
 
           {/* Advanced Filters */}
@@ -534,18 +541,33 @@ export default function ProjectJobsPage() {
                   className="text-2xl font-bold mb-2"
                   style={{ color: '#1A1A1E' }}
                 >
-                  No jobs posted yet
+                  {activeTab === 0 && 'No jobs posted yet'}
+                  {activeTab === 1 && "You haven't applied to any jobs yet"}
+                  {activeTab === 2 && "You haven't posted any jobs yet"}
                 </h3>
                 <p className="text-lg mb-6" style={{ color: '#6F7280' }}>
-                  Be the first to post work for the community
+                  {activeTab === 0 && 'Be the first to post work for the community'}
+                  {activeTab === 1 && 'Browse available jobs and apply to start earning'}
+                  {activeTab === 2 && 'Post work to commission from the community'}
                 </p>
-                <Button
-                  variant="primary"
-                  size="lg"
-                  onClick={() => setShowCreateModal(true)}
-                >
-                  Post Work
-                </Button>
+                {(activeTab === 0 || activeTab === 2) && (
+                  <Button
+                    variant="primary"
+                    size="lg"
+                    onClick={() => setShowCreateModal(true)}
+                  >
+                    Post Work
+                  </Button>
+                )}
+                {activeTab === 1 && (
+                  <Button
+                    variant="primary"
+                    size="lg"
+                    onClick={() => setActiveTab(0)}
+                  >
+                    Browse Jobs
+                  </Button>
+                )}
               </div>
             </CardContent>
           ) : (
@@ -557,9 +579,9 @@ export default function ProjectJobsPage() {
                     className="cursor-pointer transition-all hover:shadow-lg hover:-translate-y-1"
                     onClick={() => router.push(`/project/${params.id}/jobs/${job.id}`)}
                   >
-                    <CardContent className="p-6">
+                    <CardContent className="p-6 pt-8">
                       {/* Status Indicator */}
-                      <div className="flex items-center justify-between mb-4 mt-1">
+                      <div className="flex items-center justify-between mb-4">
                         <div className="flex items-center gap-2">
                           <span className="text-base">
                             {getStatusIcon(job.status)}
