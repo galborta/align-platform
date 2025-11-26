@@ -1,8 +1,8 @@
 'use client'
 
-import { useCallback } from 'react'
+import { useCallback, useState, useRef, memo } from 'react'
 import { useRouter } from 'next/navigation'
-import { Box, Typography, Chip } from '@mui/material'
+import { Box, Typography, Chip, Menu, MenuItem } from '@mui/material'
 import {
   Work as WorkIcon,
   PersonAdd as PersonAddIcon,
@@ -29,6 +29,7 @@ interface FeedItemProps {
   projectId: string
   tokenMint?: string | null
   onClickBatched?: (item: FeedItemType) => void
+  isMobile?: boolean  // Add mobile flag
 }
 
 /**
@@ -445,10 +446,22 @@ function formatNumber(num: number): string {
  * />
  * ```
  */
-export function FeedItem({ item, projectId, tokenMint, onClickBatched }: FeedItemProps) {
+export const FeedItem = memo(function FeedItem({ 
+  item, 
+  projectId, 
+  tokenMint, 
+  onClickBatched,
+  isMobile = false 
+}: FeedItemProps) {
   const router = useRouter()
   const iconColor = getIconColor(item.type)
   const iconBgColor = getIconBgColor(item.type)
+  
+  // Context menu state for long-press
+  const [showContextMenu, setShowContextMenu] = useState(false)
+  const [contextMenuPos, setContextMenuPos] = useState({ x: 0, y: 0 })
+  const longPressTimer = useRef<NodeJS.Timeout | null>(null)
+  const touchMoved = useRef(false)
 
   // Click handler with deep linking navigation
   const handleItemClick = useCallback((e: React.MouseEvent) => {
@@ -492,30 +505,74 @@ export function FeedItem({ item, projectId, tokenMint, onClickBatched }: FeedIte
     }
   }, [item, projectId, router, onClickBatched])
 
+  // Long-press handlers for context menu (mobile only)
+  const handleTouchStartItem = useCallback((e: React.TouchEvent) => {
+    if (!isMobile) return
+    
+    const touch = e.touches[0]
+    touchMoved.current = false
+    
+    longPressTimer.current = setTimeout(() => {
+      if (!touchMoved.current) {
+        // Long press detected (500ms)
+        setContextMenuPos({ x: touch.clientX, y: touch.clientY })
+        setShowContextMenu(true)
+        
+        // Haptic feedback if available
+        if (navigator.vibrate) {
+          navigator.vibrate(50)
+        }
+      }
+    }, 500)
+  }, [isMobile])
+
+  const handleTouchEndItem = useCallback(() => {
+    if (longPressTimer.current) {
+      clearTimeout(longPressTimer.current)
+      longPressTimer.current = null
+    }
+  }, [])
+
+  const handleTouchMoveItem = useCallback(() => {
+    touchMoved.current = true
+    // Cancel long press if finger moves
+    if (longPressTimer.current) {
+      clearTimeout(longPressTimer.current)
+      longPressTimer.current = null
+    }
+  }, [])
+
   // Check if item is navigable (for cursor and hover styles)
   const deepLink = getDeepLink(item, projectId)
   const isNavigable = deepLink !== null || (item.batchedCount && item.batchedCount > 1)
 
   return (
-    <Box 
-      className="feed-item"
-      onClick={handleItemClick}
-      sx={{
+    <>
+      <Box
+        className="feed-item"
+        onClick={handleItemClick}
+        onTouchStart={handleTouchStartItem}
+        onTouchMove={handleTouchMoveItem}
+        onTouchEnd={handleTouchEndItem}
+        sx={{
         display: 'flex',
-        gap: 2,
-        p: 2,
-        borderRadius: 2,
+        gap: { xs: 1, md: 2 },  // Smaller gap on mobile
+        p: { xs: 1.5, md: 2 },  // Less padding on mobile
+        borderRadius: { xs: 1, md: 2 },
         border: '1px solid',
         borderColor: 'divider',
         bgcolor: 'background.paper',
         transition: 'all 0.2s ease',
+        minHeight: { xs: 56, md: 64 },  // Ensure touch target size
         cursor: isNavigable ? 'pointer' : 'default',
-        animation: 'fadeInSlide 0.4s cubic-bezier(0.4, 0, 0.2, 1)',
+        // Disable animation on mobile for performance
+        animation: isMobile ? 'none' : 'fadeInSlide 0.4s cubic-bezier(0.4, 0, 0.2, 1)',
         '&:hover': {
           borderColor: isNavigable ? iconColor : 'divider',
           bgcolor: isNavigable ? 'action.hover' : 'background.paper',
-          transform: isNavigable ? 'translateY(-2px)' : 'none',
-          boxShadow: isNavigable ? 1 : 0,
+          // No lift on mobile
+          transform: isNavigable && !isMobile ? 'translateY(-2px)' : 'none',
+          boxShadow: isNavigable && !isMobile ? 1 : 0,
           '& .feed-item-link': {
             textDecoration: isNavigable ? 'underline' : 'none'
           }
@@ -537,8 +594,9 @@ export function FeedItem({ item, projectId, tokenMint, onClickBatched }: FeedIte
       {/* Icon with color-coded background */}
       <Box 
         sx={{ 
-          width: 40, 
-          height: 40, 
+          width: { xs: 32, md: 40 },  // Smaller icon on mobile
+          height: { xs: 32, md: 40 },
+          minWidth: { xs: 32, md: 40 },
           borderRadius: '50%',
           bgcolor: iconBgColor,
           color: iconColor,
@@ -548,7 +606,7 @@ export function FeedItem({ item, projectId, tokenMint, onClickBatched }: FeedIte
           flexShrink: 0,
           transition: 'transform 0.2s',
           '&:hover': {
-            transform: 'scale(1.1)'
+            transform: isMobile ? 'none' : 'scale(1.1)'
           }
         }}
       >
@@ -557,7 +615,7 @@ export function FeedItem({ item, projectId, tokenMint, onClickBatched }: FeedIte
       
       {/* Content */}
       <Box sx={{ flex: 1, minWidth: 0 }}>
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
           <Typography 
             variant="body2" 
             sx={{ 
@@ -565,6 +623,9 @@ export function FeedItem({ item, projectId, tokenMint, onClickBatched }: FeedIte
               lineHeight: 1.5,
               fontFamily: 'var(--font-body)',
               flex: 1,
+              fontSize: { xs: '0.875rem', md: '0.9375rem' },  // Adjust size
+              minWidth: 0,  // Allow text truncation
+              wordBreak: 'break-word',  // Prevent overflow on long addresses
               '& strong': {
                 fontWeight: 600,
                 color: 'text.primary'
@@ -580,12 +641,12 @@ export function FeedItem({ item, projectId, tokenMint, onClickBatched }: FeedIte
               label="New" 
               size="small"
               sx={{ 
-                height: 18,
-                fontSize: 10,
+                height: { xs: 16, md: 18 },
+                fontSize: { xs: 9, md: 10 },
                 fontWeight: 600,
                 bgcolor: '#E3F06F',
                 color: '#000',
-                '& .MuiChip-label': { px: 1 }
+                '& .MuiChip-label': { px: { xs: 0.5, md: 1 } }
               }}
             />
           )}
@@ -595,8 +656,9 @@ export function FeedItem({ item, projectId, tokenMint, onClickBatched }: FeedIte
           variant="caption" 
           sx={{ 
             color: 'text.secondary', 
-            mt: 0.5, 
+            mt: { xs: 0.25, md: 0.5 }, 
             display: 'block',
+            fontSize: { xs: 10, md: 11 },  // Smaller timestamp on mobile
             fontFamily: 'var(--font-body)'
           }}
         >
@@ -610,10 +672,10 @@ export function FeedItem({ item, projectId, tokenMint, onClickBatched }: FeedIte
           sx={{
             bgcolor: iconBgColor,
             color: iconColor,
-            px: 1.5,
-            py: 0.5,
+            px: { xs: 1, md: 1.5 },
+            py: { xs: 0.25, md: 0.5 },
             borderRadius: 2,
-            fontSize: '0.75rem',
+            fontSize: { xs: '0.625rem', md: '0.75rem' },
             fontWeight: 600,
             display: 'flex',
             alignItems: 'center',
@@ -625,7 +687,58 @@ export function FeedItem({ item, projectId, tokenMint, onClickBatched }: FeedIte
         </Box>
       )}
     </Box>
+
+    {/* Context menu for long-press (mobile only) */}
+    <Menu
+      open={showContextMenu}
+      onClose={() => setShowContextMenu(false)}
+      anchorReference="anchorPosition"
+      anchorPosition={{ top: contextMenuPos.y, left: contextMenuPos.x }}
+    >
+      <MenuItem 
+        onClick={() => {
+          // Copy link
+          const deepLinkObj = getDeepLink(item, projectId)
+          if (deepLinkObj) {
+            navigator.clipboard.writeText(window.location.origin + deepLinkObj.url)
+          }
+          setShowContextMenu(false)
+        }}
+        disabled={!deepLink}
+      >
+        Copy Link
+      </MenuItem>
+      <MenuItem 
+        onClick={() => {
+          // Share
+          if (navigator.share) {
+            const deepLinkObj = getDeepLink(item, projectId)
+            if (deepLinkObj) {
+              navigator.share({
+                title: 'Activity',
+                url: window.location.origin + deepLinkObj.url
+              })
+            }
+          }
+          setShowContextMenu(false)
+        }}
+        disabled={!deepLink || !navigator.share}
+      >
+        Share
+      </MenuItem>
+    </Menu>
+  </>
   )
-}
+}, (prevProps, nextProps) => {
+  // Custom comparison to prevent unnecessary re-renders
+  // Only re-render if key props change
+  return (
+    prevProps.item.id === nextProps.item.id &&
+    prevProps.item.timestamp.getTime() === nextProps.item.timestamp.getTime() &&
+    prevProps.item.batchedCount === nextProps.item.batchedCount &&
+    prevProps.projectId === nextProps.projectId &&
+    prevProps.isMobile === nextProps.isMobile
+  )
+})
 
 

@@ -25,3 +25,24 @@ body {
   padding: 0;
   margin: 0;
 }
+
+/* Smooth scroll behavior */
+html {
+  scroll-behavior: smooth;
+}
+
+/* Activity Feed optimizations */
+.feed-item {
+  contain: layout style paint;  /* CSS containment for performance */
+  content-visibility: auto;     /* Render only visible items */
+}
+
+/* Shimmer animation for skeletons */
+@keyframes shimmer {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(100%);
+  }
+}

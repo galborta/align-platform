@@ -1,12 +1,18 @@
 'use client'
 
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { Box, Typography, Button } from '@mui/material'
+import dynamic from 'next/dynamic'
+import { Box, Typography, Button, CircularProgress } from '@mui/material'
 import { FeedItem as FeedItemType, ActivityFeedProps } from '@/types/feed'
 import { FeedItem } from './FeedItem'
 import { FeedSkeleton } from './FeedSkeleton'
 import { FeedEmptyState } from './FeedEmptyState'
-import { BatchedActivityModal } from './BatchedActivityModal'
+
+// Lazy load modal for better performance
+const BatchedActivityModal = dynamic(() => import('./BatchedActivityModal').then(mod => ({ default: mod.BatchedActivityModal })), {
+  ssr: false,
+  loading: () => <CircularProgress />
+})
 import { fetchInitialFeed } from '@/lib/feed-queries'
 import { transformToFeedItems, transformSubscriptionEvent } from '@/lib/feed-transform'
 import { applyBatchingLogic } from '@/lib/feed-batching'
@@ -17,7 +23,8 @@ import {
   mergeIntoBatch,
   limitFeedItems,
   sortFeedItems,
-  getFeedStats
+  getFeedStats,
+  getStableItemId
 } from '@/lib/feed-utils'
 
 
@@ -66,6 +73,13 @@ export function ActivityFeed({ projectId, tokenMint }: ActivityFeedProps) {
   // Adaptive batch size based on screen height
   const ITEMS_PER_PAGE = typeof window !== 'undefined' && window.innerHeight > 1000 ? 30 : 20
   const MAX_RETRIES = 3
+  
+  // Pull-to-refresh state (mobile only)
+  const [pullDistance, setPullDistance] = useState(0)
+  const [isRefreshing, setIsRefreshing] = useState(false)
+  const touchStartY = useRef(0)
+  const containerRef = useRef<HTMLDivElement>(null)
+  const PULL_THRESHOLD = 80  // Distance to trigger refresh
 
   // Handler for new real-time events
   const handleNewActivity = useCallback((event: any) => {
@@ -110,6 +124,68 @@ export function ActivityFeed({ projectId, tokenMint }: ActivityFeedProps) {
       }
     })
   }, [])
+
+  // Pull-to-refresh touch handlers (mobile only)
+  const handleTouchStart = useCallback((e: React.TouchEvent) => {
+    // Only enable pull-to-refresh if scrolled to top
+    const container = containerRef.current
+    if (!container || container.scrollTop > 0) return
+    
+    touchStartY.current = e.touches[0].clientY
+  }, [])
+  
+  const handleTouchMove = useCallback((e: React.TouchEvent) => {
+    if (touchStartY.current === 0) return
+    
+    const container = containerRef.current
+    if (!container || container.scrollTop > 0) return
+    
+    const touchY = e.touches[0].clientY
+    const distance = touchY - touchStartY.current
+    
+    // Only pull down, not up
+    if (distance > 0) {
+      setPullDistance(Math.min(distance, PULL_THRESHOLD))
+      
+      // Prevent default scroll behavior while pulling
+      if (distance > 10) {
+        e.preventDefault()
+      }
+    }
+  }, [PULL_THRESHOLD])
+  
+  const handleTouchEnd = useCallback(async () => {
+    if (pullDistance >= PULL_THRESHOLD && !isRefreshing) {
+      // Trigger refresh
+      setIsRefreshing(true)
+      console.log('🔄 Pull-to-refresh triggered')
+      
+      try {
+        // Reload feed data
+        const rawData = await fetchInitialFeed(projectId, ITEMS_PER_PAGE, 0)
+        const items = transformToFeedItems(rawData)
+        const batched = applyBatchingLogic(items)
+        const initialItems = batched.slice(0, ITEMS_PER_PAGE)
+        
+        setFeedItems(initialItems)
+        setHasMore(batched.length > ITEMS_PER_PAGE)
+        setCurrentOffset(0)
+        setAllItemsLoaded(false)
+        
+        // Show success feedback
+        console.log('✅ Feed refreshed successfully')
+      } catch (err) {
+        console.error('❌ Refresh failed:', err)
+        setError('Failed to refresh feed. Please try again.')
+      } finally {
+        setIsRefreshing(false)
+      }
+    }
+    
+    // Reset pull state
+    setPullDistance(0)
+    touchStartY.current = 0
+  }, [pullDistance, isRefreshing, projectId, ITEMS_PER_PAGE, PULL_THRESHOLD])
 
   // Load initial feed items and setup real-time subscriptions
   useEffect(() => {
@@ -388,6 +464,42 @@ export function ActivityFeed({ projectId, tokenMint }: ActivityFeedProps) {
     return () => observer.disconnect()
   }, [allItemsLoaded, loadingMore, hasMore, handleLoadMore])
 
+  // Performance monitoring - track feed render times
+  useEffect(() => {
+    if (typeof window !== 'undefined' && window.performance) {
+      performance.mark('feed-render-start')
+      
+      return () => {
+        performance.mark('feed-render-end')
+        try {
+          performance.measure(
+            'feed-render',
+            'feed-render-start',
+            'feed-render-end'
+          )
+          
+          const measure = performance.getEntriesByName('feed-render')[0]
+          if (measure) {
+            console.log(`📊 Feed render time: ${measure.duration.toFixed(2)}ms (${feedItems.length} items)`)
+            
+            // Alert if slow
+            if (measure.duration > 500) {
+              console.warn(`⚠️ Slow feed render detected: ${measure.duration.toFixed(2)}ms`)
+            }
+          }
+          
+          // Clean up marks
+          performance.clearMarks('feed-render-start')
+          performance.clearMarks('feed-render-end')
+          performance.clearMeasures('feed-render')
+        } catch (err) {
+          // Performance API might not be fully supported
+          console.debug('Performance measurement not available')
+        }
+      }
+    }
+  }, [feedItems.length])
+
   const handleBatchedItemClick = (item: FeedItemType) => {
     setSelectedItem(item)
     setModalOpen(true)
@@ -395,38 +507,105 @@ export function ActivityFeed({ projectId, tokenMint }: ActivityFeedProps) {
 
   return (
     <Box 
-      className="activity-feed max-w-full p-4 bg-white rounded-lg border border-border-subtle" 
-      sx={{ width: '100%' }}
+      ref={containerRef}
+      onTouchStart={handleTouchStart}
+      onTouchMove={handleTouchMove}
+      onTouchEnd={handleTouchEnd}
+      sx={{ 
+        width: '100%',
+        bgcolor: 'background.paper',
+        borderRadius: { xs: 1, md: 2 },  // Smaller radius on mobile
+        border: '1px solid',
+        borderColor: 'divider',
+        p: { xs: 1.5, md: 2 },  // Less padding on mobile
+        maxWidth: '100%',
+        overflow: 'auto',
+        position: 'relative',
+        // Pull indicator styling
+        paddingTop: pullDistance > 0 ? `${pullDistance}px` : undefined,
+        transition: pullDistance > 0 ? 'none' : 'padding-top 0.3s ease'
+      }}
     >
-      <Typography 
-        variant="h6" 
-        sx={{ 
-          mb: 1, 
-          fontWeight: 600,
-          color: 'text.primary',
-          fontFamily: 'var(--font-display)'
-        }}
-      >
-        Activity Feed
-      </Typography>
-
-      {/* Connection Status Indicator */}
-      {isConnected && !loading && (
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, mb: 2 }}>
-          <Box 
-            sx={{ 
-              width: 8, 
-              height: 8, 
-              borderRadius: '50%', 
-              bgcolor: 'success.main',
-              animation: 'pulse 2s infinite'
-            }} 
-          />
-          <Typography variant="caption" sx={{ color: 'text.secondary', fontSize: 11 }}>
-            Live updates active
-          </Typography>
+      {/* Pull-to-refresh indicator */}
+      {(pullDistance > 0 || isRefreshing) && (
+        <Box sx={{
+          position: 'absolute',
+          top: 0,
+          left: 0,
+          right: 0,
+          height: pullDistance || 40,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          bgcolor: 'background.default',
+          borderRadius: '8px 8px 0 0',
+          zIndex: 1
+        }}>
+          {isRefreshing ? (
+            <>
+              <CircularProgress size={20} sx={{ mr: 1 }} />
+              <Typography variant="caption" sx={{ color: 'text.secondary' }}>
+                Refreshing...
+              </Typography>
+            </>
+          ) : (
+            <Box sx={{
+              transform: `rotate(${Math.min(pullDistance / PULL_THRESHOLD * 180, 180)}deg)`,
+              transition: 'transform 0.2s',
+              fontSize: 20,
+              color: pullDistance >= PULL_THRESHOLD ? 'success.main' : 'text.secondary'
+            }}>
+              ↓
+            </Box>
+          )}
         </Box>
       )}
+
+      <Box sx={{
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        mb: { xs: 1.5, md: 2 },
+        flexWrap: 'wrap',  // Allow wrapping on tiny screens
+        gap: 1
+      }}>
+        <Typography 
+          variant="h6" 
+          sx={{ 
+            fontWeight: 600,
+            fontSize: { xs: '1rem', md: '1.25rem' },  // Smaller on mobile
+            color: 'text.primary',
+            fontFamily: 'var(--font-display)'
+          }}
+        >
+          Activity Feed
+        </Typography>
+
+        {/* Connection Status Indicator - hide on xs */}
+        {isConnected && !loading && (
+          <Box sx={{ 
+            display: { xs: 'none', sm: 'flex' },  // Hide on xs screens
+            alignItems: 'center', 
+            gap: 0.5 
+          }}>
+            <Box 
+              sx={{ 
+                width: 8, 
+                height: 8, 
+                borderRadius: '50%', 
+                bgcolor: 'success.main',
+                animation: 'pulse 2s infinite'
+              }} 
+            />
+            <Typography variant="caption" sx={{ 
+              color: 'text.secondary', 
+              fontSize: { xs: 10, md: 11 }
+            }}>
+              Live updates active
+            </Typography>
+          </Box>
+        )}
+      </Box>
 
       {/* Pulse animation styles */}
       <style>{`
@@ -466,20 +645,20 @@ export function ActivityFeed({ projectId, tokenMint }: ActivityFeedProps) {
       
       {!loading && !error && feedItems.length > 0 && (
         <Box 
-          className="feed-items" 
           sx={{ 
             display: 'flex', 
             flexDirection: 'column', 
-            gap: 1.5 
+            gap: { xs: 1, md: 1.5 }  // Tighter spacing on mobile
           }}
         >
           {feedItems.map(item => (
             <FeedItem 
-              key={item.id} 
+              key={getStableItemId(item)} 
               item={item}
               projectId={projectId}
               tokenMint={tokenMint}
               onClickBatched={handleBatchedItemClick}
+              isMobile={typeof window !== 'undefined' && window.innerWidth < 900}
             />
           ))}
         </Box>

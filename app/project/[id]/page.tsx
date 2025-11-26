@@ -11,10 +11,12 @@ import { AddAssetModal } from '@/components/AddAssetModal'
 import { CurationChatFeed } from '@/components/CurationChatFeed'
 import { KarmaLeaderboard } from '@/components/KarmaLeaderboard'
 import { ActivityFeed } from '@/components/ActivityFeed'
+import { FeedErrorBoundary } from '@/components/FeedErrorBoundary'
 import { supabase } from '@/lib/supabase'
 import { Database } from '@/types/database'
 import { FeedItem } from '@/types/feed'
 import { useWallet } from '@solana/wallet-adapter-react'
+import { Box } from '@mui/material'
 import VerifiedIcon from '@mui/icons-material/Verified'
 import CheckCircleIcon from '@mui/icons-material/CheckCircle'
 import ArrowBackIcon from '@mui/icons-material/ArrowBack'
@@ -345,44 +347,62 @@ export default function ProjectDetailPage() {
           </CardContent>
         </Card>
 
-        {/* Main Content - Single Page */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        {/* Main Content - Mobile-First Responsive Layout */}
+        <Box sx={{
+          display: 'grid',
+          gridTemplateColumns: {
+            xs: '1fr',           // Mobile: single column
+            md: '1fr',           // Tablet: single column
+            lg: '2fr 1fr'        // Desktop: 2 columns (feed+chat | stats)
+          },
+          gap: { xs: 2, md: 3 },
+          mt: 2
+        }}>
           {/* Left Column - Activity Feed, Chat + IP Registry */}
-          <div className="lg:col-span-2 space-y-6">
-            {/* Activity Feed - New */}
+          <Box sx={{
+            display: 'flex',
+            flexDirection: 'column',
+            gap: { xs: 2, md: 3 },
+            minWidth: 0  // Prevent overflow
+          }}>
+            {/* Activity Feed - Appears first on mobile */}
             {project.status === 'live' && showMockFeed && (
-              <Card>
-                <CardContent className="pt-4">
+              <Box sx={{ order: { xs: 1, lg: 1 } }}>
+                <FeedErrorBoundary>
                   <ActivityFeed projectId={project.id} tokenMint={project.token_mint} />
-                </CardContent>
-              </Card>
+                </FeedErrorBoundary>
+              </Box>
             )}
 
-            {/* Chat Component - Featured */}
+            {/* Chat Component - Appears second on mobile */}
             {project.status === 'live' && (
-              <ProjectChat projectId={project.id} tokenMint={project.token_mint} />
+              <Box sx={{ order: { xs: 2, lg: 2 } }}>
+                <ProjectChat projectId={project.id} tokenMint={project.token_mint} />
+              </Box>
             )}
 
-            {/* Community Curation Section */}
+            {/* Community Curation Section - Third on mobile */}
             {project.status === 'live' && (
-              <Card>
-                <CardHeader>
-                  <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
-                    <CardTitle className="text-2xl">Community Curation</CardTitle>
-                    <Button
-                      onClick={() => setShowAddAssetModal(true)}
-                      disabled={!wallet.publicKey}
-                      variant="contained"
-                      className="bg-purple-600 hover:bg-purple-700 w-full sm:w-auto"
-                    >
-                      + Add Asset
-                    </Button>
-                  </div>
-                </CardHeader>
-                <CardContent>
-                  <CurationChatFeed projectId={project.id} />
-                </CardContent>
-              </Card>
+              <Box sx={{ order: { xs: 3, lg: 3 } }}>
+                <Card>
+                  <CardHeader>
+                    <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+                      <CardTitle className="text-2xl">Community Curation</CardTitle>
+                      <Button
+                        onClick={() => setShowAddAssetModal(true)}
+                        disabled={!wallet.publicKey}
+                        variant="contained"
+                        className="bg-purple-600 hover:bg-purple-700 w-full sm:w-auto"
+                      >
+                        + Add Asset
+                      </Button>
+                    </div>
+                  </CardHeader>
+                  <CardContent>
+                    <CurationChatFeed projectId={project.id} />
+                  </CardContent>
+                </Card>
+              </Box>
             )}
 
             {/* Add Asset Modal */}
@@ -395,125 +415,136 @@ export default function ProjectDetailPage() {
             )}
 
             {/* Social Assets - Compact */}
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-lg">Social Assets</CardTitle>
-              </CardHeader>
-              <CardContent>
-                {project.social_assets && project.social_assets.length > 0 ? (
-                  <div className="flex flex-wrap gap-2">
-                    {project.social_assets.map((social) => (
-                      <a
-                        key={social.id}
-                        href={getPlatformUrl(social.platform, social.handle)}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="flex items-center gap-2 px-3 py-2 bg-white rounded-lg border border-border-subtle hover:border-accent-primary transition-colors"
-                      >
-                        <div className="text-accent-primary">
-                          {platformIcons[social.platform] || '🌐'}
-                        </div>
-                        <span className="font-body text-sm text-text-primary">
-                          @{social.handle}
-                        </span>
-                        {social.verified && (
-                          <CheckCircleIcon sx={{ color: '#7C4DFF', fontSize: 16 }} />
-                        )}
-                      </a>
-                    ))}
-                  </div>
-                ) : (
-                  <p className="font-body text-text-muted text-center py-4">
-                    No social accounts added
-                  </p>
-                )}
-              </CardContent>
-            </Card>
+            <Box sx={{ order: { xs: 4, lg: 4 } }}>
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-lg">Social Assets</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  {project.social_assets && project.social_assets.length > 0 ? (
+                    <div className="flex flex-wrap gap-2">
+                      {project.social_assets.map((social) => (
+                        <a
+                          key={social.id}
+                          href={getPlatformUrl(social.platform, social.handle)}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="flex items-center gap-2 px-3 py-2 bg-white rounded-lg border border-border-subtle hover:border-accent-primary transition-colors"
+                        >
+                          <div className="text-accent-primary">
+                            {platformIcons[social.platform] || '🌐'}
+                          </div>
+                          <span className="font-body text-sm text-text-primary">
+                            @{social.handle}
+                          </span>
+                          {social.verified && (
+                            <CheckCircleIcon sx={{ color: '#7C4DFF', fontSize: 16 }} />
+                          )}
+                        </a>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="font-body text-text-muted text-center py-4">
+                      No social accounts added
+                    </p>
+                  )}
+                </CardContent>
+              </Card>
+            </Box>
 
             {/* Creative Assets - Album Style */}
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-lg">Creative Assets</CardTitle>
-              </CardHeader>
-              <CardContent>
-                {project.creative_assets && project.creative_assets.length > 0 ? (
-                  <div className="grid grid-cols-3 gap-2">
-                    {project.creative_assets.slice(0, 6).map((asset) => (
-                      <div
-                        key={asset.id}
-                        className="relative group cursor-pointer overflow-hidden rounded-lg"
-                      >
-                        {asset.media_url ? (
-                          <div className="aspect-square bg-subtle-bg flex items-center justify-center">
-                            <img
-                              src={asset.media_url}
-                              alt={asset.name || 'Creative asset'}
-                              className="w-full h-full object-cover group-hover:scale-110 transition-transform"
-                            />
-                          </div>
-                        ) : (
-                          <div className="aspect-square bg-subtle-bg flex items-center justify-center">
-                            <span className="text-3xl">🎨</span>
-                          </div>
-                        )}
-                        {asset.name && (
-                          <div className="absolute bottom-0 left-0 right-0 bg-black/70 p-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                            <p className="font-body text-xs text-white truncate">
-                              {asset.name}
-                            </p>
-                          </div>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <p className="font-body text-text-muted text-center py-4">
-                    No creative assets added
-                  </p>
-                )}
-              </CardContent>
-            </Card>
+            <Box sx={{ order: { xs: 5, lg: 5 } }}>
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-lg">Creative Assets</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  {project.creative_assets && project.creative_assets.length > 0 ? (
+                    <div className="grid grid-cols-3 gap-2">
+                      {project.creative_assets.slice(0, 6).map((asset) => (
+                        <div
+                          key={asset.id}
+                          className="relative group cursor-pointer overflow-hidden rounded-lg"
+                        >
+                          {asset.media_url ? (
+                            <div className="aspect-square bg-subtle-bg flex items-center justify-center">
+                              <img
+                                src={asset.media_url}
+                                alt={asset.name || 'Creative asset'}
+                                className="w-full h-full object-cover group-hover:scale-110 transition-transform"
+                              />
+                            </div>
+                          ) : (
+                            <div className="aspect-square bg-subtle-bg flex items-center justify-center">
+                              <span className="text-3xl">🎨</span>
+                            </div>
+                          )}
+                          {asset.name && (
+                            <div className="absolute bottom-0 left-0 right-0 bg-black/70 p-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                              <p className="font-body text-xs text-white truncate">
+                                {asset.name}
+                              </p>
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="font-body text-text-muted text-center py-4">
+                      No creative assets added
+                    </p>
+                  )}
+                </CardContent>
+              </Card>
+            </Box>
 
             {/* Legal Assets - Compact List */}
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-lg">Legal Assets</CardTitle>
-              </CardHeader>
-              <CardContent>
-                {project.legal_assets && project.legal_assets.length > 0 ? (
-                  <div className="space-y-2">
-                    {project.legal_assets.map((asset) => (
-                      <div
-                        key={asset.id}
-                        className="flex items-center justify-between p-3 bg-white rounded-lg border border-border-subtle"
-                      >
-                        <div className="flex-1">
-                          <p className="font-body font-medium text-text-primary text-sm capitalize">
-                            {asset.asset_type || 'Legal Asset'}
-                          </p>
-                          <p className="font-body text-xs text-text-secondary truncate">
-                            {asset.name || 'Unnamed asset'}
-                          </p>
+            <Box sx={{ order: { xs: 6, lg: 6 } }}>
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-lg">Legal Assets</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  {project.legal_assets && project.legal_assets.length > 0 ? (
+                    <div className="space-y-2">
+                      {project.legal_assets.map((asset) => (
+                        <div
+                          key={asset.id}
+                          className="flex items-center justify-between p-3 bg-white rounded-lg border border-border-subtle"
+                        >
+                          <div className="flex-1">
+                            <p className="font-body font-medium text-text-primary text-sm capitalize">
+                              {asset.asset_type || 'Legal Asset'}
+                            </p>
+                            <p className="font-body text-xs text-text-secondary truncate">
+                              {asset.name || 'Unnamed asset'}
+                            </p>
+                          </div>
+                          {asset.status && (
+                            <span className="inline-block px-2 py-1 bg-accent-primary-soft text-accent-primary rounded text-xs font-medium ml-2">
+                              {asset.status}
+                            </span>
+                          )}
                         </div>
-                        {asset.status && (
-                          <span className="inline-block px-2 py-1 bg-accent-primary-soft text-accent-primary rounded text-xs font-medium ml-2">
-                            {asset.status}
-                          </span>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <p className="font-body text-text-muted text-center py-4">
-                    No legal assets added
-                  </p>
-                )}
-              </CardContent>
-            </Card>
-          </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="font-body text-text-muted text-center py-4">
+                      No legal assets added
+                    </p>
+                  )}
+                </CardContent>
+              </Card>
+            </Box>
+          </Box>
 
-          {/* Right Column - Team Transparency */}
-          <div className="space-y-6">
+          {/* Right Column - Stats & Holders (moves below on mobile) */}
+          <Box sx={{
+            display: 'flex',
+            flexDirection: 'column',
+            gap: { xs: 2, md: 3 },
+            order: { xs: 7, lg: 2 }  // Appears last on mobile, right column on desktop
+          }}>
             {/* Top Contributors Section */}
             {project.status === 'live' && (
               <Card>
@@ -647,8 +678,8 @@ export default function ProjectDetailPage() {
                 )}
               </CardContent>
             </Card>
-          </div>
-        </div>
+          </Box>
+        </Box>
       </main>
     </div>
   )

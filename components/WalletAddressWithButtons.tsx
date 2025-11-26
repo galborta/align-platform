@@ -1,14 +1,21 @@
 'use client'
 
-import { useState, useEffect } from 'react'
-import { Box, Typography, Chip, IconButton, Tooltip, CircularProgress } from '@mui/material'
-import { Message as MessageIcon, LocalAtm as LocalAtmIcon } from '@mui/icons-material'
+import { useState, useEffect, memo } from 'react'
+import dynamic from 'next/dynamic'
+import { Box, Typography, Chip, IconButton, Tooltip, CircularProgress, Menu, MenuItem, ListItemIcon, ListItemText, Dialog } from '@mui/material'
+import { Message as MessageIcon, LocalAtm as LocalAtmIcon, Person as PersonIcon } from '@mui/icons-material'
 import Link from 'next/link'
 import { useWallet } from '@solana/wallet-adapter-react'
 import { useMessaging } from '@/lib/MessagingContext'
 import { canMessageUser } from '@/lib/messaging'
-import TipModal from '@/components/TipModal'
+import { UserProfileView } from '@/components/UserProfileView'
 import toast from 'react-hot-toast'
+
+// Lazy load modal for better performance
+const TipModal = dynamic(() => import('@/components/TipModal'), {
+  ssr: false,
+  loading: () => <CircularProgress size={20} />
+})
 
 interface WalletAddressWithButtonsProps {
   address: string
@@ -47,7 +54,7 @@ interface WalletAddressWithButtonsProps {
  * />
  * ```
  */
-export function WalletAddressWithButtons({
+export const WalletAddressWithButtons = memo(function WalletAddressWithButtons({
   address,
   displayName,
   showMessage = false,
@@ -61,14 +68,20 @@ export function WalletAddressWithButtons({
   const { publicKey } = useWallet()
   const { openMessages } = useMessaging()
   const [showTipModal, setShowTipModal] = useState(false)
+  const [showProfileModal, setShowProfileModal] = useState(false)
   const [canMessage, setCanMessage] = useState(false)
   const [checkingMessage, setCheckingMessage] = useState(false)
   const [openingMessage, setOpeningMessage] = useState(false)
+  const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null)
+  const [isHovered, setIsHovered] = useState(false)
   
   const currentWallet = publicKey?.toBase58()
   
   // Don't show buttons if viewing own address
   const isSelf = currentWallet === address
+  
+  // Detect if mobile
+  const isMobile = typeof window !== 'undefined' && window.innerWidth < 900
   
   const truncateAddress = (addr: string): string => {
     if (!addr) return '...'
@@ -141,10 +154,65 @@ export function WalletAddressWithButtons({
     setShowTipModal(false)
   }
   
+  const handleAddressClick = (e: React.MouseEvent<HTMLElement>) => {
+    e.stopPropagation()
+    e.preventDefault()
+    
+    if (isMobile) {
+      // On mobile, open menu with options
+      setAnchorEl(e.currentTarget)
+    } else {
+      // On desktop, open profile modal directly
+      setShowProfileModal(true)
+    }
+  }
+  
+  const handleCloseMenu = () => {
+    setAnchorEl(null)
+  }
+  
+  const handleViewProfile = () => {
+    handleCloseMenu()
+    setShowProfileModal(true)
+  }
+  
+  const handleMenuMessage = async () => {
+    handleCloseMenu()
+    if (!currentWallet || !canMessage) return
+    
+    setOpeningMessage(true)
+    try {
+      await openMessages(address)
+    } catch (error) {
+      console.error('Error opening messages:', error)
+      toast.error('Failed to open messages')
+    } finally {
+      setOpeningMessage(false)
+    }
+  }
+  
+  const handleMenuTip = () => {
+    handleCloseMenu()
+    
+    if (!projectId || !tokenMint) {
+      toast.error('Tipping not available for this item')
+      return
+    }
+    
+    if (!currentWallet) {
+      toast.error('Please connect your wallet to send tips')
+      return
+    }
+    
+    setShowTipModal(true)
+  }
+  
   return (
     <>
       <Box 
         className={`wallet-address-buttons ${className}`}
+        onMouseEnter={() => setIsHovered(true)}
+        onMouseLeave={() => setIsHovered(false)}
         sx={{ 
           display: 'inline-flex', 
           alignItems: 'center', 
@@ -152,34 +220,25 @@ export function WalletAddressWithButtons({
           flexWrap: 'nowrap'
         }}
       >
-        {/* Wallet Address/Name */}
-        <Link 
-          href={`/profile/${address}`}
-          target="_blank"
-          rel="noopener noreferrer"
-          style={{ 
-            textDecoration: 'none',
-            color: 'inherit'
+        {/* Wallet Address/Name - Clickable */}
+        <Typography
+          variant={compact ? 'caption' : 'body2'}
+          component="span"
+          onClick={handleAddressClick}
+          sx={{
+            fontWeight: 600,
+            color: 'text.primary',
+            fontFamily: displayName ? 'inherit' : 'monospace',
+            fontSize: compact ? '0.75rem' : '0.875rem',
+            cursor: 'pointer',
+            '&:hover': {
+              color: 'primary.main',
+              textDecoration: 'underline'
+            }
           }}
-          onClick={(e) => e.stopPropagation()}
         >
-          <Typography
-            variant={compact ? 'caption' : 'body2'}
-            component="span"
-            sx={{
-              fontWeight: 600,
-              color: 'text.primary',
-              fontFamily: displayName ? 'inherit' : 'monospace',
-              fontSize: compact ? '0.75rem' : '0.875rem',
-              '&:hover': {
-                color: 'primary.main',
-                textDecoration: 'underline'
-              }
-            }}
-          >
-            {displayName || truncateAddress(address)}
-          </Typography>
-        </Link>
+          {displayName || truncateAddress(address)}
+        </Typography>
         
         {/* Supporter Tier Badge */}
         {tierBadge && (
@@ -197,8 +256,8 @@ export function WalletAddressWithButtons({
           />
         )}
         
-        {/* Action Buttons */}
-        {!isSelf && (showMessage || showTip) && (
+        {/* Action Buttons - Show only on hover (desktop only) */}
+        {!isSelf && !isMobile && isHovered && (showMessage || showTip) && (
           <Box sx={{ display: 'inline-flex', gap: 0.25, ml: 0.25 }}>
             {/* Message Button */}
             {showMessage && (
@@ -256,6 +315,78 @@ export function WalletAddressWithButtons({
         )}
       </Box>
 
+      {/* Mobile Action Menu */}
+      <Menu
+        anchorEl={anchorEl}
+        open={Boolean(anchorEl)}
+        onClose={handleCloseMenu}
+        anchorOrigin={{
+          vertical: 'bottom',
+          horizontal: 'left',
+        }}
+        transformOrigin={{
+          vertical: 'top',
+          horizontal: 'left',
+        }}
+      >
+        <MenuItem onClick={handleViewProfile}>
+          <ListItemIcon>
+            <PersonIcon fontSize="small" />
+          </ListItemIcon>
+          <ListItemText>View Profile</ListItemText>
+        </MenuItem>
+        
+        {!isSelf && canMessage && showMessage && (
+          <MenuItem onClick={handleMenuMessage} disabled={openingMessage}>
+            <ListItemIcon>
+              <MessageIcon fontSize="small" sx={{ color: '#7C4DFF' }} />
+            </ListItemIcon>
+            <ListItemText>Send Message</ListItemText>
+          </MenuItem>
+        )}
+        
+        {!isSelf && showTip && tokenMint && projectId && (
+          <MenuItem onClick={handleMenuTip}>
+            <ListItemIcon>
+              <LocalAtmIcon fontSize="small" sx={{ color: '#36C170' }} />
+            </ListItemIcon>
+            <ListItemText>Send Tip</ListItemText>
+          </MenuItem>
+        )}
+      </Menu>
+
+      {/* Profile View Modal */}
+      <Dialog
+        open={showProfileModal}
+        onClose={() => setShowProfileModal(false)}
+        maxWidth="md"
+        fullWidth
+        PaperProps={{
+          sx: {
+            borderRadius: 2,
+            maxHeight: '90vh'
+          }
+        }}
+        BackdropProps={{
+          sx: {
+            backgroundColor: 'rgba(0, 0, 0, 0.7)'
+          }
+        }}
+      >
+        <Box sx={{ 
+          bgcolor: 'background.paper',
+          overflow: 'auto'
+        }}>
+          <UserProfileView
+            walletAddress={address}
+            currentUserWallet={currentWallet}
+            projectId={projectId}
+            onClose={() => setShowProfileModal(false)}
+            onMessage={() => setShowProfileModal(false)}
+          />
+        </Box>
+      </Dialog>
+
       {/* Tip Modal */}
       {showTipModal && (
         <TipModal
@@ -268,5 +399,18 @@ export function WalletAddressWithButtons({
       )}
     </>
   )
-}
+}, (prevProps, nextProps) => {
+  // Custom comparison to prevent unnecessary re-renders
+  // Only re-render if address, displayName, or action flags change
+  return (
+    prevProps.address === nextProps.address &&
+    prevProps.displayName === nextProps.displayName &&
+    prevProps.showMessage === nextProps.showMessage &&
+    prevProps.showTip === nextProps.showTip &&
+    prevProps.tierBadge === nextProps.tierBadge &&
+    prevProps.compact === nextProps.compact &&
+    prevProps.projectId === nextProps.projectId &&
+    prevProps.tokenMint === nextProps.tokenMint
+  )
+})
 
