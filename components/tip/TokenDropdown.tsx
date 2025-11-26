@@ -31,14 +31,14 @@ export default function TokenDropdown({
   const isMobile = useMediaQuery(theme.breakpoints.down('sm'))
 
   const formatBalance = (balance: number, decimals: number) => {
-    return balance.toLocaleString(undefined, {
+    return balance.toLocaleString('en-US', {
       minimumFractionDigits: 0,
       maximumFractionDigits: Math.min(4, decimals)
     })
   }
 
   const formatUsd = (value: number) => {
-    return value.toLocaleString(undefined, {
+    return value.toLocaleString('en-US', {
       minimumFractionDigits: 2,
       maximumFractionDigits: 2
     })

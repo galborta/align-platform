@@ -29,14 +29,14 @@ export default function AmountInput({
   disabled = false
 }: AmountInputProps) {
   const formatBalance = (balance: number, decimals: number) => {
-    return balance.toLocaleString(undefined, {
+    return balance.toLocaleString('en-US', {
       minimumFractionDigits: 0,
       maximumFractionDigits: Math.min(4, decimals)
     })
   }
 
   const formatUsd = (value: number) => {
-    return value.toLocaleString(undefined, {
+    return value.toLocaleString('en-US', {
       style: 'currency',
       currency: 'USD',
       minimumFractionDigits: 2,
