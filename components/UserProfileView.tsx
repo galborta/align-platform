@@ -957,7 +957,7 @@ export function UserProfileView({
         {/* Action Buttons */}
         <div className="mb-6">
           {/* Tip Button */}
-          {!isOwnProfile && currentUserWallet && projectId && tokenMint && (
+          {currentUserWallet && currentUserWallet !== walletAddress && projectId && tokenMint && (
             <Button
               variant="contained"
               startIcon={<LocalAtmIcon />}
