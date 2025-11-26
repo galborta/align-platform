@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useWallet, useConnection } from '@solana/wallet-adapter-react'
 import { 
   Dialog, 
@@ -11,27 +11,30 @@ import {
   Box, 
   Typography,
   CircularProgress,
-  Alert
+  Alert,
+  Skeleton
 } from '@mui/material'
 import { PublicKey, Transaction } from '@solana/web3.js'
 import { createTransferInstruction, getAssociatedTokenAddress, TOKEN_PROGRAM_ID } from '@solana/spl-token'
 import { supabase } from '@/lib/supabase'
 import toast from 'react-hot-toast'
+import { useTipTokens } from '@/lib/hooks/useTipTokens'
+import TokenDropdown from './tip/TokenDropdown'
+import { TipToken } from '@/types/database'
 
 interface TipModalProps {
   open: boolean
   onClose: () => void
   recipientWallet: string
   projectId: string
-  tokenMint: string
+  tokenMint: string  // Kept for backwards compatibility but not used
 }
 
 export default function TipModal({ 
   open, 
   onClose, 
   recipientWallet, 
-  projectId,
-  tokenMint 
+  projectId
 }: TipModalProps) {
   const { publicKey, sendTransaction } = useWallet()
   const { connection } = useConnection()
@@ -40,12 +43,27 @@ export default function TipModal({
   const [message, setMessage] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [selectedToken, setSelectedToken] = useState<TipToken | null>(null)
+
+  // Fetch available tokens
+  const { data: tokenData, isLoading: loadingTokens, error: tokenError, refetch: refetchTokens } = useTipTokens(
+    publicKey?.toBase58(),
+    projectId
+  )
+
+  // Auto-select first token when loaded (project token prioritized)
+  useEffect(() => {
+    if (tokenData?.tokens && tokenData.tokens.length > 0 && !selectedToken) {
+      setSelectedToken(tokenData.tokens[0])
+    }
+  }, [tokenData, selectedToken])
 
   const handleClose = () => {
     if (!loading) {
       setAmount('')
       setMessage('')
       setError(null)
+      setSelectedToken(null)
       onClose()
     }
   }
@@ -56,8 +74,19 @@ export default function TipModal({
       return
     }
 
+    if (!selectedToken) {
+      setError('Please select a token')
+      return
+    }
+
     if (!amount || parseFloat(amount) <= 0) {
       setError('Please enter a valid amount greater than 0')
+      return
+    }
+
+    // Validate sufficient balance
+    if (parseFloat(amount) > selectedToken.balance) {
+      setError(`Insufficient balance. You have ${selectedToken.balance} ${selectedToken.symbol}`)
       return
     }
 
@@ -66,7 +95,7 @@ export default function TipModal({
 
     try {
       // Create SPL token transfer transaction
-      const tokenMintPubkey = new PublicKey(tokenMint)
+      const tokenMintPubkey = new PublicKey(selectedToken.mint)
       const recipientPubkey = new PublicKey(recipientWallet)
 
       // Get associated token accounts
@@ -80,8 +109,8 @@ export default function TipModal({
         recipientPubkey
       )
 
-      // Get token decimals (assume 9 for most SPL tokens, including NUB)
-      const decimals = 9
+      // Use token's actual decimals
+      const decimals = selectedToken.decimals
       const transferAmount = Math.floor(parseFloat(amount) * Math.pow(10, decimals))
 
       if (transferAmount <= 0) {
@@ -115,25 +144,36 @@ export default function TipModal({
         throw new Error('Transaction failed')
       }
 
+      // Calculate USD value
+      const usdValue = selectedToken.usdPrice 
+        ? parseFloat(amount) * selectedToken.usdPrice 
+        : null
+
       // Record tip in database
       const { error: dbError } = await supabase.from('chat_tips').insert({
         project_id: projectId,
         from_wallet: publicKey.toString(),
         to_wallet: recipientWallet,
-        amount_nub: parseFloat(amount),
-        token_mint: tokenMint,
+        amount_tokens: parseFloat(amount),
+        token_mint: selectedToken.mint,
+        token_symbol: selectedToken.symbol,
+        amount_usd: usdValue,
         message: message.trim() || null,
-        tx_signature: signature
+        tx_signature: signature,
+        is_public: true, // Default to public
+        karma_awarded_sender: 0, // TODO: Implement karma calculation
+        karma_awarded_recipient: 0 // TODO: Implement karma calculation
       })
 
       if (dbError) {
         console.error('Database error:', dbError)
         // Don't fail if DB insert fails - transaction already succeeded
-        toast.success(`🎁 Sent ${amount} tokens! (${signature.slice(0, 8)}...)`, {
+        toast.success(`🎁 Sent ${amount} ${selectedToken.symbol}! (${signature.slice(0, 8)}...)`, {
           duration: 5000
         })
       } else {
-        toast.success(`🎁 Sent ${amount} tokens to ${recipientWallet.slice(0, 4)}...${recipientWallet.slice(-4)}!`, {
+        const usdText = usdValue ? ` ($${usdValue.toFixed(2)})` : ''
+        toast.success(`🎁 Sent ${amount} ${selectedToken.symbol}${usdText} to ${recipientWallet.slice(0, 4)}...${recipientWallet.slice(-4)}!`, {
           duration: 5000,
           icon: '💰'
         })
@@ -223,6 +263,25 @@ export default function TipModal({
           </Typography>
         </Box>
 
+        {/* Token Selection Error */}
+        {tokenError && (
+          <Alert 
+            severity="error" 
+            sx={{ mb: 2 }}
+            action={
+              <Button 
+                color="inherit" 
+                size="small" 
+                onClick={() => refetchTokens()}
+              >
+                Retry
+              </Button>
+            }
+          >
+            Failed to load tokens. Please try again.
+          </Alert>
+        )}
+
         {/* Error Alert */}
         {error && (
           <Alert 
@@ -234,11 +293,32 @@ export default function TipModal({
           </Alert>
         )}
 
+        {/* Token Dropdown */}
+        {loadingTokens ? (
+          <Box sx={{ mb: 2 }}>
+            <Skeleton variant="rectangular" height={56} sx={{ borderRadius: '4px' }} />
+          </Box>
+        ) : tokenData?.tokens && tokenData.tokens.length === 0 ? (
+          <Alert 
+            severity="warning" 
+            sx={{ mb: 2 }}
+          >
+            No tokens available to send (minimum $0.10 value required). Please add tokens to your wallet.
+          </Alert>
+        ) : (
+          <TokenDropdown
+            tokens={tokenData?.tokens || []}
+            selectedToken={selectedToken}
+            onSelect={setSelectedToken}
+            loading={loadingTokens}
+          />
+        )}
+
         {/* Amount Input */}
         <TextField
           fullWidth
           type="number"
-          label="Amount (NUB)"
+          label={selectedToken ? `Amount (${selectedToken.symbol})` : "Amount"}
           value={amount}
           onChange={(e) => {
             const value = e.target.value
@@ -249,12 +329,22 @@ export default function TipModal({
           }}
           sx={{ mb: 2 }}
           placeholder="10"
-          disabled={loading}
+          disabled={loading || !selectedToken}
           inputProps={{
             min: 0,
-            step: 0.1
+            step: 0.1,
+            max: selectedToken?.balance
           }}
-          helperText="Tip amount in project tokens"
+          helperText={
+            selectedToken 
+              ? `Balance: ${selectedToken.balance.toLocaleString()} ${selectedToken.symbol}${
+                  selectedToken.usdPrice && amount 
+                    ? ` ≈ $${(parseFloat(amount) * selectedToken.usdPrice).toFixed(2)}`
+                    : ''
+                }`
+              : 'Select a token first'
+          }
+          error={selectedToken && parseFloat(amount) > selectedToken.balance}
         />
 
         {/* Message Input */}
@@ -309,7 +399,14 @@ export default function TipModal({
             variant="contained" 
             onClick={handleSendTip}
             fullWidth
-            disabled={loading || !amount || parseFloat(amount) <= 0}
+            disabled={
+              loading || 
+              loadingTokens || 
+              !selectedToken || 
+              !amount || 
+              parseFloat(amount) <= 0 ||
+              parseFloat(amount) > (selectedToken?.balance || 0)
+            }
             sx={{ 
               bgcolor: '#7C4DFF',
               textTransform: 'none',
@@ -339,4 +436,5 @@ export default function TipModal({
     </Dialog>
   )
 }
+
 

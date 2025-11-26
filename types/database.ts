@@ -312,6 +312,11 @@ export interface Database {
           jobs_posted_as_poster_count: number
           dispute_votes_cast_count: number
           dispute_votes_won_count: number
+          // Tip System Tracking
+          tips_sent_count: number
+          tips_received_count: number
+          tip_karma_earned_today: number
+          tip_karma_last_reset_date: string
           created_at: string
           updated_at: string
         }
@@ -334,6 +339,11 @@ export interface Database {
           jobs_posted_as_poster_count?: number
           dispute_votes_cast_count?: number
           dispute_votes_won_count?: number
+          // Tip System Tracking
+          tips_sent_count?: number
+          tips_received_count?: number
+          tip_karma_earned_today?: number
+          tip_karma_last_reset_date?: string
           created_at?: string
           updated_at?: string
         }
@@ -356,6 +366,11 @@ export interface Database {
           jobs_posted_as_poster_count?: number
           dispute_votes_cast_count?: number
           dispute_votes_won_count?: number
+          // Tip System Tracking
+          tips_sent_count?: number
+          tips_received_count?: number
+          tip_karma_earned_today?: number
+          tip_karma_last_reset_date?: string
           created_at?: string
           updated_at?: string
         }
@@ -852,10 +867,15 @@ export interface Database {
           project_id: string
           from_wallet: string
           to_wallet: string
-          amount_nub: number
+          amount_tokens: number
           message: string | null
           token_mint: string | null
+          token_symbol: string
           tx_signature: string | null
+          amount_usd: number | null
+          is_public: boolean
+          karma_awarded_sender: number
+          karma_awarded_recipient: number
           created_at: string
         }
         Insert: {
@@ -863,10 +883,15 @@ export interface Database {
           project_id: string
           from_wallet: string
           to_wallet: string
-          amount_nub: number
+          amount_tokens: number
           message?: string | null
           token_mint?: string | null
+          token_symbol: string
           tx_signature?: string | null
+          amount_usd?: number | null
+          is_public?: boolean
+          karma_awarded_sender?: number
+          karma_awarded_recipient?: number
           created_at?: string
         }
         Update: {
@@ -874,10 +899,15 @@ export interface Database {
           project_id?: string
           from_wallet?: string
           to_wallet?: string
-          amount_nub?: number
+          amount_tokens?: number
           message?: string | null
           token_mint?: string | null
+          token_symbol?: string
           tx_signature?: string | null
+          amount_usd?: number | null
+          is_public?: boolean
+          karma_awarded_sender?: number
+          karma_awarded_recipient?: number
           created_at?: string
         }
       }
@@ -894,6 +924,29 @@ export interface Database {
   }
 }
 
+// ==================== TIP SYSTEM TYPES ====================
 
+/**
+ * Represents a token that can be used for tipping
+ */
+export interface TipToken {
+  mint: string
+  symbol: string
+  logoUrl: string | null
+  balance: number
+  decimals: number
+  usdValue: number
+  usdPrice: number | null
+}
 
+/**
+ * Form data for the tip modal
+ */
+export interface TipFormData {
+  recipientWallet: string
+  selectedToken: TipToken | null
+  amount: string
+  message: string
+  isPublic: boolean
+}
 

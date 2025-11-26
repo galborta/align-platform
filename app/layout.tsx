@@ -5,6 +5,7 @@ import ThemeProvider from '@/components/ThemeProvider'
 import { WalletConfigProvider } from '@/lib/wallet-config'
 import { LayoutClient } from '@/components/LayoutClient'
 import { Toaster } from 'react-hot-toast'
+import { QueryProvider } from '@/components/providers/QueryProvider'
 
 const spaceGrotesk = Space_Grotesk({ subsets: ['latin'], variable: '--font-display' })
 const inter = Inter({ subsets: ['latin'], variable: '--font-body' })
@@ -27,13 +28,15 @@ export default function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning>
       <body className={`${spaceGrotesk.variable} ${inter.variable} font-body`}>
-        <ThemeProvider>
-          <WalletConfigProvider>
-            <LayoutClient>
-              {children}
-            </LayoutClient>
-          </WalletConfigProvider>
-        </ThemeProvider>
+        <QueryProvider>
+          <ThemeProvider>
+            <WalletConfigProvider>
+              <LayoutClient>
+                {children}
+              </LayoutClient>
+            </WalletConfigProvider>
+          </ThemeProvider>
+        </QueryProvider>
         <Toaster 
           position="top-right"
           toastOptions={{
