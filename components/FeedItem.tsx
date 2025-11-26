@@ -617,7 +617,8 @@ export const FeedItem = memo(function FeedItem({
       <Box sx={{ flex: 1, minWidth: 0 }}>
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
           <Typography 
-            variant="body2" 
+            variant="body2"
+            component="div"
             sx={{ 
               color: 'text.primary', 
               lineHeight: 1.5,
