@@ -655,10 +655,13 @@ export function ProjectChat({ projectId, tokenMint }: ProjectChatProps) {
             }
           }}
         >
-          <Box sx={{ 
-            bgcolor: 'background.paper',
-            overflow: 'auto'
-          }}>
+          <Box 
+            onClick={(e) => e.stopPropagation()}
+            sx={{ 
+              bgcolor: 'background.paper',
+              overflow: 'auto'
+            }}
+          >
             <UserProfileView
               walletAddress={selectedProfileWallet}
               currentUserWallet={publicKey?.toString()}

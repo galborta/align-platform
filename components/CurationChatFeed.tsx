@@ -163,10 +163,13 @@ export function CurationChatFeed({ projectId }: CurationChatFeedProps) {
             }
           }}
         >
-          <Box sx={{ 
-            bgcolor: 'background.paper',
-            overflow: 'auto'
-          }}>
+          <Box 
+            onClick={(e) => e.stopPropagation()}
+            sx={{ 
+              bgcolor: 'background.paper',
+              overflow: 'auto'
+            }}
+          >
             <UserProfileView
               walletAddress={selectedProfileWallet}
               currentUserWallet={wallet.publicKey?.toString()}

@@ -373,10 +373,13 @@ export const WalletAddressWithButtons = memo(function WalletAddressWithButtons({
           }
         }}
       >
-        <Box sx={{ 
-          bgcolor: 'background.paper',
-          overflow: 'auto'
-        }}>
+        <Box 
+          onClick={(e) => e.stopPropagation()}
+          sx={{ 
+            bgcolor: 'background.paper',
+            overflow: 'auto'
+          }}
+        >
           <UserProfileView
             walletAddress={address}
             currentUserWallet={currentWallet}
