@@ -98,7 +98,17 @@ function getActivityContent(item: FeedItemType): React.ReactNode {
       if (batchedCount && batchedCount > 1) {
         return (
           <>
-            <strong>{batchedCount} holders</strong> upvoted <strong>{truncateAddress(data.applicantWallet)}</strong>'s application for <span className="feed-item-link">{data.jobTitle}</span>
+            <span 
+              className="batched-count" 
+              style={{ 
+                textDecoration: 'underline',
+                cursor: 'pointer',
+                fontWeight: 600,
+                color: '#7C4DFF'
+              }}
+            >
+              {batchedCount} holders
+            </span> upvoted <strong>{truncateAddress(data.applicantWallet)}</strong>'s application for <span className="feed-item-link">{data.jobTitle}</span>
           </>
         )
       }
@@ -135,7 +145,17 @@ function getActivityContent(item: FeedItemType): React.ReactNode {
       if (batchedCount && batchedCount > 1) {
         return (
           <>
-            <strong>{batchedCount} comments</strong> on <span className="feed-item-link">{data.jobTitle}</span>
+            <span 
+              className="batched-count" 
+              style={{ 
+                textDecoration: 'underline',
+                cursor: 'pointer',
+                fontWeight: 600,
+                color: '#7C4DFF'
+              }}
+            >
+              {batchedCount} comments
+            </span> on <span className="feed-item-link">{data.jobTitle}</span>
           </>
         )
       }
@@ -154,7 +174,17 @@ function getActivityContent(item: FeedItemType): React.ReactNode {
       if (batchedCount && batchedCount > 1) {
         return (
           <>
-            <strong>{batchedCount} holders</strong> upvoted <span className="feed-item-link">{data.assetType} asset</span>
+            <span 
+              className="batched-count" 
+              style={{ 
+                textDecoration: 'underline',
+                cursor: 'pointer',
+                fontWeight: 600,
+                color: '#2196F3'
+              }}
+            >
+              {batchedCount} holders
+            </span> upvoted <span className="feed-item-link">{data.assetType} asset</span>
           </>
         )
       }
@@ -191,7 +221,17 @@ function getActivityContent(item: FeedItemType): React.ReactNode {
       if (batchedCount && batchedCount > 1) {
         return (
           <>
-            <strong>{batchedCount} holders</strong> reached {formatNumber(data.milestone)} karma 🏆
+            <span 
+              className="batched-count" 
+              style={{ 
+                textDecoration: 'underline',
+                cursor: 'pointer',
+                fontWeight: 600,
+                color: '#FF9800'
+              }}
+            >
+              {batchedCount} holders
+            </span> reached {formatNumber(data.milestone)} karma 🏆
           </>
         )
       }
@@ -273,15 +313,20 @@ export function FeedItem({ item, projectId, onClickBatched }: FeedItemProps) {
 
   // Click handler with deep linking navigation
   const handleItemClick = useCallback((e: React.MouseEvent) => {
-    // Don't navigate if clicking on a button or link inside the item
     const target = e.target as HTMLElement
-    if (target.tagName === 'BUTTON' || target.tagName === 'A' || target.closest('button') || target.closest('a')) {
+    
+    // Check if clicking on batched count indicator
+    if (target.closest('.batched-count') && item.batchedCount && item.batchedCount > 1) {
+      e.stopPropagation()
+      if (onClickBatched) {
+        console.log('Opening batched modal for:', item)
+        onClickBatched(item)
+      }
       return
     }
-
-    // Handle batched items (opens modal)
-    if (item.batchedCount && item.batchedCount > 1 && onClickBatched) {
-      onClickBatched(item)
+    
+    // Don't navigate if clicking on a button or link inside the item
+    if (target.tagName === 'BUTTON' || target.tagName === 'A' || target.closest('button') || target.closest('a')) {
       return
     }
 

@@ -554,7 +554,11 @@ export function ActivityFeed({ projectId }: ActivityFeedProps) {
         <BatchedActivityModal
           item={selectedItem}
           open={modalOpen}
-          onClose={() => setModalOpen(false)}
+          onClose={() => {
+            setModalOpen(false)
+            setSelectedItem(null)
+          }}
+          projectId={projectId}
         />
       )}
     </Box>
