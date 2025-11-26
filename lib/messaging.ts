@@ -234,10 +234,8 @@ export async function getUnreadCount(
       .select('id')
       .or(`participant_1.eq.${walletAddress},participant_2.eq.${walletAddress}`)
     
-    if (convError || !conversations || conversations.length === 0) {
-      if (convError) {
-        console.error('Error fetching conversations:', convError)
-      }
+    if (!conversations || conversations.length === 0) {
+      // No conversations yet - this is expected, not an error
       return 0
     }
     

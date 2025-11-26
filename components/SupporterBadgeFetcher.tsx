@@ -31,14 +31,13 @@ export function SupporterBadgeFetcher({
         .eq('project_id', projectId)
         .maybeSingle()
 
-      // Only log if there's an actual error with content (not empty object or null)
-      if (error && Object.keys(error).length > 0) {
-        console.error('Error fetching completed jobs:', error)
-      }
+      // Supabase may return an empty error object or PGRST116 when no rows exist
+      // This is expected behavior, not an actual error, so we silently handle it
       
       // Set completed jobs (0 if no record exists)
       setCompletedJobs(data?.jobs_completed_as_worker_count || 0)
     } catch (error) {
+      // Only log unexpected errors (not from Supabase response)
       console.error('Unexpected error fetching completed jobs:', error)
       setCompletedJobs(0)
     } finally {

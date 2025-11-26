@@ -34,6 +34,9 @@ export function CurationChatFeed({ projectId }: CurationChatFeedProps) {
   const [loading, setLoading] = useState(true)
   const [showProfileView, setShowProfileView] = useState(false)
   const [selectedProfileWallet, setSelectedProfileWallet] = useState<string | null>(null)
+  const [hasMore, setHasMore] = useState(true)
+  const [loadingMore, setLoadingMore] = useState(false)
+  const [displayCount, setDisplayCount] = useState(2)
   
   // Fetch messages function
   const fetchMessages = useCallback(async () => {
@@ -45,12 +48,22 @@ export function CurationChatFeed({ projectId }: CurationChatFeedProps) {
       `)
       .eq('project_id', projectId)
       .order('created_at', { ascending: false })
-      .limit(50)
     
     if (!error && data) {
       setMessages(data)
+      setHasMore(data.length > displayCount)
     }
-  }, [projectId])
+  }, [projectId, displayCount])
+  
+  // Load more function
+  const loadMore = () => {
+    setLoadingMore(true)
+    setDisplayCount(prev => prev + 5)
+    setTimeout(() => {
+      setLoadingMore(false)
+      setHasMore(messages.length > displayCount + 5)
+    }, 300)
+  }
   
   // Subscribe to realtime updates
   useEffect(() => {
@@ -93,10 +106,19 @@ export function CurationChatFeed({ projectId }: CurationChatFeedProps) {
     )
   }
   
+  const displayedMessages = messages.slice(0, displayCount)
+  
   return (
     <>
-      <div className="space-y-3">
-        {messages.map(msg => (
+      <div 
+        className="space-y-3 overflow-y-auto" 
+        style={{ 
+          maxHeight: '400px',
+          overflowY: 'scroll',
+          WebkitOverflowScrolling: 'touch'
+        }}
+      >
+        {displayedMessages.map(msg => (
           <CurationChatMessage
             key={msg.id}
             message={msg}
@@ -104,6 +126,19 @@ export function CurationChatFeed({ projectId }: CurationChatFeedProps) {
             projectId={projectId}
           />
         ))}
+        
+        {/* Load More Button */}
+        {hasMore && displayedMessages.length < messages.length && (
+          <div className="text-center py-3">
+            <button
+              onClick={loadMore}
+              disabled={loadingMore}
+              className="px-4 py-2 text-sm font-medium text-purple-600 bg-purple-50 hover:bg-purple-100 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {loadingMore ? 'Loading...' : '↓ Load more assets'}
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Profile View Modal */}

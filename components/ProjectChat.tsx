@@ -12,6 +12,8 @@ import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown'
 import MessageIcon from '@mui/icons-material/Message'
 import BlockIcon from '@mui/icons-material/Block'
 import LocalAtmIcon from '@mui/icons-material/LocalAtm'
+import ReplyIcon from '@mui/icons-material/Reply'
+import CloseIcon from '@mui/icons-material/Close'
 import { IconButton, Tooltip, Dialog, Box } from '@mui/material'
 import { useMessaging } from '@/lib/MessagingContext'
 import { canMessageUser } from '@/lib/messaging'
@@ -25,6 +27,7 @@ interface Message {
   message_text: string
   token_percentage: number
   holding_tier: string
+  reply_to_id: string | null
   created_at: string
   pending?: boolean // For optimistic UI
 }
@@ -48,6 +51,10 @@ export function ProjectChat({ projectId, tokenMint }: ProjectChatProps) {
   const [selectedProfileWallet, setSelectedProfileWallet] = useState<string | null>(null)
   const [tipModalOpen, setTipModalOpen] = useState(false)
   const [tipRecipient, setTipRecipient] = useState('')
+  const [replyingTo, setReplyingTo] = useState<Message | null>(null)
+  const [hasMoreMessages, setHasMoreMessages] = useState(true)
+  const [loadingMore, setLoadingMore] = useState(false)
+  const [oldestMessageDate, setOldestMessageDate] = useState<string | null>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const messagesContainerRef = useRef<HTMLDivElement>(null)
 
@@ -118,21 +125,78 @@ export function ProjectChat({ projectId, tokenMint }: ProjectChatProps) {
   async function loadMessages() {
     setIsLoadingMessages(true)
     try {
+      // Load last 50 messages (most recent)
       const { data, error } = await supabase
         .from('chat_messages')
         .select('*')
         .eq('project_id', projectId)
-        .order('created_at', { ascending: true })
-        .limit(100) // Load last 100 messages
+        .order('created_at', { ascending: false })
+        .limit(50)
 
       if (error) {
         console.error('Failed to load messages:', error)
         return
       }
 
-      setMessages(data || [])
+      const messages = (data || []).reverse() // Reverse to show oldest first
+      setMessages(messages)
+      
+      // Check if there are more messages
+      if (messages.length > 0) {
+        setOldestMessageDate(messages[0].created_at)
+        // Check if there are older messages
+        const { count } = await supabase
+          .from('chat_messages')
+          .select('*', { count: 'exact', head: true })
+          .eq('project_id', projectId)
+          .lt('created_at', messages[0].created_at)
+        
+        setHasMoreMessages((count || 0) > 0)
+      } else {
+        setHasMoreMessages(false)
+      }
     } finally {
       setIsLoadingMessages(false)
+    }
+  }
+
+  async function loadMoreMessages() {
+    if (!oldestMessageDate || loadingMore || !hasMoreMessages) return
+    
+    setLoadingMore(true)
+    try {
+      // Load 50 more messages before the oldest one we have
+      const { data, error } = await supabase
+        .from('chat_messages')
+        .select('*')
+        .eq('project_id', projectId)
+        .lt('created_at', oldestMessageDate)
+        .order('created_at', { ascending: false })
+        .limit(50)
+
+      if (error) {
+        console.error('Failed to load more messages:', error)
+        return
+      }
+
+      if (data && data.length > 0) {
+        const olderMessages = data.reverse()
+        setMessages(prev => [...olderMessages, ...prev])
+        setOldestMessageDate(olderMessages[0].created_at)
+        
+        // Check if there are even more messages
+        const { count } = await supabase
+          .from('chat_messages')
+          .select('*', { count: 'exact', head: true })
+          .eq('project_id', projectId)
+          .lt('created_at', olderMessages[0].created_at)
+        
+        setHasMoreMessages((count || 0) > 0)
+      } else {
+        setHasMoreMessages(false)
+      }
+    } finally {
+      setLoadingMore(false)
     }
   }
 
@@ -149,13 +213,16 @@ export function ProjectChat({ projectId, tokenMint }: ProjectChatProps) {
       message_text: newMessage.trim(),
       token_percentage: 0,
       holding_tier: 'small',
+      reply_to_id: replyingTo?.id || null,
       created_at: new Date().toISOString(),
       pending: true
     }
 
     setMessages(prev => [...prev, optimisticMessage])
     const messageToSend = newMessage
+    const replyToId = replyingTo?.id || null
     setNewMessage('')
+    setReplyingTo(null) // Clear reply state
     scrollToBottom(true)
 
     try {
@@ -166,7 +233,8 @@ export function ProjectChat({ projectId, tokenMint }: ProjectChatProps) {
           projectId,
           walletAddress: publicKey.toBase58(),
           messageText: messageToSend,
-          tokenMint
+          tokenMint,
+          replyToId
         })
       })
 
@@ -177,6 +245,7 @@ export function ProjectChat({ projectId, tokenMint }: ProjectChatProps) {
         setMessages(prev => prev.filter(msg => msg.id !== optimisticMessage.id))
         setError(data.error || 'Failed to send message')
         setNewMessage(messageToSend) // Restore message text
+        setReplyingTo(replyToId ? messages.find(m => m.id === replyToId) || null : null) // Restore reply state
         return
       }
 
@@ -189,6 +258,7 @@ export function ProjectChat({ projectId, tokenMint }: ProjectChatProps) {
       setMessages(prev => prev.filter(msg => msg.id !== optimisticMessage.id))
       setError('Failed to send message')
       setNewMessage(messageToSend)
+      setReplyingTo(replyToId ? messages.find(m => m.id === replyToId) || null : null)
     } finally {
       setLoading(false)
     }
@@ -246,36 +316,63 @@ export function ProjectChat({ projectId, tokenMint }: ProjectChatProps) {
   }
 
   return (
-    <Card className="h-[400px] md:h-[600px] flex flex-col relative overflow-hidden">
+    <Card className="h-[500px] flex flex-col relative overflow-hidden">
       {/* Header - Enhanced */}
-      <div className="bg-gradient-to-r from-accent-primary to-purple-600 p-4 shadow-md">
-        <div className="flex items-center gap-3 mb-1">
-          <span className="text-2xl">💬</span>
-          <h3 className="font-display text-xl font-bold text-white">
+      <div className="bg-gradient-to-r from-accent-primary to-purple-600 p-3 shadow-md">
+        <div className="flex items-center gap-2 mb-0.5">
+          <span className="text-xl">💬</span>
+          <h3 className="font-display text-lg font-bold text-white">
             Holder Chat
           </h3>
-          <span className="ml-auto bg-white/20 backdrop-blur-sm text-white text-xs font-medium px-2 py-1 rounded-full">
+          <span className="ml-auto bg-white/20 backdrop-blur-sm text-white text-xs font-medium px-2 py-0.5 rounded-full">
             Live
           </span>
         </div>
-        <p className="font-body text-sm text-white/90 ml-11">
+        <p className="font-body text-xs text-white/90 ml-9">
           {publicKey ? 'Chat with other token holders in real-time' : 'Connect your wallet to join the conversation'}
         </p>
       </div>
       
-      <CardContent className="p-4 flex-1 flex flex-col">
+      <CardContent className="p-3 flex-1 flex flex-col min-h-0">
         {/* Messages Container */}
         <div 
           ref={messagesContainerRef}
           onScroll={handleScroll}
-          className="flex-1 overflow-y-auto space-y-3 mb-4"
+          className="flex-1 overflow-y-auto space-y-1.5 mb-3"
+          style={{ 
+            overflowY: 'scroll',
+            WebkitOverflowScrolling: 'touch',
+            height: '100%',
+            minHeight: 0
+          }}
         >
+          {/* Load More Button */}
+          {hasMoreMessages && !isLoadingMessages && (
+            <div className="text-center py-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={loadMoreMessages}
+                disabled={loadingMore}
+                className="text-xs"
+              >
+                {loadingMore ? (
+                  <>
+                    <CircularProgress size={14} className="mr-2" />
+                    Loading...
+                  </>
+                ) : (
+                  '↑ Load older messages'
+                )}
+              </Button>
+            </div>
+          )}
           {isLoadingMessages ? (
             // Skeleton loading placeholders
-            <div className="space-y-3">
+            <div className="space-y-1.5">
               {[1, 2, 3].map((i) => (
-                <div key={i} className="p-3 rounded-lg border border-border-subtle bg-subtle-bg animate-pulse">
-                  <div className="flex items-center gap-2 mb-2">
+                <div key={i} className="p-2.5 rounded-lg border border-border-subtle bg-subtle-bg animate-pulse">
+                  <div className="flex items-center gap-2 mb-1.5">
                     <div className="w-4 h-4 bg-gray-300 rounded"></div>
                     <div className="w-20 h-3 bg-gray-300 rounded"></div>
                     <div className="w-12 h-3 bg-gray-300 rounded"></div>
@@ -283,7 +380,7 @@ export function ProjectChat({ projectId, tokenMint }: ProjectChatProps) {
                   <div className="w-3/4 h-3 bg-gray-300 rounded"></div>
                 </div>
               ))}
-              <div className="text-center py-4">
+              <div className="text-center py-3">
                 <CircularProgress size={24} />
               </div>
             </div>
@@ -300,12 +397,31 @@ export function ProjectChat({ projectId, tokenMint }: ProjectChatProps) {
               return (
                 <div
                   key={msg.id}
-                  className={`p-3 rounded-lg ${tierStyles.border} ${tierStyles.bg} ${
+                  className={`p-2.5 rounded-lg ${tierStyles.border} ${tierStyles.bg} ${
                     msg.pending ? 'opacity-60' : ''
                   }`}
                 >
+                  {/* Reply indicator (if this is a reply) */}
+                  {msg.reply_to_id && (() => {
+                    const repliedToMsg = messages.find(m => m.id === msg.reply_to_id)
+                    if (repliedToMsg) {
+                      return (
+                        <div className="mb-1.5 pl-2 border-l-2 border-purple-400">
+                          <div className="flex items-center gap-1 text-xs text-text-muted mb-0.5">
+                            <ReplyIcon sx={{ fontSize: 10 }} />
+                            <span className="text-[10px]">Replying to {formatAddress(repliedToMsg.wallet_address)}</span>
+                          </div>
+                          <p className="text-xs text-text-muted italic truncate">
+                            {repliedToMsg.message_text}
+                          </p>
+                        </div>
+                      )
+                    }
+                    return null
+                  })()}
+
                   {/* Username and timestamp row */}
-                  <div className="flex items-center justify-between mb-1">
+                  <div className="flex items-center justify-between mb-0.5">
                     <div className={`flex items-center gap-1 md:gap-2 ${tierStyles.text} font-medium text-sm`}>
                       <span className="text-base md:text-lg">{tierDisplay.emoji}</span>
                       <span 
@@ -395,9 +511,31 @@ export function ProjectChat({ projectId, tokenMint }: ProjectChatProps) {
                   </div>
                   
                   {/* Message text */}
-                  <p className="font-body text-sm text-text-primary">
+                  <p className="font-body text-sm text-text-primary mb-1">
                     {msg.message_text}
                   </p>
+
+                  {/* Reply button (for logged-in users) */}
+                  {publicKey && !msg.pending && (
+                    <div className="flex justify-end -mb-1">
+                      <Tooltip title="Reply to this message" arrow placement="top">
+                        <IconButton
+                          size="small"
+                          onClick={() => setReplyingTo(msg)}
+                          sx={{
+                            p: 0.25,
+                            color: '#7C4DFF',
+                            '&:hover': { 
+                              bgcolor: 'rgba(124, 77, 255, 0.1)',
+                            },
+                            transition: 'all 0.2s ease-in-out'
+                          }}
+                        >
+                          <ReplyIcon sx={{ fontSize: 12 }} />
+                        </IconButton>
+                      </Tooltip>
+                    </div>
+                  )}
                 </div>
               )
             })
@@ -419,13 +557,45 @@ export function ProjectChat({ projectId, tokenMint }: ProjectChatProps) {
         {/* Input Area */}
         {publicKey ? (
           <div>
+            {/* Replying To Indicator */}
+            {replyingTo && (
+              <div 
+                className="mb-2 p-2 rounded-lg flex items-start justify-between"
+                style={{ backgroundColor: '#F8F5FF', borderLeft: '3px solid #7C4DFF' }}
+              >
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-1 mb-1">
+                    <ReplyIcon sx={{ fontSize: 14, color: '#7C4DFF' }} />
+                    <span className="text-xs font-medium" style={{ color: '#7C4DFF' }}>
+                      Replying to {formatAddress(replyingTo.wallet_address)}
+                    </span>
+                  </div>
+                  <p className="text-xs text-text-muted truncate">
+                    {replyingTo.message_text}
+                  </p>
+                </div>
+                <IconButton
+                  size="small"
+                  onClick={() => setReplyingTo(null)}
+                  sx={{
+                    ml: 1,
+                    p: 0.5,
+                    color: '#6F7280',
+                    '&:hover': { bgcolor: 'rgba(0,0,0,0.05)' }
+                  }}
+                >
+                  <CloseIcon sx={{ fontSize: 16 }} />
+                </IconButton>
+              </div>
+            )}
+
             <div className="flex gap-2">
               <input
                 type="text"
                 value={newMessage}
                 onChange={(e) => setNewMessage(e.target.value.slice(0, 500))}
                 onKeyPress={(e) => e.key === 'Enter' && !loading && sendMessage()}
-                placeholder="Type your message..."
+                placeholder={replyingTo ? "Type your reply..." : "Type your message..."}
                 className="flex-1 px-4 py-2 border border-border-subtle rounded-lg focus:outline-none focus:ring-2 focus:ring-accent-primary font-body"
                 disabled={loading}
               />

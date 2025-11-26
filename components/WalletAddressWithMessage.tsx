@@ -5,19 +5,22 @@ import { IconButton, Tooltip, CircularProgress, Dialog, Box } from '@mui/materia
 import { 
   Message as MessageIcon,
   Block as BlockIcon,
-  ContentCopy as ContentCopyIcon 
+  ContentCopy as ContentCopyIcon,
+  LocalAtm as LocalAtmIcon
 } from '@mui/icons-material'
 import { useMessaging } from '@/lib/MessagingContext'
 import { canMessageUser } from '@/lib/messaging'
 import { toast } from 'react-hot-toast'
 import { useWallet } from '@solana/wallet-adapter-react'
 import { UserProfileView } from '@/components/UserProfileView'
+import TipModal from '@/components/TipModal'
 
 interface WalletAddressWithMessageProps {
   walletAddress: string
   label?: string
   showFullAddress?: boolean
   projectId?: string
+  tokenMint?: string
   className?: string
 }
 
@@ -26,6 +29,7 @@ export function WalletAddressWithMessage({
   label,
   showFullAddress = false,
   projectId,
+  tokenMint,
   className = ''
 }: WalletAddressWithMessageProps) {
   const { publicKey } = useWallet()
@@ -35,6 +39,7 @@ export function WalletAddressWithMessage({
   const [checking, setChecking] = useState(false)
   const [opening, setOpening] = useState(false)
   const [showProfileView, setShowProfileView] = useState(false)
+  const [showTipModal, setShowTipModal] = useState(false)
   
   const currentWallet = publicKey?.toString()
   const isOwnWallet = currentWallet === walletAddress
@@ -156,6 +161,26 @@ export function WalletAddressWithMessage({
             )}
           </>
         )}
+
+        {/* Tip button (only if not own wallet and wallet connected and tokenMint provided) */}
+        {!isOwnWallet && currentWallet && tokenMint && (
+          <Tooltip title="Send tip" arrow>
+            <IconButton
+              size="small"
+              onClick={() => setShowTipModal(true)}
+              sx={{
+                color: '#36C170',
+                '&:hover': { 
+                  bgcolor: 'rgba(54, 193, 112, 0.1)',
+                  boxShadow: '0 0 8px rgba(54, 193, 112, 0.4)'
+                },
+                transition: 'all 0.2s ease-in-out'
+              }}
+            >
+              <LocalAtmIcon sx={{ fontSize: 16 }} />
+            </IconButton>
+          </Tooltip>
+        )}
       </div>
 
       {/* Profile View Modal */}
@@ -189,6 +214,17 @@ export function WalletAddressWithMessage({
           />
         </Box>
       </Dialog>
+
+      {/* Tip Modal */}
+      {tokenMint && projectId && (
+        <TipModal
+          open={showTipModal}
+          onClose={() => setShowTipModal(false)}
+          recipientWallet={walletAddress}
+          projectId={projectId}
+          tokenMint={tokenMint}
+        />
+      )}
     </>
   )
 }

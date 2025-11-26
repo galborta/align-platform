@@ -28,18 +28,13 @@ interface AddAssetModalProps {
 
 export function AddAssetModal({ projectId, tokenMint, onClose }: AddAssetModalProps) {
   const wallet = useWallet()
-  const [assetType, setAssetType] = useState<'social' | 'creative' | 'legal'>('social')
+  const [assetType, setAssetType] = useState<'social' | 'legal'>('social')
   const [loading, setLoading] = useState(false)
   
   // Social asset fields
   const [platform, setPlatform] = useState('')
   const [handle, setHandle] = useState('')
   const [followerTier, setFollowerTier] = useState('')
-  
-  // Creative asset fields
-  const [creativeName, setCreativeName] = useState('')
-  const [creativeDescription, setCreativeDescription] = useState('')
-  const [mediaUrl, setMediaUrl] = useState('')
   
   // Legal asset fields
   const [legalType, setLegalType] = useState('')
@@ -140,17 +135,6 @@ export function AddAssetModal({ projectId, tokenMint, onClose }: AddAssetModalPr
         }
         
         assetData = { platform, handle: cleanHandle, followerTier }
-      } else if (assetType === 'creative') {
-        const newErrors: Record<string, boolean> = {}
-        if (!creativeName) newErrors.creativeName = true
-        
-        if (Object.keys(newErrors).length > 0) {
-          setErrors(newErrors)
-          toast.error('Please provide an asset name')
-          setLoading(false)
-          return
-        }
-        assetData = { name: creativeName, description: creativeDescription, mediaUrl }
       } else if (assetType === 'legal') {
         const newErrors: Record<string, boolean> = {}
         if (!legalType) newErrors.legalType = true
@@ -206,8 +190,6 @@ export function AddAssetModal({ projectId, tokenMint, onClose }: AddAssetModalPr
       const assetSummary = 
         assetType === 'social' 
           ? `${platform}:${assetData.handle}`
-          : assetType === 'creative'
-          ? creativeName
           : legalName
       
       await supabase
@@ -253,7 +235,6 @@ export function AddAssetModal({ projectId, tokenMint, onClose }: AddAssetModalPr
             label="Asset Type"
           >
             <MenuItem value="social">Social Account</MenuItem>
-            <MenuItem value="creative">Creative Asset</MenuItem>
             <MenuItem value="legal">Legal Asset</MenuItem>
           </Select>
         </FormControl>
@@ -310,41 +291,6 @@ export function AddAssetModal({ projectId, tokenMint, onClose }: AddAssetModalPr
           </>
         )}
         
-        {assetType === 'creative' && (
-          <>
-            <TextField
-              fullWidth
-              label="Asset Name"
-              value={creativeName}
-              onChange={(e) => {
-                setCreativeName(e.target.value)
-                setErrors(prev => ({ ...prev, creativeName: false }))
-              }}
-              error={errors.creativeName}
-              helperText={errors.creativeName ? 'Asset name is required' : ''}
-              sx={{ mb: 3 }}
-            />
-            
-            <TextField
-              fullWidth
-              label="Description"
-              multiline
-              rows={3}
-              value={creativeDescription}
-              onChange={(e) => setCreativeDescription(e.target.value)}
-              sx={{ mb: 3 }}
-            />
-            
-            <TextField
-              fullWidth
-              label="Media URL (optional)"
-              placeholder="https://..."
-              value={mediaUrl}
-              onChange={(e) => setMediaUrl(e.target.value)}
-            />
-          </>
-        )}
-        
         {assetType === 'legal' && (
           <>
             <FormControl fullWidth sx={{ mb: 3 }} error={errors.legalType}>
@@ -376,22 +322,42 @@ export function AddAssetModal({ projectId, tokenMint, onClose }: AddAssetModalPr
               sx={{ mb: 3 }}
             />
             
-            <TextField
-              fullWidth
-              label="Status"
-              placeholder="e.g., Registered, Pending"
-              value={status}
-              onChange={(e) => setStatus(e.target.value)}
-              sx={{ mb: 3 }}
-            />
+            <FormControl fullWidth sx={{ mb: 3 }}>
+              <InputLabel>Status</InputLabel>
+              <Select
+                value={status}
+                onChange={(e) => setStatus(e.target.value)}
+                label="Status"
+              >
+                <MenuItem value="registered">Registered</MenuItem>
+                <MenuItem value="pending">Pending</MenuItem>
+                <MenuItem value="filed">Filed</MenuItem>
+                <MenuItem value="approved">Approved</MenuItem>
+                <MenuItem value="denied">Denied</MenuItem>
+                <MenuItem value="in_progress">In Progress</MenuItem>
+              </Select>
+            </FormControl>
             
-            <TextField
-              fullWidth
-              label="Jurisdiction (optional)"
-              placeholder="e.g., USPTO, EU"
-              value={jurisdiction}
-              onChange={(e) => setJurisdiction(e.target.value)}
-            />
+            <FormControl fullWidth>
+              <InputLabel>Jurisdiction (optional)</InputLabel>
+              <Select
+                value={jurisdiction}
+                onChange={(e) => setJurisdiction(e.target.value)}
+                label="Jurisdiction (optional)"
+              >
+                <MenuItem value="">None</MenuItem>
+                <MenuItem value="us">United States (USPTO)</MenuItem>
+                <MenuItem value="eu">European Union (EUIPO)</MenuItem>
+                <MenuItem value="uk">United Kingdom (UKIPO)</MenuItem>
+                <MenuItem value="ca">Canada (CIPO)</MenuItem>
+                <MenuItem value="au">Australia (IP Australia)</MenuItem>
+                <MenuItem value="jp">Japan (JPO)</MenuItem>
+                <MenuItem value="cn">China (CNIPA)</MenuItem>
+                <MenuItem value="in">India (IP India)</MenuItem>
+                <MenuItem value="wipo">WIPO (International)</MenuItem>
+                <MenuItem value="other">Other</MenuItem>
+              </Select>
+            </FormControl>
           </>
         )}
       </DialogContent>

@@ -178,6 +178,7 @@ export interface Database {
           token_balance: string
           token_percentage: number
           holding_tier: 'mega' | 'whale' | 'holder' | 'small'
+          reply_to_id: string | null
           created_at: string
         }
         Insert: {
@@ -188,6 +189,7 @@ export interface Database {
           token_balance: string
           token_percentage: number
           holding_tier: 'mega' | 'whale' | 'holder' | 'small'
+          reply_to_id?: string | null
           created_at?: string
         }
         Update: {
@@ -198,6 +200,7 @@ export interface Database {
           token_balance?: string
           token_percentage?: number
           holding_tier?: 'mega' | 'whale' | 'holder' | 'small'
+          reply_to_id?: string | null
           created_at?: string
         }
       }

@@ -26,7 +26,7 @@ function checkRateLimit(walletAddress: string): boolean {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
-    const { projectId, walletAddress, messageText, tokenMint } = body
+    const { projectId, walletAddress, messageText, tokenMint, replyToId } = body
 
     // Validation
     if (!projectId || !walletAddress || !messageText || !tokenMint) {
@@ -41,6 +41,23 @@ export async function POST(request: NextRequest) {
         { error: 'Message too long (max 500 characters)' },
         { status: 400 }
       )
+    }
+
+    // Validate reply_to_id if provided
+    if (replyToId) {
+      const { data: replyToMessage, error: replyError } = await supabase
+        .from('chat_messages')
+        .select('id')
+        .eq('id', replyToId)
+        .eq('project_id', projectId)
+        .single()
+
+      if (replyError || !replyToMessage) {
+        return NextResponse.json(
+          { error: 'Invalid reply target' },
+          { status: 400 }
+        )
+      }
     }
 
     // Rate limiting check
@@ -74,16 +91,23 @@ export async function POST(request: NextRequest) {
 
 
     // Insert message to database
+    const insertData: any = {
+      project_id: projectId,
+      wallet_address: walletAddress,
+      message_text: messageText.trim(),
+      token_balance: holderInfo.balance.toString(),
+      token_percentage: holderInfo.percentage,
+      holding_tier: holderInfo.tier
+    }
+
+    // Add reply_to_id if provided
+    if (replyToId) {
+      insertData.reply_to_id = replyToId
+    }
+
     const { data, error } = await supabase
       .from('chat_messages')
-      .insert({
-        project_id: projectId,
-        wallet_address: walletAddress,
-        message_text: messageText.trim(),
-        token_balance: holderInfo.balance.toString(),
-        token_percentage: holderInfo.percentage,
-        holding_tier: holderInfo.tier
-      })
+      .insert(insertData)
       .select()
       .single()
 

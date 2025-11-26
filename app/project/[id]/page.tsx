@@ -574,6 +574,7 @@ export default function ProjectDetailPage() {
                           <WalletAddressWithMessage 
                             walletAddress={holder.owner}
                             projectId={params.id as string}
+                            tokenMint={project.token_mint}
                           />
                         </div>
                         <span className="font-body text-xs font-medium text-text-secondary ml-2 flex-shrink-0">
@@ -612,6 +613,7 @@ export default function ProjectDetailPage() {
                           <WalletAddressWithMessage 
                             walletAddress={wallet.wallet_address}
                             projectId={params.id as string}
+                            tokenMint={project.token_mint}
                           />
                         </div>
                         <a
