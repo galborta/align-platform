@@ -40,3 +40,4 @@ COMMENT ON COLUMN job_failures.failure_type IS 'Type of failure: disputed_lost (
 COMMENT ON COLUMN job_failures.worker_wallet IS 'Wallet address of worker who failed to deliver';
 COMMENT ON COLUMN job_failures.job_id IS 'Reference to the job that was not completed successfully';
 
+

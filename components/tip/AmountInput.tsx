@@ -48,7 +48,7 @@ export default function AmountInput({
     <Box sx={{ mb: 2 }}>
       <TextField
         fullWidth
-        type="number"
+        type="text"
         label="Amount"
         value={value}
         onChange={(e) => {
@@ -62,8 +62,6 @@ export default function AmountInput({
         disabled={disabled || !selectedToken}
         placeholder="0.00"
         inputProps={{
-          min: 0,
-          step: 'any',
           inputMode: 'decimal',
           style: { 
             fontSize: '1.25rem',

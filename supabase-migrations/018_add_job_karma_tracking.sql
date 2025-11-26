@@ -45,3 +45,4 @@ COMMENT ON COLUMN wallet_karma.dispute_votes_cast_count IS 'Total dispute votes 
 COMMENT ON COLUMN wallet_karma.dispute_votes_won_count IS 'Number of dispute votes where user voted with winning side';
 
 
+

@@ -267,3 +267,4 @@ getProfileStats(walletAddress, projectId)
 - Comments are public and visible to all users
 - Supporter badges update automatically based on completed jobs
 
+

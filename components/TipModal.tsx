@@ -19,7 +19,7 @@ import {
   Backdrop
 } from '@mui/material'
 import CloseIcon from '@mui/icons-material/Close'
-import { PublicKey, Transaction } from '@solana/web3.js'
+import { PublicKey, Transaction, SystemProgram, LAMPORTS_PER_SOL } from '@solana/web3.js'
 import { createTransferInstruction, getAssociatedTokenAddress, TOKEN_PROGRAM_ID } from '@solana/spl-token'
 import { supabase } from '@/lib/supabase'
 import toast from 'react-hot-toast'
@@ -459,67 +459,87 @@ export default function TipModal({
       }
 
       setLoadingMessage(TIP_LOADING_MESSAGES.CREATING_TRANSACTION)
-      // Create SPL token transfer transaction
-      const tokenMintPubkey = new PublicKey(selectedToken.mint)
+      
       const recipientPubkey = new PublicKey(recipientWallet)
-
-      // Check if recipient has an Associated Token Account for this token
-      const recipientAtaExists = await checkAtaExists(
-        connection,
-        recipientPubkey,
-        tokenMintPubkey
-      )
-
-      // Initialize transaction
       const transaction = new Transaction()
-
-      // If recipient doesn't have ATA, create it (sender pays rent)
       let ataCreated = false
-      if (!recipientAtaExists) {
-        toast('Creating token account for recipient (~$0.50 one-time cost)...', { 
-          icon: '⚙️',
-          duration: 3000 
-        })
-        
-        const ataInstruction = createAtaInstruction(
-          publicKey,      // Sender pays the rent
+
+      // Check if this is native SOL or SPL token
+      const isNativeSOL = selectedToken.mint === 'So11111111111111111111111111111111111111112'
+
+      if (isNativeSOL) {
+        // Native SOL transfer (simple)
+        const lamports = Math.floor(parseFloat(amount) * LAMPORTS_PER_SOL)
+
+        if (lamports <= 0) {
+          throw new Error('Amount too small')
+        }
+
+        transaction.add(
+          SystemProgram.transfer({
+            fromPubkey: publicKey,
+            toPubkey: recipientPubkey,
+            lamports
+          })
+        )
+      } else {
+        // SPL Token transfer (requires ATA)
+        const tokenMintPubkey = new PublicKey(selectedToken.mint)
+
+        // Check if recipient has an Associated Token Account for this token
+        const recipientAtaExists = await checkAtaExists(
+          connection,
           recipientPubkey,
           tokenMintPubkey
         )
-        transaction.add(ataInstruction)
-        ataCreated = true
-      }
 
-      // Get associated token accounts
-      const fromTokenAccount = await getAssociatedTokenAddress(
-        tokenMintPubkey,
-        publicKey
-      )
+        // If recipient doesn't have ATA, create it (sender pays rent)
+        if (!recipientAtaExists) {
+          toast('Creating token account for recipient (~$0.50 one-time cost)...', { 
+            icon: '⚙️',
+            duration: 3000 
+          })
+          
+          const ataInstruction = createAtaInstruction(
+            publicKey,      // Sender pays the rent
+            recipientPubkey,
+            tokenMintPubkey
+          )
+          transaction.add(ataInstruction)
+          ataCreated = true
+        }
 
-      const toTokenAccount = await getAssociatedTokenAddress(
-        tokenMintPubkey,
-        recipientPubkey
-      )
-
-      // Use token's actual decimals
-      const decimals = selectedToken.decimals
-      const transferAmount = Math.floor(parseFloat(amount) * Math.pow(10, decimals))
-
-      if (transferAmount <= 0) {
-        throw new Error('Amount too small')
-      }
-
-      // Add transfer instruction
-      transaction.add(
-        createTransferInstruction(
-          fromTokenAccount,
-          toTokenAccount,
-          publicKey,
-          transferAmount,
-          [],
-          TOKEN_PROGRAM_ID
+        // Get associated token accounts
+        const fromTokenAccount = await getAssociatedTokenAddress(
+          tokenMintPubkey,
+          publicKey
         )
-      )
+
+        const toTokenAccount = await getAssociatedTokenAddress(
+          tokenMintPubkey,
+          recipientPubkey
+        )
+
+        // Use token's actual decimals
+        const decimals = selectedToken.decimals
+        const transferAmount = Math.floor(parseFloat(amount) * Math.pow(10, decimals))
+
+        if (transferAmount <= 0) {
+          throw new Error('Amount too small')
+        }
+
+        // Add transfer instruction
+        transaction.add(
+          createTransferInstruction(
+            fromTokenAccount,
+            toTokenAccount,
+            publicKey,
+            transferAmount,
+            [],
+            TOKEN_PROGRAM_ID
+          )
+        )
+      }
 
       // Get latest blockhash
       const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash('confirmed')

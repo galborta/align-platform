@@ -50,12 +50,18 @@ export async function GET(request: NextRequest) {
     )
 
     const walletPubkey = new PublicKey(wallet)
+    
+    // 3a. Fetch native SOL balance
+    const solBalance = await connection.getBalance(walletPubkey)
+    const solBalanceUI = solBalance / 1e9 // Convert lamports to SOL
+    
+    // 3b. Fetch SPL token accounts
     const tokenAccounts = await connection.getParsedTokenAccountsByOwner(
       walletPubkey,
       { programId: TOKEN_PROGRAM_ID }
     )
 
-    // 3. Extract token data
+    // 3c. Extract token data
     const tokenDataPromises = tokenAccounts.value
       .map(account => {
         const parsedInfo = account.account.data.parsed.info
@@ -111,7 +117,58 @@ export async function GET(request: NextRequest) {
         }
       })
 
-    const tokensWithMetadata = await Promise.all(tokenDataPromises)
+    const splTokens = await Promise.all(tokenDataPromises)
+
+    // 3d. Add native SOL if balance exists
+    let solToken: TipToken | null = null
+    if (solBalanceUI > 0) {
+      try {
+        // Fetch SOL price from DexScreener (using wrapped SOL mint)
+        const SOL_MINT = 'So11111111111111111111111111111111111111112'
+        const priceRes = await fetch(
+          `https://api.dexscreener.com/latest/dex/tokens/${SOL_MINT}`,
+          { next: { revalidate: 60 } }
+        )
+        const priceData = await priceRes.json()
+
+        let solPrice: number | null = null
+        let solLogoUrl: string | null = null
+
+        if (priceData.pairs && priceData.pairs.length > 0) {
+          const mainPair = priceData.pairs[0]
+          solPrice = parseFloat(mainPair.priceUsd) || null
+          solLogoUrl = mainPair.info?.imageUrl || 'https://raw.githubusercontent.com/solana-labs/token-list/main/assets/mainnet/So11111111111111111111111111111111111111112/logo.png'
+        }
+
+        const solUsdValue = solPrice ? solBalanceUI * solPrice : 0
+
+        solToken = {
+          mint: SOL_MINT,
+          symbol: 'SOL',
+          logoUrl: solLogoUrl,
+          balance: solBalanceUI,
+          decimals: 9,
+          usdValue: solUsdValue,
+          usdPrice: solPrice
+        }
+      } catch (error) {
+        console.error('Error fetching SOL price:', error)
+        // Include SOL even without price
+        solToken = {
+          mint: 'So11111111111111111111111111111111111111112',
+          symbol: 'SOL',
+          logoUrl: 'https://raw.githubusercontent.com/solana-labs/token-list/main/assets/mainnet/So11111111111111111111111111111111111111112/logo.png',
+          balance: solBalanceUI,
+          decimals: 9,
+          usdValue: 0,
+          usdPrice: null
+        }
+      }
+    }
+
+    // 3e. Combine SOL + SPL tokens
+    const allTokens = solToken ? [solToken, ...splTokens] : splTokens
+    const tokensWithMetadata = allTokens
 
     // 4. Filter tokens >= $0.10
     const eligibleTokens = tokensWithMetadata.filter(

@@ -374,6 +374,23 @@ export function JobApplicationModal({
       </DialogTitle>
 
       <DialogContent sx={{ pt: 2 }}>
+        {/* Warning for Assigned Jobs */}
+        {jobStatus === 'assigned' && (
+          <Alert 
+            severity="warning" 
+            sx={{ 
+              mb: 3,
+              backgroundColor: '#FFF4E6',
+              color: '#1A1A1E',
+              '& .MuiAlert-icon': {
+                color: '#FB923C'
+              }
+            }}
+          >
+            <strong>⚠️ Job Already Assigned:</strong> This job currently has a worker. You're applying as a backup. If the current worker doesn't deliver, the poster can reassign the job to you.
+          </Alert>
+        )}
+
         {/* Pitch */}
         <TextField
           label="Your Pitch"
