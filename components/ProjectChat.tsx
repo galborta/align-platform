@@ -663,6 +663,7 @@ export function ProjectChat({ projectId, tokenMint }: ProjectChatProps) {
               walletAddress={selectedProfileWallet}
               currentUserWallet={publicKey?.toString()}
               projectId={projectId}
+              tokenMint={tokenMint}
               onClose={() => {
                 setShowProfileView(false)
                 setSelectedProfileWallet(null)

@@ -209,6 +209,7 @@ export function WalletAddressWithMessage({
             walletAddress={walletAddress}
             currentUserWallet={currentWallet}
             projectId={projectId}
+            tokenMint={tokenMint}
             onClose={() => setShowProfileView(false)}
             onMessage={handleMessage}
           />

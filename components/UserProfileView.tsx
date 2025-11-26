@@ -23,7 +23,8 @@ import {
   Message as MessageIcon,
   Block as BlockIcon,
   Star as StarIcon,
-  CheckCircle as CheckCircleIcon
+  CheckCircle as CheckCircleIcon,
+  LocalAtm as LocalAtmIcon
 } from '@mui/icons-material'
 import { supabase } from '@/lib/supabase'
 import { Database } from '@/types/database'
@@ -34,6 +35,7 @@ import { canViewProfile, canSeeOnlineStatus, getPrivacyLevelInfo } from '@/lib/p
 import { toast } from 'react-hot-toast'
 import { useMessaging } from '@/lib/MessagingContext'
 import { BlockUserModal } from '@/components/BlockUserModal'
+import TipModal from '@/components/TipModal'
 
 type UserProfile = Database['public']['Tables']['user_profiles']['Row']
 type WalletKarma = {
@@ -55,6 +57,7 @@ interface UserProfileViewProps {
   walletAddress: string
   currentUserWallet?: string
   projectId?: string
+  tokenMint?: string
   onClose: () => void
   onMessage: (walletAddress: string) => void
 }
@@ -63,10 +66,12 @@ export function UserProfileView({
   walletAddress,
   currentUserWallet,
   projectId,
+  tokenMint,
   onClose,
   onMessage
 }: UserProfileViewProps) {
   const { openMessages } = useMessaging()
+  const [showTipModal, setShowTipModal] = useState(false)
   const [profile, setProfile] = useState<UserProfile | null>(null)
   const [karma, setKarma] = useState<WalletKarma | null>(null)
   const [topProjects, setTopProjects] = useState<ProjectKarma[]>([])
@@ -951,6 +956,31 @@ export function UserProfileView({
         
         {/* Action Buttons */}
         <div className="mb-6">
+          {/* Tip Button */}
+          {!isOwnProfile && currentUserWallet && projectId && tokenMint && (
+            <Button
+              variant="contained"
+              startIcon={<LocalAtmIcon />}
+              onClick={() => setShowTipModal(true)}
+              fullWidth
+              sx={{
+                bgcolor: '#36C170',
+                mb: 2,
+                '&:hover': { 
+                  bgcolor: '#2EA860',
+                  boxShadow: '0 0 12px rgba(54, 193, 112, 0.5)' // Green glow
+                },
+                textTransform: 'none',
+                fontSize: '16px',
+                py: 1.5,
+                transition: 'all 0.2s ease-in-out',
+                boxShadow: '0 2px 8px rgba(54, 193, 112, 0.3)'
+              }}
+            >
+              Send Tip
+            </Button>
+          )}
+          
           {/* Primary Message CTA */}
           <Tooltip 
             title={
@@ -1109,6 +1139,17 @@ export function UserProfileView({
         userName={displayName}
         walletAddress={walletAddress}
       />
+
+      {/* Tip Modal */}
+      {projectId && tokenMint && (
+        <TipModal
+          open={showTipModal}
+          onClose={() => setShowTipModal(false)}
+          recipientWallet={walletAddress}
+          projectId={projectId}
+          tokenMint={tokenMint}
+        />
+      )}
     </Card>
   )
 }

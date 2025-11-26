@@ -381,6 +381,7 @@ export const WalletAddressWithButtons = memo(function WalletAddressWithButtons({
             walletAddress={address}
             currentUserWallet={currentWallet}
             projectId={projectId}
+            tokenMint={tokenMint}
             onClose={() => setShowProfileModal(false)}
             onMessage={() => setShowProfileModal(false)}
           />
