@@ -48,10 +48,79 @@ export function ActivityFeed({ projectId }: ActivityFeedProps) {
       // const response = await fetch(`/api/feed?projectId=${projectId}`)
       // const data = await response.json()
       
-      // Mock data for now
-      await new Promise(resolve => setTimeout(resolve, 1000))
+      // Mock data for Sprint 1 testing
+      await new Promise(resolve => setTimeout(resolve, 500))
       
-      setFeedItems([])
+      const mockFeedItems: FeedItemType[] = [
+        {
+          id: 'mock-1',
+          type: 'job_posted',
+          timestamp: new Date(Date.now() - 5 * 60 * 1000), // 5 mins ago
+          data: {
+            actorWallet: '7xKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsU',
+            jobId: 'job-1',
+            jobTitle: 'Logo Design',
+            category: 'design'
+          }
+        },
+        {
+          id: 'mock-2',
+          type: 'job_applied',
+          timestamp: new Date(Date.now() - 15 * 60 * 1000), // 15 mins ago
+          data: {
+            actorWallet: '8yKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsV',
+            jobId: 'job-1',
+            jobTitle: 'Logo Design',
+            applicationId: 'app-1'
+          }
+        },
+        {
+          id: 'mock-3',
+          type: 'job_application_upvoted',
+          timestamp: new Date(Date.now() - 30 * 60 * 1000), // 30 mins ago
+          data: {
+            actorWallet: '9zKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsW',
+            voteWeight: 1.2,
+            applicationId: 'app-1',
+            applicantWallet: '8yKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsV',
+            jobId: 'job-1',
+            jobTitle: 'Logo Design'
+          },
+          batchedCount: 3
+        },
+        {
+          id: 'mock-4',
+          type: 'asset_submitted',
+          timestamp: new Date(Date.now() - 60 * 60 * 1000), // 1 hour ago
+          data: {
+            submitterWallet: '7xKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsU',
+            assetType: 'social',
+            assetName: 'Twitter @example'
+          }
+        },
+        {
+          id: 'mock-5',
+          type: 'tip_sent',
+          timestamp: new Date(Date.now() - 2 * 60 * 60 * 1000), // 2 hours ago
+          data: {
+            fromWallet: '7xKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsU',
+            toWallet: '8yKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsV',
+            amountTokens: 1000,
+            tokenSymbol: 'NUBCAT'
+          }
+        },
+        {
+          id: 'mock-6',
+          type: 'karma_milestone',
+          timestamp: new Date(Date.now() - 3 * 60 * 60 * 1000), // 3 hours ago
+          data: {
+            wallet: '9zKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsW',
+            milestone: 1000
+          }
+        }
+      ]
+      
+      setFeedItems(mockFeedItems)
       setHasMore(false)
     } catch (error) {
       console.error('Error loading feed items:', error)

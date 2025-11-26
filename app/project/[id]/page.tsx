@@ -10,8 +10,10 @@ import { ProjectChat } from '@/components/ProjectChat'
 import { AddAssetModal } from '@/components/AddAssetModal'
 import { CurationChatFeed } from '@/components/CurationChatFeed'
 import { KarmaLeaderboard } from '@/components/KarmaLeaderboard'
+import { ActivityFeed } from '@/components/ActivityFeed'
 import { supabase } from '@/lib/supabase'
 import { Database } from '@/types/database'
+import { FeedItem } from '@/types/feed'
 import { useWallet } from '@solana/wallet-adapter-react'
 import VerifiedIcon from '@mui/icons-material/Verified'
 import CheckCircleIcon from '@mui/icons-material/CheckCircle'
@@ -88,6 +90,7 @@ export default function ProjectDetailPage() {
     topHolders: []
   })
   const [statsLoading, setStatsLoading] = useState(false)
+  const [showMockFeed, setShowMockFeed] = useState(true)
 
   useEffect(() => {
     if (params.id) {
@@ -344,8 +347,17 @@ export default function ProjectDetailPage() {
 
         {/* Main Content - Single Page */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* Left Column - Chat + IP Registry */}
+          {/* Left Column - Activity Feed, Chat + IP Registry */}
           <div className="lg:col-span-2 space-y-6">
+            {/* Activity Feed - New */}
+            {project.status === 'live' && showMockFeed && (
+              <Card>
+                <CardContent className="pt-4">
+                  <ActivityFeed projectId={project.id} />
+                </CardContent>
+              </Card>
+            )}
+
             {/* Chat Component - Featured */}
             {project.status === 'live' && (
               <ProjectChat projectId={project.id} tokenMint={project.token_mint} />
