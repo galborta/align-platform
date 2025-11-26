@@ -3,24 +3,30 @@
 import { Box, Typography, LinearProgress } from '@mui/material'
 
 interface KarmaPreviewProps {
-  karmaAmount: number
-  dailyCap: number
-  currentDailyTotal: number
-  usdValue: number
+  karmaAmount?: number
+  dailyCap?: number
+  currentDailyTotal?: number
+  usdValue?: number
 }
 
 export default function KarmaPreview({
-  karmaAmount,
-  dailyCap,
-  currentDailyTotal,
-  usdValue
+  karmaAmount = 0,
+  dailyCap = 5000,
+  currentDailyTotal = 0,
+  usdValue = 0
 }: KarmaPreviewProps) {
-  const projectedTotal = currentDailyTotal + karmaAmount
-  const progressPercent = (currentDailyTotal / dailyCap) * 100
-  const willHitCap = projectedTotal >= dailyCap
+  // Ensure all values are numbers (handle undefined/null)
+  const safeKarmaAmount = Number(karmaAmount) || 0
+  const safeDailyCap = Number(dailyCap) || 5000
+  const safeCurrentTotal = Number(currentDailyTotal) || 0
+  const safeUsdValue = Number(usdValue) || 0
+
+  const projectedTotal = safeCurrentTotal + safeKarmaAmount
+  const progressPercent = (safeCurrentTotal / safeDailyCap) * 100
+  const willHitCap = projectedTotal >= safeDailyCap
   const actualKarmaEarned = willHitCap 
-    ? Math.max(0, dailyCap - currentDailyTotal)
-    : karmaAmount
+    ? Math.max(0, safeDailyCap - safeCurrentTotal)
+    : safeKarmaAmount
 
   // Color based on progress
   let progressColor: 'success' | 'warning' | 'error' = 'success'
@@ -62,7 +68,7 @@ export default function KarmaPreview({
         +{actualKarmaEarned.toFixed(1)} karma
       </Typography>
 
-      {usdValue > 0 && (
+      {safeUsdValue > 0 && (
         <Typography
           variant="caption"
           sx={{
@@ -72,7 +78,7 @@ export default function KarmaPreview({
             mb: 1.5
           }}
         >
-          For ${usdValue.toFixed(2)} tip with your holder tier
+          For ${safeUsdValue.toFixed(2)} tip with your holder tier
         </Typography>
       )}
 
@@ -82,7 +88,7 @@ export default function KarmaPreview({
             Today's Progress
           </Typography>
           <Typography variant="caption" sx={{ fontSize: '11px', fontWeight: 600 }}>
-            {currentDailyTotal.toFixed(0)} / {dailyCap.toFixed(0)}
+            {safeCurrentTotal.toFixed(0)} / {safeDailyCap.toFixed(0)}
           </Typography>
         </Box>
         <LinearProgress
