@@ -20,7 +20,11 @@ import { supabase } from '@/lib/supabase'
 import toast from 'react-hot-toast'
 import { useTipTokens } from '@/lib/hooks/useTipTokens'
 import TokenDropdown from './tip/TokenDropdown'
+import AmountInput from './tip/AmountInput'
+import QuickTipButtons from './tip/QuickTipButtons'
 import { TipToken } from '@/types/database'
+import { checkAtaExists, createAtaInstruction } from '@/lib/solana/ata-utils'
+import { validateTipTransaction } from '@/lib/solana/transaction-validation'
 
 interface TipModalProps {
   open: boolean
@@ -42,8 +46,15 @@ export default function TipModal({
   const [amount, setAmount] = useState('')
   const [message, setMessage] = useState('')
   const [loading, setLoading] = useState(false)
+  const [loadingMessage, setLoadingMessage] = useState<string>('Sending...')
   const [error, setError] = useState<string | null>(null)
+  const [amountError, setAmountError] = useState<string | null>(null)
   const [selectedToken, setSelectedToken] = useState<TipToken | null>(null)
+  const [retryCount, setRetryCount] = useState(0)
+  const [txSignature, setTxSignature] = useState<string | null>(null)
+  const [confirmationTimeout, setConfirmationTimeout] = useState(false)
+
+  const CONFIRMATION_TIMEOUT = 60000 // 60 seconds
 
   // Fetch available tokens
   const { data: tokenData, isLoading: loadingTokens, error: tokenError, refetch: refetchTokens } = useTipTokens(
@@ -58,13 +69,137 @@ export default function TipModal({
     }
   }, [tokenData, selectedToken])
 
+  // Validation function
+  function validateAmount(): string | null {
+    if (!amount || amount === '0' || parseFloat(amount) <= 0) {
+      return 'Please enter an amount greater than 0'
+    }
+
+    if (!selectedToken) {
+      return 'Please select a token'
+    }
+
+    const amountNum = parseFloat(amount)
+    if (isNaN(amountNum)) {
+      return 'Invalid amount'
+    }
+
+    if (amountNum > selectedToken.balance) {
+      return `Insufficient balance. You have ${selectedToken.balance.toFixed(4)} ${selectedToken.symbol}`
+    }
+
+    return null
+  }
+
+  // Validate amount on change
+  useEffect(() => {
+    if (amount) {
+      const error = validateAmount()
+      setAmountError(error)
+    } else {
+      setAmountError(null)
+    }
+  }, [amount, selectedToken])
+
+  // Calculate USD value
+  const calculateUsdValue = () => {
+    if (!selectedToken?.usdPrice || !amount) return 0
+    return parseFloat(amount) * selectedToken.usdPrice
+  }
+
+  // Handle quick tip (preset USD amounts)
+  const handleQuickTip = (usdAmount: number) => {
+    if (!selectedToken?.usdPrice) return
+
+    const tokenAmount = usdAmount / selectedToken.usdPrice
+    // Round to token decimals
+    const rounded = Math.floor(tokenAmount * Math.pow(10, selectedToken.decimals)) / Math.pow(10, selectedToken.decimals)
+    setAmount(rounded.toString())
+  }
+
+  // Handle max amount
+  const handleMaxAmount = () => {
+    if (selectedToken) {
+      setAmount(selectedToken.balance.toString())
+    }
+  }
+
   const handleClose = () => {
     if (!loading) {
       setAmount('')
       setMessage('')
       setError(null)
+      setAmountError(null)
       setSelectedToken(null)
+      setRetryCount(0)
+      setTxSignature(null)
+      setLoadingMessage('Sending...')
+      setConfirmationTimeout(false)
       onClose()
+    }
+  }
+
+  // Wait for transaction confirmation with timeout and progress
+  async function waitForConfirmation(
+    signature: string, 
+    blockhash: string, 
+    lastValidBlockHeight: number
+  ) {
+    const startTime = Date.now()
+    let toastId: string | undefined
+    
+    const interval = setInterval(() => {
+      const elapsed = Math.floor((Date.now() - startTime) / 1000)
+      toastId = toast.loading(`Confirming transaction... (${elapsed}s)`, { id: 'confirm-toast' })
+    }, 1000)
+
+    try {
+      const confirmation = await Promise.race([
+        connection.confirmTransaction({
+          signature,
+          blockhash,
+          lastValidBlockHeight
+        }, 'confirmed'),
+        new Promise<never>((_, reject) => 
+          setTimeout(() => reject(new Error('Confirmation timeout')), CONFIRMATION_TIMEOUT)
+        )
+      ])
+
+      clearInterval(interval)
+      toast.dismiss('confirm-toast')
+      return confirmation
+    } catch (error) {
+      clearInterval(interval)
+      toast.dismiss('confirm-toast')
+      throw error
+    }
+  }
+
+  // Check transaction status manually
+  async function checkTransactionStatus() {
+    if (!txSignature) return
+
+    setLoading(true)
+    setLoadingMessage('Checking status...')
+
+    try {
+      const status = await connection.getSignatureStatus(txSignature)
+      
+      if (status.value?.confirmationStatus === 'confirmed' || 
+          status.value?.confirmationStatus === 'finalized') {
+        toast.success('Transaction confirmed!', { icon: '✅' })
+        setConfirmationTimeout(false)
+        handleClose()
+      } else if (status.value?.err) {
+        toast.error('Transaction failed')
+        setError('Transaction failed on-chain')
+      } else {
+        toast('Transaction is still pending...', { icon: '⏳' })
+      }
+    } catch (error) {
+      toast.error('Could not check transaction status')
+    } finally {
+      setLoading(false)
     }
   }
 
@@ -74,29 +209,85 @@ export default function TipModal({
       return
     }
 
+    // Check for self-tipping
+    if (recipientWallet === publicKey.toString()) {
+      toast.error('You cannot tip yourself')
+      return
+    }
+
+    // Run comprehensive validation
+    const validationError = validateAmount()
+    if (validationError) {
+      setAmountError(validationError)
+      return
+    }
+
     if (!selectedToken) {
       setError('Please select a token')
       return
     }
 
-    if (!amount || parseFloat(amount) <= 0) {
-      setError('Please enter a valid amount greater than 0')
-      return
-    }
-
-    // Validate sufficient balance
-    if (parseFloat(amount) > selectedToken.balance) {
-      setError(`Insufficient balance. You have ${selectedToken.balance} ${selectedToken.symbol}`)
+    // Check retry limit
+    if (retryCount >= 3) {
+      toast.error('Maximum retry attempts reached. Please try again later.')
       return
     }
 
     setLoading(true)
     setError(null)
+    setAmountError(null)
+    setLoadingMessage('Validating...')
 
     try {
+      // Pre-flight validation
+      const validation = await validateTipTransaction(
+        connection,
+        publicKey,
+        recipientWallet,
+        selectedToken.mint,
+        parseFloat(amount),
+        selectedToken.decimals
+      )
+
+      if (!validation.valid) {
+        setError(validation.error || 'Validation failed')
+        toast.error(validation.error || 'Validation failed')
+        setLoading(false)
+        setRetryCount(prev => prev + 1)
+        return
+      }
+
+      setLoadingMessage('Creating transaction...')
       // Create SPL token transfer transaction
       const tokenMintPubkey = new PublicKey(selectedToken.mint)
       const recipientPubkey = new PublicKey(recipientWallet)
+
+      // Check if recipient has an Associated Token Account for this token
+      const recipientAtaExists = await checkAtaExists(
+        connection,
+        recipientPubkey,
+        tokenMintPubkey
+      )
+
+      // Initialize transaction
+      const transaction = new Transaction()
+
+      // If recipient doesn't have ATA, create it (sender pays rent)
+      let ataCreated = false
+      if (!recipientAtaExists) {
+        toast('Creating token account for recipient (~$0.50 one-time cost)...', { 
+          icon: '⚙️',
+          duration: 3000 
+        })
+        
+        const ataInstruction = createAtaInstruction(
+          publicKey,      // Sender pays the rent
+          recipientPubkey,
+          tokenMintPubkey
+        )
+        transaction.add(ataInstruction)
+        ataCreated = true
+      }
 
       // Get associated token accounts
       const fromTokenAccount = await getAssociatedTokenAddress(
@@ -117,8 +308,8 @@ export default function TipModal({
         throw new Error('Amount too small')
       }
 
-      // Create transfer instruction
-      const transaction = new Transaction().add(
+      // Add transfer instruction
+      transaction.add(
         createTransferInstruction(
           fromTokenAccount,
           toTokenAccount,
@@ -130,18 +321,37 @@ export default function TipModal({
       )
 
       // Get latest blockhash
-      const { blockhash } = await connection.getLatestBlockhash()
+      const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash('confirmed')
       transaction.recentBlockhash = blockhash
       transaction.feePayer = publicKey
 
+      setLoadingMessage('Awaiting signature...')
+
       // Send transaction
       const signature = await sendTransaction(transaction, connection)
+      setTxSignature(signature)
+
+      setLoadingMessage('Confirming...')
       
-      // Wait for confirmation
-      const confirmation = await connection.confirmTransaction(signature, 'confirmed')
-      
-      if (confirmation.value.err) {
-        throw new Error('Transaction failed')
+      // Wait for confirmation with timeout
+      try {
+        const confirmation = await waitForConfirmation(signature, blockhash, lastValidBlockHeight)
+        
+        if (confirmation.value.err) {
+          throw new Error('Transaction failed')
+        }
+      } catch (confirmError: any) {
+        // If confirmation times out, store signature but warn user
+        if (confirmError.message?.includes('timeout')) {
+          setConfirmationTimeout(true)
+          toast.error(
+            'Transaction confirmation timed out. Transaction may still succeed. Check status below.',
+            { duration: 8000 }
+          )
+          setLoading(false)
+          return // Exit early, keep modal open
+        }
+        throw confirmError // Re-throw other errors
       }
 
       // Calculate USD value
@@ -168,33 +378,60 @@ export default function TipModal({
       if (dbError) {
         console.error('Database error:', dbError)
         // Don't fail if DB insert fails - transaction already succeeded
-        toast.success(`🎁 Sent ${amount} ${selectedToken.symbol}! (${signature.slice(0, 8)}...)`, {
-          duration: 5000
-        })
+        const ataText = ataCreated ? ' (+ token account created)' : ''
+        toast.success(
+          `🎁 Sent ${amount} ${selectedToken.symbol}${ataText}! View on Solscan`,
+          {
+            duration: 8000,
+            onClick: () => window.open(`https://solscan.io/tx/${signature}?cluster=devnet`, '_blank')
+          }
+        )
       } else {
         const usdText = usdValue ? ` ($${usdValue.toFixed(2)})` : ''
-        toast.success(`🎁 Sent ${amount} ${selectedToken.symbol}${usdText} to ${recipientWallet.slice(0, 4)}...${recipientWallet.slice(-4)}!`, {
-          duration: 5000,
-          icon: '💰'
-        })
+        const ataText = ataCreated ? ' + token account created' : ''
+        toast.success(
+          `🎁 Sent ${amount} ${selectedToken.symbol}${usdText} to ${recipientWallet.slice(0, 4)}...${recipientWallet.slice(-4)}!${ataText}`,
+          {
+            duration: 8000,
+            icon: '💰',
+            onClick: () => window.open(`https://solscan.io/tx/${signature}?cluster=devnet`, '_blank')
+          }
+        )
       }
 
+      // Reset retry count on success
+      setRetryCount(0)
       handleClose()
     } catch (error: any) {
       console.error('Tip error:', error)
       
       // Provide user-friendly error messages
-      if (error.message?.includes('insufficient funds') || error.message?.includes('0x1')) {
-        setError('Insufficient token balance')
-      } else if (error.message?.includes('User rejected')) {
-        setError('Transaction cancelled')
-      } else if (error.message?.includes('Account does not exist')) {
-        setError('Recipient does not have a token account for this token')
+      let errorMessage = 'Failed to send tip. Please try again.'
+      
+      if (error.message?.includes('User rejected') || error.message?.includes('User denied')) {
+        errorMessage = 'Transaction cancelled'
+        toast.error(errorMessage)
+      } else if (error.message?.includes('insufficient funds') || error.message?.includes('0x1')) {
+        errorMessage = 'Insufficient SOL for transaction fee (~0.001 SOL needed)'
+        toast.error(errorMessage)
+      } else if (error.message?.includes('0x0')) {
+        errorMessage = 'Insufficient token balance'
+        toast.error(errorMessage)
+      } else if (error.message?.includes('timeout') || error.message?.includes('timed out')) {
+        errorMessage = 'Transaction timed out. It may still succeed - check your wallet.'
+        toast.error(errorMessage, { duration: 6000 })
+      } else if (error.message?.includes('blockhash not found')) {
+        errorMessage = 'Network error. Please try again.'
+        toast.error(errorMessage)
       } else {
-        setError(error.message || 'Failed to send tip. Please try again.')
+        toast.error(errorMessage)
       }
+      
+      setError(errorMessage)
+      setRetryCount(prev => prev + 1)
     } finally {
       setLoading(false)
+      setLoadingMessage('Sending...')
     }
   }
 
@@ -293,6 +530,34 @@ export default function TipModal({
           </Alert>
         )}
 
+        {/* Confirmation Timeout Alert */}
+        {confirmationTimeout && txSignature && (
+          <Alert 
+            severity="warning" 
+            sx={{ mb: 2 }}
+            action={
+              <Button 
+                color="inherit" 
+                size="small" 
+                onClick={checkTransactionStatus}
+                disabled={loading}
+              >
+                Check Status
+              </Button>
+            }
+          >
+            Transaction sent but confirmation timed out. <br />
+            <a 
+              href={`https://solscan.io/tx/${txSignature}?cluster=devnet`}
+              target="_blank"
+              rel="noopener noreferrer"
+              style={{ textDecoration: 'underline', color: 'inherit' }}
+            >
+              View on Solscan
+            </a>
+          </Alert>
+        )}
+
         {/* Token Dropdown */}
         {loadingTokens ? (
           <Box sx={{ mb: 2 }}>
@@ -314,37 +579,23 @@ export default function TipModal({
           />
         )}
 
+        {/* Quick Tip Buttons */}
+        <QuickTipButtons
+          amounts={[1, 5, 10, 25, 50]}
+          onSelect={handleQuickTip}
+          disabled={loading}
+          selectedToken={selectedToken}
+        />
+
         {/* Amount Input */}
-        <TextField
-          fullWidth
-          type="number"
-          label={selectedToken ? `Amount (${selectedToken.symbol})` : "Amount"}
+        <AmountInput
           value={amount}
-          onChange={(e) => {
-            const value = e.target.value
-            // Only allow positive numbers with up to 9 decimals
-            if (value === '' || /^\d*\.?\d{0,9}$/.test(value)) {
-              setAmount(value)
-            }
-          }}
-          sx={{ mb: 2 }}
-          placeholder="10"
-          disabled={loading || !selectedToken}
-          inputProps={{
-            min: 0,
-            step: 0.1,
-            max: selectedToken?.balance
-          }}
-          helperText={
-            selectedToken 
-              ? `Balance: ${selectedToken.balance.toLocaleString()} ${selectedToken.symbol}${
-                  selectedToken.usdPrice && amount 
-                    ? ` ≈ $${(parseFloat(amount) * selectedToken.usdPrice).toFixed(2)}`
-                    : ''
-                }`
-              : 'Select a token first'
-          }
-          error={selectedToken && parseFloat(amount) > selectedToken.balance}
+          onChange={setAmount}
+          error={amountError}
+          usdValue={calculateUsdValue()}
+          selectedToken={selectedToken}
+          onMax={handleMaxAmount}
+          disabled={loading}
         />
 
         {/* Message Input */}
@@ -404,8 +655,8 @@ export default function TipModal({
               loadingTokens || 
               !selectedToken || 
               !amount || 
-              parseFloat(amount) <= 0 ||
-              parseFloat(amount) > (selectedToken?.balance || 0)
+              !!amountError ||
+              retryCount >= 3
             }
             sx={{ 
               bgcolor: '#7C4DFF',
@@ -425,8 +676,12 @@ export default function TipModal({
             {loading ? (
               <>
                 <CircularProgress size={16} sx={{ mr: 1, color: '#fff' }} />
-                Sending...
+                {loadingMessage}
               </>
+            ) : retryCount > 0 && retryCount < 3 ? (
+              `Retry (${retryCount}/3)`
+            ) : retryCount >= 3 ? (
+              'Max Retries Reached'
             ) : (
               'Send Tip'
             )}
