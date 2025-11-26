@@ -477,8 +477,14 @@ export const FeedItem = memo(function FeedItem({
       return
     }
     
-    // Don't navigate if clicking on a button or link inside the item
-    if (target.tagName === 'BUTTON' || target.tagName === 'A' || target.closest('button') || target.closest('a')) {
+    // Don't navigate if clicking on a button, link, or wallet address inside the item
+    if (
+      target.tagName === 'BUTTON' || 
+      target.tagName === 'A' || 
+      target.closest('button') || 
+      target.closest('a') ||
+      target.closest('.wallet-address-buttons')
+    ) {
       return
     }
 
