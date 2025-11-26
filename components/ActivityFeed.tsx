@@ -477,6 +477,7 @@ export function ActivityFeed({ projectId }: ActivityFeedProps) {
             <FeedItem 
               key={item.id} 
               item={item}
+              projectId={projectId}
               onClickBatched={handleBatchedItemClick}
             />
           ))}

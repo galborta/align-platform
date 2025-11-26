@@ -1,5 +1,7 @@
 'use client'
 
+import { useCallback } from 'react'
+import { useRouter } from 'next/navigation'
 import { Box, Typography, Chip } from '@mui/material'
 import {
   Work as WorkIcon,
@@ -19,9 +21,11 @@ import {
 } from '@mui/icons-material'
 import { FeedItem as FeedItemType, ActivityType } from '@/types/feed'
 import { isFreshItem } from '@/lib/feed-utils'
+import { getDeepLink, buildUrlWithHash, scrollToElement } from '@/lib/feed-navigation'
 
 interface FeedItemProps {
   item: FeedItemType
+  projectId: string
   onClickBatched?: (item: FeedItemType) => void
 }
 
@@ -81,100 +85,100 @@ function getActivityContent(item: FeedItemType): React.ReactNode {
     case 'job_posted':
       return (
         <>
-          <strong>{truncateAddress(data.actorWallet)}</strong> posted job: {data.jobTitle}
+          <strong>{truncateAddress(data.actorWallet)}</strong> posted job: <span className="feed-item-link">{data.jobTitle}</span>
         </>
       )
     case 'job_applied':
       return (
         <>
-          <strong>{truncateAddress(data.actorWallet)}</strong> applied to {data.jobTitle}
+          <strong>{truncateAddress(data.actorWallet)}</strong> applied to <span className="feed-item-link">{data.jobTitle}</span>
         </>
       )
     case 'job_application_upvoted':
       if (batchedCount && batchedCount > 1) {
         return (
           <>
-            <strong>{batchedCount} holders</strong> upvoted <strong>{truncateAddress(data.applicantWallet)}</strong>'s application
+            <strong>{batchedCount} holders</strong> upvoted <strong>{truncateAddress(data.applicantWallet)}</strong>'s application for <span className="feed-item-link">{data.jobTitle}</span>
           </>
         )
       }
       return (
         <>
-          <strong>{truncateAddress(data.actorWallet)}</strong> upvoted <strong>{truncateAddress(data.applicantWallet)}</strong>'s application
+          <strong>{truncateAddress(data.actorWallet)}</strong> upvoted <strong>{truncateAddress(data.applicantWallet)}</strong>'s application for <span className="feed-item-link">{data.jobTitle}</span>
         </>
       )
     case 'job_assigned':
       return (
         <>
-          {data.jobTitle} assigned to <strong>{truncateAddress(data.assignedTo)}</strong>
+          <span className="feed-item-link">{data.jobTitle}</span> assigned to <strong>{truncateAddress(data.assignedTo)}</strong>
         </>
       )
     case 'job_submitted':
       return (
         <>
-          <strong>{truncateAddress(data.actorWallet)}</strong> submitted work for {data.jobTitle}
+          <strong>{truncateAddress(data.actorWallet)}</strong> submitted work for <span className="feed-item-link">{data.jobTitle}</span>
         </>
       )
     case 'job_completed':
       return (
         <>
-          {data.jobTitle} completed by <strong>{truncateAddress(data.actorWallet)}</strong> 🎉
+          <span className="feed-item-link">{data.jobTitle}</span> completed by <strong>{truncateAddress(data.actorWallet)}</strong> 🎉
         </>
       )
     case 'job_disputed':
       return (
         <>
-          Dispute opened for {data.jobTitle}
+          Dispute opened for <span className="feed-item-link">{data.jobTitle}</span>
         </>
       )
     case 'job_comment':
       if (batchedCount && batchedCount > 1) {
         return (
           <>
-            <strong>{batchedCount} comments</strong> on {data.jobTitle}
+            <strong>{batchedCount} comments</strong> on <span className="feed-item-link">{data.jobTitle}</span>
           </>
         )
       }
       return (
         <>
-          <strong>{truncateAddress(data.actorWallet)}</strong> commented on {data.jobTitle}
+          <strong>{truncateAddress(data.actorWallet)}</strong> commented on <span className="feed-item-link">{data.jobTitle}</span>
         </>
       )
     case 'asset_submitted':
       return (
         <>
-          <strong>{truncateAddress(data.submitterWallet)}</strong> submitted {data.assetType} asset
+          <strong>{truncateAddress(data.submitterWallet)}</strong> submitted <span className="feed-item-link">{data.assetType} asset</span>
         </>
       )
     case 'asset_upvoted':
       if (batchedCount && batchedCount > 1) {
         return (
           <>
-            <strong>{batchedCount} holders</strong> upvoted {data.assetType} asset
+            <strong>{batchedCount} holders</strong> upvoted <span className="feed-item-link">{data.assetType} asset</span>
           </>
         )
       }
       return (
         <>
-          <strong>{truncateAddress(data.voterWallet)}</strong> upvoted {data.assetType} asset
+          <strong>{truncateAddress(data.voterWallet)}</strong> upvoted <span className="feed-item-link">{data.assetType} asset</span>
         </>
       )
     case 'asset_backed':
       return (
         <>
-          {data.assetType} asset reached <strong>backing threshold</strong>
+          <span className="feed-item-link">{data.assetType} asset</span> reached <strong>backing threshold</strong>
         </>
       )
     case 'asset_verified':
       return (
         <>
-          {data.assetType} asset <strong>verified</strong> ✓
+          <span className="feed-item-link">{data.assetType} asset</span> <strong>verified</strong> ✓
         </>
       )
     case 'asset_hidden':
       return (
         <>
-          {data.assetType} asset hidden
+          <span className="feed-item-link">{data.assetType} asset</span> hidden
         </>
       )
     case 'tip_sent':
@@ -247,6 +251,7 @@ function formatNumber(num: number): string {
  * - Batched activity support (show count)
  * - Fade-in animation on mount
  * - Hover effects for interactivity
+ * - Deep linking navigation to source content
  * 
  * @example
  * ```tsx
@@ -257,21 +262,60 @@ function formatNumber(num: number): string {
  *     timestamp: new Date(),
  *     data: { actorWallet: '...', jobTitle: 'Designer Needed' }
  *   }}
+ *   projectId="project-uuid-456"
  * />
  * ```
  */
-export function FeedItem({ item, onClickBatched }: FeedItemProps) {
+export function FeedItem({ item, projectId, onClickBatched }: FeedItemProps) {
+  const router = useRouter()
   const iconColor = getIconColor(item.type)
   const iconBgColor = getIconBgColor(item.type)
+
+  // Click handler with deep linking navigation
+  const handleItemClick = useCallback((e: React.MouseEvent) => {
+    // Don't navigate if clicking on a button or link inside the item
+    const target = e.target as HTMLElement
+    if (target.tagName === 'BUTTON' || target.tagName === 'A' || target.closest('button') || target.closest('a')) {
+      return
+    }
+
+    // Handle batched items (opens modal)
+    if (item.batchedCount && item.batchedCount > 1 && onClickBatched) {
+      onClickBatched(item)
+      return
+    }
+
+    // Get deep link for this activity type
+    const deepLink = getDeepLink(item, projectId)
+
+    if (!deepLink) {
+      // No navigation configured for this type
+      console.log('No deep link for item:', item.type)
+      return
+    }
+
+    const fullUrl = buildUrlWithHash(deepLink.url, deepLink.scrollTo)
+
+    if (deepLink.openInNewTab) {
+      window.open(fullUrl, '_blank', 'noopener,noreferrer')
+    } else {
+      router.push(fullUrl)
+
+      // Scroll to element after navigation (if hash present)
+      if (deepLink.scrollTo) {
+        scrollToElement(deepLink.scrollTo, 500)
+      }
+    }
+  }, [item, projectId, router, onClickBatched])
+
+  // Check if item is navigable (for cursor and hover styles)
+  const deepLink = getDeepLink(item, projectId)
+  const isNavigable = deepLink !== null || (item.batchedCount && item.batchedCount > 1)
 
   return (
     <Box 
       className="feed-item"
-      onClick={() => {
-        if (item.batchedCount && item.batchedCount > 1 && onClickBatched) {
-          onClickBatched(item)
-        }
-      }}
+      onClick={handleItemClick}
       sx={{
         display: 'flex',
         gap: 2,
@@ -281,13 +325,16 @@ export function FeedItem({ item, onClickBatched }: FeedItemProps) {
         borderColor: 'divider',
         bgcolor: 'background.paper',
         transition: 'all 0.2s ease',
-        cursor: item.batchedCount && item.batchedCount > 1 ? 'pointer' : 'default',
+        cursor: isNavigable ? 'pointer' : 'default',
         animation: 'fadeInSlide 0.4s cubic-bezier(0.4, 0, 0.2, 1)',
         '&:hover': {
-          borderColor: iconColor,
-          bgcolor: 'action.hover',
-          transform: 'translateY(-2px)',
-          boxShadow: 1
+          borderColor: isNavigable ? iconColor : 'divider',
+          bgcolor: isNavigable ? 'action.hover' : 'background.paper',
+          transform: isNavigable ? 'translateY(-2px)' : 'none',
+          boxShadow: isNavigable ? 1 : 0,
+          '& .feed-item-link': {
+            textDecoration: isNavigable ? 'underline' : 'none'
+          }
         },
         '@keyframes fadeInSlide': {
           '0%': { 

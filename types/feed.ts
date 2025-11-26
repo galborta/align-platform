@@ -53,6 +53,7 @@ export interface ActivityFeedProps {
  */
 export interface FeedItemProps {
   item: FeedItem
+  projectId: string
   onClickBatched?: (item: FeedItem) => void
 }
 
