@@ -22,3 +22,4 @@ COMMENT ON POLICY "Token holders can insert comments" ON job_comments IS
   'Only users who hold project tokens (balance > 0) can post comments on jobs';
 
 
+

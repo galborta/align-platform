@@ -183,3 +183,4 @@ BEGIN
   RAISE NOTICE 'Migration completed successfully! Enhanced Tip System is ready.';
 END $$;
 
+

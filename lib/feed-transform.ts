@@ -468,3 +468,284 @@ export function getActivityCounts(items: FeedItem[]): Record<ActivityType, numbe
   return counts as Record<ActivityType, number>
 }
 
+/**
+ * Transform single subscription event into FeedItem(s)
+ * 
+ * Used by real-time subscription manager to convert individual
+ * database events into feed items.
+ * 
+ * @param event - Event from subscription manager
+ * @returns Array of FeedItems (some events create multiple items)
+ * 
+ * @example
+ * ```typescript
+ * const items = transformSubscriptionEvent({
+ *   type: 'job_posted',
+ *   table: 'jobs',
+ *   data: jobRecord
+ * })
+ * ```
+ */
+export function transformSubscriptionEvent(event: {
+  type: string
+  table: string
+  data: any
+}): FeedItem[] {
+  const items: FeedItem[] = []
+
+  try {
+    switch (event.type) {
+      case 'job_posted': {
+        const job = event.data
+        items.push({
+          id: `job_posted_${job.id}`,
+          type: 'job_posted',
+          timestamp: new Date(job.created_at),
+          data: {
+            actorWallet: job.poster_wallet,
+            jobId: job.id,
+            jobTitle: job.title,
+            category: job.category
+          }
+        })
+        break
+      }
+
+      case 'job_assigned': {
+        const job = event.data
+        items.push({
+          id: `job_assigned_${job.id}`,
+          type: 'job_assigned',
+          timestamp: new Date(job.assigned_at || job.updated_at),
+          data: {
+            jobId: job.id,
+            jobTitle: job.title,
+            assignedTo: job.assigned_to
+          }
+        })
+        break
+      }
+
+      case 'job_completed': {
+        const job = event.data
+        items.push({
+          id: `job_completed_${job.id}`,
+          type: 'job_completed',
+          timestamp: new Date(job.completed_at || job.updated_at),
+          data: {
+            actorWallet: job.assigned_to || job.poster_wallet,
+            jobId: job.id,
+            jobTitle: job.title
+          }
+        })
+        break
+      }
+
+      case 'job_applied': {
+        const app = event.data
+        if (!app.job) break
+        items.push({
+          id: `job_applied_${app.id}`,
+          type: 'job_applied',
+          timestamp: new Date(app.created_at),
+          data: {
+            actorWallet: app.applicant_wallet,
+            jobId: app.job.id,
+            jobTitle: app.job.title,
+            applicationId: app.id
+          }
+        })
+        break
+      }
+
+      case 'job_application_upvoted': {
+        const vote = event.data
+        if (!vote.application?.job) break
+        items.push({
+          id: `app_vote_${vote.id}`,
+          type: 'job_application_upvoted',
+          timestamp: new Date(vote.created_at),
+          data: {
+            actorWallet: vote.voter_wallet,
+            voteWeight: vote.vote_weight,
+            applicationId: vote.application.id,
+            applicantWallet: vote.application.applicant_wallet,
+            jobId: vote.application.job.id,
+            jobTitle: vote.application.job.title
+          }
+        })
+        break
+      }
+
+      case 'job_comment': {
+        const comment = event.data
+        if (!comment.job) break
+        items.push({
+          id: `comment_${comment.id}`,
+          type: 'job_comment',
+          timestamp: new Date(comment.created_at),
+          data: {
+            actorWallet: comment.wallet_address,
+            message: comment.message,
+            jobId: comment.job.id,
+            jobTitle: comment.job.title
+          }
+        })
+        break
+      }
+
+      case 'job_submitted': {
+        const sub = event.data
+        if (!sub.job) break
+        items.push({
+          id: `job_submitted_${sub.id}`,
+          type: 'job_submitted',
+          timestamp: new Date(sub.submitted_at),
+          data: {
+            actorWallet: sub.worker_wallet,
+            jobId: sub.job.id,
+            jobTitle: sub.job.title
+          }
+        })
+        break
+      }
+
+      case 'job_disputed': {
+        const dispute = event.data
+        if (!dispute.job) break
+        items.push({
+          id: `job_disputed_${dispute.id}`,
+          type: 'job_disputed',
+          timestamp: new Date(dispute.created_at),
+          data: {
+            openedBy: dispute.opened_by,
+            jobId: dispute.job.id,
+            jobTitle: dispute.job.title,
+            posterWallet: dispute.job.poster_wallet,
+            workerWallet: dispute.job.assigned_to
+          }
+        })
+        break
+      }
+
+      case 'asset_submitted': {
+        const asset = event.data
+        items.push({
+          id: `asset_submitted_${asset.id}`,
+          type: 'asset_submitted',
+          timestamp: new Date(asset.created_at),
+          data: {
+            submitterWallet: asset.submitter_wallet,
+            assetType: asset.asset_type,
+            assetId: asset.id,
+            assetName: extractAssetName(asset)
+          }
+        })
+        break
+      }
+
+      case 'asset_backed': {
+        const asset = event.data
+        items.push({
+          id: `asset_backed_${asset.id}`,
+          type: 'asset_backed',
+          timestamp: new Date(asset.updated_at || asset.created_at),
+          data: {
+            assetType: asset.asset_type,
+            assetId: asset.id,
+            assetName: extractAssetName(asset)
+          }
+        })
+        break
+      }
+
+      case 'asset_verified': {
+        const asset = event.data
+        items.push({
+          id: `asset_verified_${asset.id}`,
+          type: 'asset_verified',
+          timestamp: new Date(asset.verified_at || asset.updated_at),
+          data: {
+            assetType: asset.asset_type,
+            assetId: asset.id,
+            assetName: extractAssetName(asset)
+          }
+        })
+        break
+      }
+
+      case 'asset_hidden': {
+        const asset = event.data
+        items.push({
+          id: `asset_hidden_${asset.id}`,
+          type: 'asset_hidden',
+          timestamp: new Date(asset.hidden_at || asset.updated_at),
+          data: {
+            assetType: asset.asset_type,
+            assetId: asset.id,
+            assetName: extractAssetName(asset)
+          }
+        })
+        break
+      }
+
+      case 'asset_upvoted': {
+        const vote = event.data
+        if (!vote.asset) break
+        items.push({
+          id: `asset_vote_${vote.id}`,
+          type: 'asset_upvoted',
+          timestamp: new Date(vote.created_at),
+          data: {
+            voterWallet: vote.voter_wallet,
+            voteWeight: vote.token_percentage_snapshot,
+            assetId: vote.asset.id,
+            assetType: vote.asset.asset_type,
+            assetName: extractAssetName(vote.asset)
+          }
+        })
+        break
+      }
+
+      case 'tip_sent': {
+        const tip = event.data
+        items.push({
+          id: `tip_sent_${tip.id}`,
+          type: 'tip_sent',
+          timestamp: new Date(tip.created_at),
+          data: {
+            fromWallet: tip.from_wallet,
+            toWallet: tip.to_wallet,
+            amountTokens: tip.amount_tokens,
+            tokenSymbol: tip.token_symbol,
+            message: tip.message
+          }
+        })
+        break
+      }
+
+      case 'karma_milestone': {
+        const karma = event.data
+        items.push({
+          id: `karma_milestone_${karma.wallet_address}_${karma.milestone}`,
+          type: 'karma_milestone',
+          timestamp: new Date(karma.updated_at),
+          data: {
+            wallet: karma.wallet_address,
+            milestone: karma.milestone,
+            totalKarma: karma.total_karma_points
+          }
+        })
+        break
+      }
+
+      default:
+        console.warn('Unknown subscription event type:', event.type)
+    }
+  } catch (error) {
+    console.error('Error transforming subscription event:', error, event)
+  }
+
+  return items
+}
+

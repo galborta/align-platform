@@ -16,3 +16,4 @@ COMMENT ON COLUMN chat_tips.token_mint IS 'SPL token mint address for the tipped
 COMMENT ON COLUMN chat_tips.tx_signature IS 'Solana transaction signature for on-chain verification';
 
 
+

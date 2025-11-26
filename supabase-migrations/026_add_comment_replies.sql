@@ -15,3 +15,4 @@ WHERE parent_comment_id IS NULL;
 -- Add comment for documentation
 COMMENT ON COLUMN job_comments.parent_comment_id IS 'Reference to parent comment for threaded replies. NULL for top-level comments.';
 
+

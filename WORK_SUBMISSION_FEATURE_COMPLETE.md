@@ -921,3 +921,4 @@ export default function JobDetailPage() {
 Built with ❤️ for trustless, transparent job completion! 📦✨
 
 
+

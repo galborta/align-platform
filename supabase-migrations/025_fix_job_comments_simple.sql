@@ -29,3 +29,4 @@ CREATE POLICY "Users can delete their own comments"
 COMMENT ON TABLE job_comments IS 'Comments on job postings - token holder verification done in application layer';
 
 
+

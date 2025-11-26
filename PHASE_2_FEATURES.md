@@ -268,3 +268,4 @@ getProfileStats(walletAddress, projectId)
 - Supporter badges update automatically based on completed jobs
 
 
+

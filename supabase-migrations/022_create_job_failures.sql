@@ -41,3 +41,4 @@ COMMENT ON COLUMN job_failures.worker_wallet IS 'Wallet address of worker who fa
 COMMENT ON COLUMN job_failures.job_id IS 'Reference to the job that was not completed successfully';
 
 
+

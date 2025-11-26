@@ -682,3 +682,4 @@ const notVoted = 100 - releasePercent - refundPercent
 Built with ❤️ for fair, transparent community governance! ⚖️🗳️
 
 
+

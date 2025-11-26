@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { Box, Typography, Button } from '@mui/material'
 import { FeedItem as FeedItemType, ActivityFeedProps } from '@/types/feed'
 import { FeedItem } from './FeedItem'
@@ -8,8 +8,17 @@ import { FeedSkeleton } from './FeedSkeleton'
 import { FeedEmptyState } from './FeedEmptyState'
 import { BatchedActivityModal } from './BatchedActivityModal'
 import { fetchInitialFeed } from '@/lib/feed-queries'
-import { transformToFeedItems } from '@/lib/feed-transform'
+import { transformToFeedItems, transformSubscriptionEvent } from '@/lib/feed-transform'
 import { applyBatchingLogic } from '@/lib/feed-batching'
+import { setupFeedSubscriptions } from '@/lib/feed-subscriptions'
+import { 
+  deduplicateFeedItems,
+  findBatchTarget,
+  mergeIntoBatch,
+  limitFeedItems,
+  sortFeedItems,
+  getFeedStats
+} from '@/lib/feed-utils'
 
 
 /**
@@ -38,8 +47,50 @@ export function ActivityFeed({ projectId }: ActivityFeedProps) {
   const [modalOpen, setModalOpen] = useState(false)
   const [selectedItem, setSelectedItem] = useState<FeedItemType | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [isConnected, setIsConnected] = useState(false)
+  const subscriptionCleanup = useRef<(() => void) | null>(null)
 
-  // Load initial feed items
+  // Handler for new real-time events
+  const handleNewActivity = useCallback((event: any) => {
+    console.log('🔔 New activity event:', event)
+    
+    // Transform subscription event to FeedItem(s)
+    const newItems = transformSubscriptionEvent(event)
+    
+    if (newItems.length === 0) {
+      console.warn('No items transformed from event:', event)
+      return
+    }
+    
+    const newItem = newItems[0]
+    
+    setFeedItems(prevItems => {
+      // Check if this item should batch with an existing item
+      const batchTarget = findBatchTarget(newItem, prevItems)
+      
+      if (batchTarget) {
+        // Merge into existing batch
+        console.log('📦 Batching new item with existing:', batchTarget.id)
+        const updated = prevItems.map(item => 
+          item.id === batchTarget.id ? mergeIntoBatch(item, newItem) : item
+        )
+        
+        // Sort to move updated batch to top
+        return sortFeedItems(updated)
+      } else {
+        // Add as new item at top
+        console.log('➕ Adding new feed item:', newItem.id)
+        const combined = [newItem, ...prevItems]
+        
+        // Deduplicate, limit, and sort
+        const deduplicated = deduplicateFeedItems(combined)
+        const limited = limitFeedItems(deduplicated, 100)
+        return sortFeedItems(limited)
+      }
+    })
+  }, [])
+
+  // Load initial feed items and setup real-time subscriptions
   useEffect(() => {
     async function loadFeed() {
       if (!projectId) return
@@ -51,7 +102,7 @@ export function ActivityFeed({ projectId }: ActivityFeedProps) {
         console.log('🔄 Starting feed load for project:', projectId)
 
         // Fetch raw data from all tables (10 parallel queries)
-        const rawData = await fetchInitialFeed(projectId, 50)
+        const rawData = await fetchInitialFeed(projectId, 20)
         console.log('✅ Raw data fetched:', {
           jobs: rawData.jobs.length,
           applications: rawData.applications.length,
@@ -77,7 +128,7 @@ export function ActivityFeed({ projectId }: ActivityFeedProps) {
           reduction: `${Math.round(((items.length - batched.length) / items.length) * 100)}%`
         })
 
-        // Take first 20 items
+        // Take first 20 items for initial display
         const initialItems = batched.slice(0, 20)
 
         setFeedItems(initialItems)
@@ -90,10 +141,26 @@ export function ActivityFeed({ projectId }: ActivityFeedProps) {
           hasMore: batched.length > 20,
           error: null
         })
+
+        // Setup real-time subscriptions AFTER initial load
+        // Small delay to avoid race conditions with initial data
+        setTimeout(() => {
+          console.log('🔌 Setting up real-time subscriptions')
+          try {
+            const cleanup = setupFeedSubscriptions(projectId, handleNewActivity)
+            subscriptionCleanup.current = cleanup
+            setIsConnected(true)
+          } catch (err) {
+            console.error('Failed to setup subscriptions:', err)
+            setIsConnected(false)
+          }
+        }, 1000)
+
       } catch (err) {
         console.error('❌ Error loading feed:', err)
         setError('Failed to load activity feed. Please try refreshing.')
         setLoading(false)
+        setIsConnected(false)
 
         console.log('Feed loading state:', {
           loading: false,
@@ -105,7 +172,17 @@ export function ActivityFeed({ projectId }: ActivityFeedProps) {
     }
 
     loadFeed()
-  }, [projectId])
+
+    // Cleanup subscriptions on unmount or projectId change
+    return () => {
+      if (subscriptionCleanup.current) {
+        console.log('🔌 Cleaning up subscriptions')
+        subscriptionCleanup.current()
+        subscriptionCleanup.current = null
+        setIsConnected(false)
+      }
+    }
+  }, [projectId, handleNewActivity])
 
   const handleLoadMore = async () => {
     if (!hasMore || loading) return
@@ -138,7 +215,7 @@ export function ActivityFeed({ projectId }: ActivityFeedProps) {
       <Typography 
         variant="h6" 
         sx={{ 
-          mb: 2, 
+          mb: 1, 
           fontWeight: 600,
           color: 'text.primary',
           fontFamily: 'var(--font-display)'
@@ -146,6 +223,32 @@ export function ActivityFeed({ projectId }: ActivityFeedProps) {
       >
         Activity Feed
       </Typography>
+
+      {/* Connection Status Indicator */}
+      {isConnected && !loading && (
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, mb: 2 }}>
+          <Box 
+            sx={{ 
+              width: 8, 
+              height: 8, 
+              borderRadius: '50%', 
+              bgcolor: 'success.main',
+              animation: 'pulse 2s infinite'
+            }} 
+          />
+          <Typography variant="caption" sx={{ color: 'text.secondary', fontSize: 11 }}>
+            Live updates active
+          </Typography>
+        </Box>
+      )}
+
+      {/* Pulse animation styles */}
+      <style>{`
+        @keyframes pulse {
+          0%, 100% { opacity: 1; }
+          50% { opacity: 0.5; }
+        }
+      `}</style>
       
       {loading && feedItems.length === 0 && <FeedSkeleton count={5} />}
       

@@ -602,3 +602,4 @@ The **PublicPrivateToggle** component provides:
 **Dependencies**: Material UI (already installed)  
 **Integration**: Ready for TipModal
 
+

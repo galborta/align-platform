@@ -12,3 +12,4 @@ CREATE INDEX idx_chat_messages_reply_to ON chat_messages(reply_to_id);
 -- Add comment for documentation
 COMMENT ON COLUMN chat_messages.reply_to_id IS 'ID of the message being replied to (null for top-level messages)';
 
+

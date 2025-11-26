@@ -367,3 +367,4 @@ Once `/api/karma/daily-tip-status` is created, this hook is production-ready!
 **Dependencies**: `@tanstack/react-query`  
 **Related**: `useTipTokens`, Enhanced Tip System
 
+

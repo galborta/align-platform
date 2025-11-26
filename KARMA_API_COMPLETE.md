@@ -405,3 +405,4 @@ The karma system is fully operational. Start testing with your wallet and projec
 **Dependencies**: `@supabase/supabase-js`, `next`  
 **Related**: `useDailyTipKarma`, Enhanced Tip System
 
+
