@@ -477,13 +477,13 @@ export const FeedItem = memo(function FeedItem({
       return
     }
     
-    // Don't navigate if clicking on a button, link, or wallet address inside the item
+    // Don't navigate if clicking on interactive elements inside the item
     if (
       target.tagName === 'BUTTON' || 
       target.tagName === 'A' || 
       target.closest('button') || 
       target.closest('a') ||
-      target.closest('.wallet-address-buttons')
+      target.closest('.wallet-address-buttons')  // Wallet address with modal
     ) {
       return
     }
