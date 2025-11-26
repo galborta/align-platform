@@ -69,7 +69,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Get RPC connection
-    const rpcEndpoint = process.env.NEXT_PUBLIC_RPC_ENDPOINT || 'https://api.devnet.solana.com'
+    const rpcEndpoint = process.env.NEXT_PUBLIC_RPC_ENDPOINT || 'https://api.mainnet-beta.solana.com'
     const connection = new Connection(rpcEndpoint, 'confirmed')
 
     console.log(`Checking token holdings for wallet: ${walletAddress}`)
@@ -82,7 +82,7 @@ export async function POST(request: NextRequest) {
     if (!holderInfo) {
       console.error(`No holder info returned for wallet ${walletAddress}`)
       return NextResponse.json(
-        { error: 'You must hold tokens to chat in this project. Make sure you are connected to the correct network (devnet/mainnet).' },
+        { error: 'You must hold tokens to chat in this project. Make sure you are connected to mainnet.' },
         { status: 403 }
       )
     }

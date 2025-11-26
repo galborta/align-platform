@@ -12,19 +12,35 @@ import {
   Typography,
   CircularProgress,
   Alert,
-  Skeleton
+  Skeleton,
+  IconButton,
+  useTheme,
+  useMediaQuery,
+  Backdrop
 } from '@mui/material'
+import CloseIcon from '@mui/icons-material/Close'
 import { PublicKey, Transaction } from '@solana/web3.js'
 import { createTransferInstruction, getAssociatedTokenAddress, TOKEN_PROGRAM_ID } from '@solana/spl-token'
 import { supabase } from '@/lib/supabase'
 import toast from 'react-hot-toast'
 import { useTipTokens } from '@/lib/hooks/useTipTokens'
+import { useDailyTipKarma } from '@/lib/hooks/useDailyTipKarma'
 import TokenDropdown from './tip/TokenDropdown'
+import PublicPrivateToggle from './tip/PublicPrivateToggle'
+import KarmaPreview from './tip/KarmaPreview'
 import AmountInput from './tip/AmountInput'
 import QuickTipButtons from './tip/QuickTipButtons'
 import { TipToken } from '@/types/database'
 import { checkAtaExists, createAtaInstruction } from '@/lib/solana/ata-utils'
 import { validateTipTransaction } from '@/lib/solana/transaction-validation'
+import { getTier } from '@/lib/karma'
+import { getCachedTokenData } from '@/lib/token-balance'
+import { 
+  TIP_ERROR_MESSAGES, 
+  TIP_WARNING_MESSAGES, 
+  TIP_LOADING_MESSAGES,
+  TIP_RETRY_CONFIG 
+} from '@/lib/tip-errors'
 
 interface TipModalProps {
   open: boolean
@@ -42,9 +58,12 @@ export default function TipModal({
 }: TipModalProps) {
   const { publicKey, sendTransaction } = useWallet()
   const { connection } = useConnection()
+  const theme = useTheme()
+  const isMobile = useMediaQuery(theme.breakpoints.down('sm'))
   
   const [amount, setAmount] = useState('')
   const [message, setMessage] = useState('')
+  const [isPublic, setIsPublic] = useState(true)
   const [loading, setLoading] = useState(false)
   const [loadingMessage, setLoadingMessage] = useState<string>('Sending...')
   const [error, setError] = useState<string | null>(null)
@@ -53,8 +72,12 @@ export default function TipModal({
   const [retryCount, setRetryCount] = useState(0)
   const [txSignature, setTxSignature] = useState<string | null>(null)
   const [confirmationTimeout, setConfirmationTimeout] = useState(false)
+  const [estimatedKarma, setEstimatedKarma] = useState(0)
+  const [isProcessing, setIsProcessing] = useState(false) // Prevent concurrent tips
+  const [showZeroBalanceWarning, setShowZeroBalanceWarning] = useState(false)
+  const [priceUnavailableWarning, setPriceUnavailableWarning] = useState(false)
 
-  const CONFIRMATION_TIMEOUT = 60000 // 60 seconds
+  const CONFIRMATION_TIMEOUT = TIP_RETRY_CONFIG.CONFIRMATION_TIMEOUT
 
   // Fetch available tokens
   const { data: tokenData, isLoading: loadingTokens, error: tokenError, refetch: refetchTokens } = useTipTokens(
@@ -62,12 +85,89 @@ export default function TipModal({
     projectId
   )
 
+  // Fetch daily karma status
+  const { data: karmaData, isLoading: karmaLoading } = useDailyTipKarma(
+    publicKey?.toBase58(),
+    projectId
+  )
+
+  // Watch for wallet disconnection
+  useEffect(() => {
+    if (!publicKey && open) {
+      // Wallet disconnected while modal was open
+      setLoading(false)
+      setIsProcessing(false)
+      setAmount('')
+      setMessage('')
+      setError(TIP_ERROR_MESSAGES.WALLET_DISCONNECTED)
+      toast.error(TIP_ERROR_MESSAGES.WALLET_DISCONNECTED)
+    }
+  }, [publicKey, open])
+
   // Auto-select first token when loaded (project token prioritized)
   useEffect(() => {
     if (tokenData?.tokens && tokenData.tokens.length > 0 && !selectedToken) {
       setSelectedToken(tokenData.tokens[0])
     }
   }, [tokenData, selectedToken])
+
+  // Check for price unavailability
+  useEffect(() => {
+    if (selectedToken && !selectedToken.usdPrice) {
+      setPriceUnavailableWarning(true)
+    } else {
+      setPriceUnavailableWarning(false)
+    }
+  }, [selectedToken])
+
+  // Check for zero balance warning
+  useEffect(() => {
+    if (!amount || !selectedToken) {
+      setShowZeroBalanceWarning(false)
+      return
+    }
+
+    const amountNum = parseFloat(amount)
+    const balance = selectedToken.balance
+
+    // Show warning if sending entire balance or very close to it (within 0.1%)
+    if (balance > 0 && amountNum >= balance * 0.999) {
+      setShowZeroBalanceWarning(true)
+    } else {
+      setShowZeroBalanceWarning(false)
+    }
+  }, [amount, selectedToken])
+
+  // Calculate karma preview
+  useEffect(() => {
+    const calculateKarmaPreview = async () => {
+      if (!amount || !selectedToken?.usdPrice || !publicKey) {
+        setEstimatedKarma(0)
+        return
+      }
+
+      try {
+        // Get sender's tier multiplier
+        const senderTokenData = await getCachedTokenData(
+          publicKey.toString(),
+          selectedToken.mint
+        )
+        const senderPercentage = senderTokenData?.percentage || 0
+        const tier = getTier(senderPercentage)
+
+        // Calculate karma: USD value × tier multiplier
+        const usdValue = parseFloat(amount) * selectedToken.usdPrice
+        const calculatedKarma = usdValue * tier.multiplier
+
+        setEstimatedKarma(calculatedKarma)
+      } catch (error) {
+        console.error('Error calculating karma preview:', error)
+        setEstimatedKarma(0)
+      }
+    }
+
+    calculateKarmaPreview()
+  }, [amount, selectedToken, publicKey])
 
   // Validation function
   function validateAmount(): string | null {
@@ -125,16 +225,20 @@ export default function TipModal({
   }
 
   const handleClose = () => {
-    if (!loading) {
+    if (!loading && !isProcessing) {
       setAmount('')
       setMessage('')
+      setIsPublic(true)
       setError(null)
       setAmountError(null)
       setSelectedToken(null)
       setRetryCount(0)
       setTxSignature(null)
-      setLoadingMessage('Sending...')
+      setLoadingMessage(TIP_LOADING_MESSAGES.VALIDATING)
       setConfirmationTimeout(false)
+      setEstimatedKarma(0)
+      setShowZeroBalanceWarning(false)
+      setPriceUnavailableWarning(false)
       onClose()
     }
   }
@@ -180,7 +284,8 @@ export default function TipModal({
     if (!txSignature) return
 
     setLoading(true)
-    setLoadingMessage('Checking status...')
+    setIsProcessing(true)
+    setLoadingMessage(TIP_LOADING_MESSAGES.CHECKING_STATUS)
 
     try {
       const status = await connection.getSignatureStatus(txSignature)
@@ -200,18 +305,112 @@ export default function TipModal({
       toast.error('Could not check transaction status')
     } finally {
       setLoading(false)
+      setIsProcessing(false)
+    }
+  }
+
+  // Record tip in database with karma calculation
+  async function recordTipInDatabase(signature: string) {
+    try {
+      if (!publicKey || !selectedToken) return null
+
+      setLoadingMessage(TIP_LOADING_MESSAGES.RECORDING_TIP)
+
+      // Get tier multipliers
+      let senderTierMultiplier = 1 // Default to 1x if calculation fails
+      let recipientTierMultiplier = 1
+
+      try {
+        const senderData = await getCachedTokenData(
+          publicKey.toString(),
+          selectedToken.mint
+        )
+        const recipientData = await getCachedTokenData(
+          recipientWallet,
+          selectedToken.mint
+        )
+
+        const senderTier = getTier(senderData?.percentage || 0)
+        const recipientTier = getTier(recipientData?.percentage || 0)
+
+        senderTierMultiplier = senderTier.multiplier
+        recipientTierMultiplier = recipientTier.multiplier
+      } catch (tierError) {
+        console.error('Error calculating tier multipliers:', tierError)
+        // Continue with default 1x multipliers
+      }
+
+      // Calculate USD value
+      const usdValue = selectedToken.usdPrice 
+        ? parseFloat(amount) * selectedToken.usdPrice 
+        : null
+
+      // Record tip via API with timeout
+      const controller = new AbortController()
+      const timeoutId = setTimeout(() => controller.abort(), 10000) // 10s timeout
+
+      try {
+        const response = await fetch('/api/tips/record', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            projectId,
+            fromWallet: publicKey.toString(),
+            toWallet: recipientWallet,
+            tokenMint: selectedToken.mint,
+            tokenSymbol: selectedToken.symbol,
+            amountTokens: parseFloat(amount),
+            amountUsd: usdValue,
+            message: message.trim() || null,
+            isPublic,
+            txSignature: signature,
+            senderTierMultiplier,
+            recipientTierMultiplier
+          }),
+          signal: controller.signal
+        })
+
+        clearTimeout(timeoutId)
+
+        if (!response.ok) {
+          throw new Error('Failed to record tip')
+        }
+
+        const data = await response.json()
+        return data // Returns { success, tipId, karmaSender, karmaRecipient }
+
+      } catch (fetchError: any) {
+        clearTimeout(timeoutId)
+        if (fetchError.name === 'AbortError') {
+          console.error('Tip recording timed out')
+          toast.error(TIP_ERROR_MESSAGES.RECORDING_TIMEOUT, { duration: 6000 })
+        }
+        throw fetchError
+      }
+
+    } catch (error) {
+      console.error('Error recording tip:', error)
+      // Don't fail - transaction already succeeded on-chain
+      toast.error(TIP_ERROR_MESSAGES.RECORDING_FAILED, { duration: 6000 })
+      return null
     }
   }
 
   async function handleSendTip() {
+    // Prevent concurrent tip attempts
+    if (isProcessing) {
+      toast.error(TIP_ERROR_MESSAGES.CONCURRENT_TIP_WARNING)
+      return
+    }
+
     if (!publicKey) {
-      toast.error('Please connect your wallet')
+      toast.error(TIP_ERROR_MESSAGES.WALLET_NOT_CONNECTED)
       return
     }
 
     // Check for self-tipping
     if (recipientWallet === publicKey.toString()) {
-      toast.error('You cannot tip yourself')
+      toast.error(TIP_ERROR_MESSAGES.RECIPIENT_SAME_AS_SENDER)
       return
     }
 
@@ -228,15 +427,16 @@ export default function TipModal({
     }
 
     // Check retry limit
-    if (retryCount >= 3) {
-      toast.error('Maximum retry attempts reached. Please try again later.')
+    if (retryCount >= TIP_RETRY_CONFIG.MAX_RETRIES) {
+      toast.error(TIP_ERROR_MESSAGES.MAX_RETRIES_REACHED)
       return
     }
 
     setLoading(true)
+    setIsProcessing(true) // Prevent concurrent tips
     setError(null)
     setAmountError(null)
-    setLoadingMessage('Validating...')
+    setLoadingMessage(TIP_LOADING_MESSAGES.VALIDATING)
 
     try {
       // Pre-flight validation
@@ -253,11 +453,12 @@ export default function TipModal({
         setError(validation.error || 'Validation failed')
         toast.error(validation.error || 'Validation failed')
         setLoading(false)
+        setIsProcessing(false)
         setRetryCount(prev => prev + 1)
         return
       }
 
-      setLoadingMessage('Creating transaction...')
+      setLoadingMessage(TIP_LOADING_MESSAGES.CREATING_TRANSACTION)
       // Create SPL token transfer transaction
       const tokenMintPubkey = new PublicKey(selectedToken.mint)
       const recipientPubkey = new PublicKey(recipientWallet)
@@ -325,13 +526,13 @@ export default function TipModal({
       transaction.recentBlockhash = blockhash
       transaction.feePayer = publicKey
 
-      setLoadingMessage('Awaiting signature...')
+      setLoadingMessage(TIP_LOADING_MESSAGES.AWAITING_SIGNATURE)
 
       // Send transaction
       const signature = await sendTransaction(transaction, connection)
       setTxSignature(signature)
 
-      setLoadingMessage('Confirming...')
+      setLoadingMessage(TIP_LOADING_MESSAGES.CONFIRMING)
       
       // Wait for confirmation with timeout
       try {
@@ -354,48 +555,232 @@ export default function TipModal({
         throw confirmError // Re-throw other errors
       }
 
-      // Calculate USD value
+      // Record tip in database with karma calculation
+      const tipData = await recordTipInDatabase(signature)
+
+      // Calculate USD value for display
       const usdValue = selectedToken.usdPrice 
         ? parseFloat(amount) * selectedToken.usdPrice 
         : null
 
-      // Record tip in database
-      const { error: dbError } = await supabase.from('chat_tips').insert({
-        project_id: projectId,
-        from_wallet: publicKey.toString(),
-        to_wallet: recipientWallet,
-        amount_tokens: parseFloat(amount),
-        token_mint: selectedToken.mint,
-        token_symbol: selectedToken.symbol,
-        amount_usd: usdValue,
-        message: message.trim() || null,
-        tx_signature: signature,
-        is_public: true, // Default to public
-        karma_awarded_sender: 0, // TODO: Implement karma calculation
-        karma_awarded_recipient: 0 // TODO: Implement karma calculation
-      })
+      // Check if daily cap was reached
+      const capReached = karmaData && tipData?.karmaSender 
+        ? (karmaData.tipKarmaEarnedToday + tipData.karmaSender) >= karmaData.dailyKarmaCap
+        : false
 
-      if (dbError) {
-        console.error('Database error:', dbError)
-        // Don't fail if DB insert fails - transaction already succeeded
-        const ataText = ataCreated ? ' (+ token account created)' : ''
-        toast.success(
-          `🎁 Sent ${amount} ${selectedToken.symbol}${ataText}! View on Solscan`,
-          {
-            duration: 8000,
-            onClick: () => window.open(`https://solscan.io/tx/${signature}?cluster=devnet`, '_blank')
-          }
+      // Show enhanced success toast with karma
+      const usdText = usdValue ? ` ($${usdValue.toFixed(2)})` : ''
+      const ataText = ataCreated ? ' + token account created' : ''
+      
+      if (tipData?.success && tipData.karmaSender > 0) {
+        // Custom styled toast with prominent karma display
+        toast.custom(
+          (t) => (
+            <Box
+              onClick={() => window.open(`https://solscan.io/tx/${signature}`, '_blank')}
+              sx={{
+                bgcolor: '#FFFFFF',
+                borderRadius: '12px',
+                boxShadow: '0 8px 24px rgba(124, 77, 255, 0.2)',
+                p: 2.5,
+                minWidth: '320px',
+                border: '2px solid #7C4DFF',
+                cursor: 'pointer',
+                transition: 'all 0.2s ease',
+                '&:hover': {
+                  boxShadow: '0 12px 32px rgba(124, 77, 255, 0.3)',
+                  transform: 'translateY(-2px)'
+                }
+              }}
+            >
+              {/* Header with emoji and title */}
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mb: 1.5 }}>
+                <Typography sx={{ fontSize: '32px', lineHeight: 1 }}>🎁</Typography>
+                <Box>
+                  <Typography
+                    sx={{
+                      fontFamily: 'Space Grotesk, sans-serif',
+                      fontSize: '18px',
+                      fontWeight: 700,
+                      color: '#1A1A1E'
+                    }}
+                  >
+                    Tip Sent!
+                  </Typography>
+                  <Typography
+                    variant="caption"
+                    sx={{
+                      color: '#6F7280',
+                      fontSize: '12px'
+                    }}
+                  >
+                    {amount} {selectedToken.symbol}{usdText}
+                  </Typography>
+                </Box>
+              </Box>
+
+              {/* Karma earned - PROMINENT */}
+              <Box
+                sx={{
+                  bgcolor: '#F8F5FF',
+                  borderRadius: '8px',
+                  p: 1.5,
+                  mb: 1.5,
+                  border: '1px solid #E5DEFF'
+                }}
+              >
+                <Typography
+                  sx={{
+                    fontFamily: 'Space Grotesk, sans-serif',
+                    fontSize: '24px',
+                    fontWeight: 700,
+                    color: '#7C4DFF',
+                    textAlign: 'center'
+                  }}
+                >
+                  +{tipData.karmaSender.toFixed(1)} karma
+                </Typography>
+              </Box>
+
+              {/* Daily cap warning */}
+              {capReached && (
+                <Box
+                  sx={{
+                    bgcolor: '#FFF4ED',
+                    borderRadius: '6px',
+                    p: 1,
+                    mb: 1.5,
+                    border: '1px solid #FDBA74'
+                  }}
+                >
+                  <Typography
+                    variant="caption"
+                    sx={{
+                      color: '#EA580C',
+                      fontSize: '11px',
+                      fontWeight: 600,
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 0.5
+                    }}
+                  >
+                    ⚠️ Daily cap reached! Resets at midnight UTC
+                  </Typography>
+                </Box>
+              )}
+
+              {/* Transaction link */}
+              <Box
+                sx={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: 0.5
+                }}
+              >
+                <Typography
+                  variant="caption"
+                  sx={{
+                    color: '#7C4DFF',
+                    fontSize: '12px',
+                    fontWeight: 600,
+                    textDecoration: 'underline'
+                  }}
+                >
+                  View on Solscan
+                </Typography>
+                <Typography sx={{ fontSize: '12px', color: '#7C4DFF' }}>→</Typography>
+              </Box>
+
+              {/* ATA creation note */}
+              {ataCreated && (
+                <Typography
+                  variant="caption"
+                  sx={{
+                    display: 'block',
+                    textAlign: 'center',
+                    color: '#6F7280',
+                    fontSize: '10px',
+                    mt: 1
+                  }}
+                >
+                  + Token account created
+                </Typography>
+              )}
+            </Box>
+          ),
+          { duration: 8000 }
         )
       } else {
-        const usdText = usdValue ? ` ($${usdValue.toFixed(2)})` : ''
-        const ataText = ataCreated ? ' + token account created' : ''
-        toast.success(
-          `🎁 Sent ${amount} ${selectedToken.symbol}${usdText} to ${recipientWallet.slice(0, 4)}...${recipientWallet.slice(-4)}!${ataText}`,
-          {
-            duration: 8000,
-            icon: '💰',
-            onClick: () => window.open(`https://solscan.io/tx/${signature}?cluster=devnet`, '_blank')
-          }
+        // Fallback without karma (still enhanced)
+        toast.custom(
+          (t) => (
+            <Box
+              onClick={() => window.open(`https://solscan.io/tx/${signature}`, '_blank')}
+              sx={{
+                bgcolor: '#FFFFFF',
+                borderRadius: '12px',
+                boxShadow: '0 8px 24px rgba(124, 77, 255, 0.2)',
+                p: 2.5,
+                minWidth: '320px',
+                border: '2px solid #7C4DFF',
+                cursor: 'pointer',
+                transition: 'all 0.2s ease',
+                '&:hover': {
+                  boxShadow: '0 12px 32px rgba(124, 77, 255, 0.3)',
+                  transform: 'translateY(-2px)'
+                }
+              }}
+            >
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mb: 1.5 }}>
+                <Typography sx={{ fontSize: '32px', lineHeight: 1 }}>🎁</Typography>
+                <Box>
+                  <Typography
+                    sx={{
+                      fontFamily: 'Space Grotesk, sans-serif',
+                      fontSize: '18px',
+                      fontWeight: 700,
+                      color: '#1A1A1E'
+                    }}
+                  >
+                    Tip Sent!
+                  </Typography>
+                  <Typography
+                    variant="caption"
+                    sx={{
+                      color: '#6F7280',
+                      fontSize: '12px'
+                    }}
+                  >
+                    {amount} {selectedToken.symbol}{usdText}{ataText}
+                  </Typography>
+                </Box>
+              </Box>
+
+              <Box
+                sx={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: 0.5
+                }}
+              >
+                <Typography
+                  variant="caption"
+                  sx={{
+                    color: '#7C4DFF',
+                    fontSize: '12px',
+                    fontWeight: 600,
+                    textDecoration: 'underline'
+                  }}
+                >
+                  View on Solscan
+                </Typography>
+                <Typography sx={{ fontSize: '12px', color: '#7C4DFF' }}>→</Typography>
+              </Box>
+            </Box>
+          ),
+          { duration: 8000 }
         )
       }
 
@@ -405,33 +790,49 @@ export default function TipModal({
     } catch (error: any) {
       console.error('Tip error:', error)
       
-      // Provide user-friendly error messages
-      let errorMessage = 'Failed to send tip. Please try again.'
+      // Provide user-friendly error messages using constants
+      let errorMessage = TIP_ERROR_MESSAGES.PLEASE_TRY_AGAIN
       
       if (error.message?.includes('User rejected') || error.message?.includes('User denied')) {
-        errorMessage = 'Transaction cancelled'
+        errorMessage = TIP_ERROR_MESSAGES.WALLET_SIGNATURE_REJECTED
         toast.error(errorMessage)
       } else if (error.message?.includes('insufficient funds') || error.message?.includes('0x1')) {
-        errorMessage = 'Insufficient SOL for transaction fee (~0.001 SOL needed)'
+        errorMessage = TIP_ERROR_MESSAGES.INSUFFICIENT_SOL
         toast.error(errorMessage)
       } else if (error.message?.includes('0x0')) {
-        errorMessage = 'Insufficient token balance'
+        errorMessage = TIP_ERROR_MESSAGES.INSUFFICIENT_BALANCE
         toast.error(errorMessage)
       } else if (error.message?.includes('timeout') || error.message?.includes('timed out')) {
-        errorMessage = 'Transaction timed out. It may still succeed - check your wallet.'
+        errorMessage = TIP_ERROR_MESSAGES.TRANSACTION_TIMEOUT
         toast.error(errorMessage, { duration: 6000 })
       } else if (error.message?.includes('blockhash not found')) {
-        errorMessage = 'Network error. Please try again.'
+        errorMessage = TIP_ERROR_MESSAGES.BLOCKHASH_NOT_FOUND
+        toast.error(errorMessage)
+      } else if (error.message?.includes('network') || error.message?.includes('fetch failed')) {
+        errorMessage = TIP_ERROR_MESSAGES.NETWORK_ERROR
         toast.error(errorMessage)
       } else {
+        errorMessage = TIP_ERROR_MESSAGES.UNKNOWN_ERROR
         toast.error(errorMessage)
       }
       
       setError(errorMessage)
-      setRetryCount(prev => prev + 1)
+      
+      // Exponential backoff retry
+      const newRetryCount = retryCount + 1
+      setRetryCount(newRetryCount)
+      
+      if (newRetryCount < TIP_RETRY_CONFIG.MAX_RETRIES) {
+        const delay = TIP_RETRY_CONFIG.INITIAL_DELAY * Math.pow(TIP_RETRY_CONFIG.BACKOFF_MULTIPLIER, newRetryCount - 1)
+        toast(`${TIP_ERROR_MESSAGES.RETRYING} (${newRetryCount}/${TIP_RETRY_CONFIG.MAX_RETRIES}) in ${delay / 1000}s...`, {
+          icon: '🔄',
+          duration: delay
+        })
+      }
     } finally {
       setLoading(false)
-      setLoadingMessage('Sending...')
+      setIsProcessing(false)
+      setLoadingMessage(TIP_LOADING_MESSAGES.VALIDATING)
     }
   }
 
@@ -445,9 +846,10 @@ export default function TipModal({
       onClose={handleClose} 
       maxWidth="sm" 
       fullWidth
+      fullScreen={isMobile}
       PaperProps={{
         sx: {
-          borderRadius: '12px',
+          borderRadius: isMobile ? 0 : '12px',
           boxShadow: '0 8px 32px rgba(0, 0, 0, 0.12)'
         }
       }}
@@ -458,12 +860,42 @@ export default function TipModal({
           fontSize: '24px',
           fontWeight: 700,
           color: '#1A1A1E',
-          pb: 1
+          pb: 1,
+          pr: isMobile ? 7 : 3,
+          position: 'relative'
         }}
       >
         💰 Send Tip
+        
+        {/* Mobile close button */}
+        {isMobile && (
+          <IconButton
+            onClick={handleClose}
+            disabled={loading}
+            sx={{
+              position: 'absolute',
+              right: 8,
+              top: 8,
+              width: 48,
+              height: 48,
+              color: '#6F7280',
+              '&:hover': {
+                bgcolor: '#F3F4F6'
+              }
+            }}
+          >
+            <CloseIcon />
+          </IconButton>
+        )}
       </DialogTitle>
-      <DialogContent sx={{ pt: 2 }}>
+      <DialogContent 
+        sx={{ 
+          pt: 2,
+          px: isMobile ? 2 : 3,
+          py: isMobile ? 3 : 2,
+          pb: isMobile ? 4 : 2
+        }}
+      >
         {/* Recipient Info */}
         <Box 
           sx={{ 
@@ -548,7 +980,7 @@ export default function TipModal({
           >
             Transaction sent but confirmation timed out. <br />
             <a 
-              href={`https://solscan.io/tx/${txSignature}?cluster=devnet`}
+              href={`https://solscan.io/tx/${txSignature}`}
               target="_blank"
               rel="noopener noreferrer"
               style={{ textDecoration: 'underline', color: 'inherit' }}
@@ -558,10 +990,40 @@ export default function TipModal({
           </Alert>
         )}
 
+        {/* Price Unavailable Warning */}
+        {priceUnavailableWarning && !loading && (
+          <Alert 
+            severity="info" 
+            sx={{ mb: 2 }}
+          >
+            {TIP_WARNING_MESSAGES.PRICE_UNAVAILABLE}
+          </Alert>
+        )}
+
+        {/* Zero Balance Warning */}
+        {showZeroBalanceWarning && !loading && (
+          <Alert 
+            severity="warning" 
+            sx={{ mb: 2 }}
+          >
+            {TIP_WARNING_MESSAGES.ENTIRE_BALANCE.replace('{symbol}', selectedToken?.symbol || '')}
+          </Alert>
+        )}
+
         {/* Token Dropdown */}
         {loadingTokens ? (
           <Box sx={{ mb: 2 }}>
-            <Skeleton variant="rectangular" height={56} sx={{ borderRadius: '4px' }} />
+            {[1, 2, 3].map((i) => (
+              <Skeleton 
+                key={i} 
+                variant="rectangular" 
+                height={56} 
+                sx={{ 
+                  borderRadius: '4px',
+                  mb: i < 3 ? 1 : 0
+                }} 
+              />
+            ))}
           </Box>
         ) : tokenData?.tokens && tokenData.tokens.length === 0 ? (
           <Alert 
@@ -583,7 +1045,7 @@ export default function TipModal({
         <QuickTipButtons
           amounts={[1, 5, 10, 25, 50]}
           onSelect={handleQuickTip}
-          disabled={loading}
+          disabled={loading || priceUnavailableWarning}
           selectedToken={selectedToken}
         />
 
@@ -598,6 +1060,65 @@ export default function TipModal({
           disabled={loading}
         />
 
+        {/* Karma Preview */}
+        {karmaLoading ? (
+          <Box 
+            sx={{ 
+              mb: 2,
+              p: 2,
+              bgcolor: '#F0F9FF',
+              borderRadius: '8px',
+              border: '1px solid #BAE6FD'
+            }}
+          >
+            {/* Title skeleton */}
+            <Skeleton 
+              variant="text" 
+              width="60%" 
+              height={24}
+              sx={{ mb: 1 }}
+            />
+            {/* Karma number skeleton */}
+            <Skeleton 
+              variant="rectangular" 
+              height={40} 
+              sx={{ 
+                borderRadius: '8px',
+                mb: 2
+              }} 
+            />
+            {/* Progress label skeleton */}
+            <Skeleton 
+              variant="text" 
+              width="50%" 
+              height={16}
+              sx={{ mb: 0.5 }}
+            />
+            {/* Progress bar skeleton */}
+            <Skeleton 
+              variant="rectangular" 
+              height={6} 
+              sx={{ 
+                borderRadius: 3
+              }} 
+            />
+          </Box>
+        ) : karmaData && selectedToken && parseFloat(amount || '0') > 0 && selectedToken.usdPrice ? (
+          <KarmaPreview
+            karmaAmount={estimatedKarma}
+            dailyCap={karmaData.dailyKarmaCap}
+            currentDailyTotal={karmaData.tipKarmaEarnedToday}
+            usdValue={parseFloat(amount) * selectedToken.usdPrice}
+          />
+        ) : null}
+
+        {/* Public/Private Toggle */}
+        <PublicPrivateToggle
+          isPublic={isPublic}
+          onChange={setIsPublic}
+          disabled={loading}
+        />
+
         {/* Message Input */}
         <TextField
           fullWidth
@@ -605,11 +1126,14 @@ export default function TipModal({
           value={message}
           onChange={(e) => setMessage(e.target.value.slice(0, 200))}
           multiline
-          rows={3}
+          rows={isMobile ? 2 : 3}
           sx={{ mb: 1 }}
           placeholder="Great contribution! 🎉"
           disabled={loading}
           helperText={`${message.length}/200 characters`}
+          inputProps={{
+            inputMode: 'text'
+          }}
         />
 
         {/* Info Text */}
@@ -627,13 +1151,20 @@ export default function TipModal({
         </Typography>
 
         {/* Action Buttons */}
-        <Box sx={{ display: 'flex', gap: 2 }}>
+        <Box 
+          sx={{ 
+            display: 'flex', 
+            flexDirection: isMobile ? 'column-reverse' : 'row',
+            gap: 2 
+          }}
+        >
           <Button 
             variant="outlined" 
             onClick={handleClose} 
             fullWidth
             disabled={loading}
             sx={{
+              minHeight: 48,
               borderColor: '#E5E7F0',
               color: '#6F7280',
               textTransform: 'none',
@@ -653,12 +1184,14 @@ export default function TipModal({
             disabled={
               loading || 
               loadingTokens || 
+              isProcessing ||
               !selectedToken || 
               !amount || 
               !!amountError ||
-              retryCount >= 3
+              retryCount >= TIP_RETRY_CONFIG.MAX_RETRIES
             }
             sx={{ 
+              minHeight: 48,
               bgcolor: '#7C4DFF',
               textTransform: 'none',
               fontWeight: 600,
@@ -678,9 +1211,9 @@ export default function TipModal({
                 <CircularProgress size={16} sx={{ mr: 1, color: '#fff' }} />
                 {loadingMessage}
               </>
-            ) : retryCount > 0 && retryCount < 3 ? (
-              `Retry (${retryCount}/3)`
-            ) : retryCount >= 3 ? (
+            ) : retryCount > 0 && retryCount < TIP_RETRY_CONFIG.MAX_RETRIES ? (
+              `Retry (${retryCount}/${TIP_RETRY_CONFIG.MAX_RETRIES})`
+            ) : retryCount >= TIP_RETRY_CONFIG.MAX_RETRIES ? (
               'Max Retries Reached'
             ) : (
               'Send Tip'
@@ -688,6 +1221,50 @@ export default function TipModal({
           </Button>
         </Box>
       </DialogContent>
+
+      {/* Transaction Processing Backdrop */}
+      <Backdrop 
+        open={loading} 
+        sx={{ 
+          zIndex: (theme) => theme.zIndex.modal + 1,
+          position: 'absolute',
+          color: '#fff',
+          backdropFilter: 'blur(4px)',
+          bgcolor: 'rgba(0, 0, 0, 0.7)'
+        }}
+      >
+        <Box sx={{ textAlign: 'center' }}>
+          <CircularProgress 
+            size={60} 
+            sx={{ 
+              mb: 2,
+              color: '#7C4DFF'
+            }} 
+          />
+          <Typography 
+            variant="h6"
+            sx={{
+              fontFamily: 'Space Grotesk, sans-serif',
+              fontWeight: 600,
+              color: '#fff',
+              fontSize: '18px'
+            }}
+          >
+            {loadingMessage}
+          </Typography>
+          <Typography
+            variant="caption"
+            sx={{
+              display: 'block',
+              mt: 1,
+              color: 'rgba(255, 255, 255, 0.7)',
+              fontSize: '12px'
+            }}
+          >
+            Please don't close this window
+          </Typography>
+        </Box>
+      </Backdrop>
     </Dialog>
   )
 }

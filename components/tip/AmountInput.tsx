@@ -64,6 +64,7 @@ export default function AmountInput({
         inputProps={{
           min: 0,
           step: 'any',
+          inputMode: 'decimal',
           style: { 
             fontSize: '1.25rem',
             fontWeight: 500
