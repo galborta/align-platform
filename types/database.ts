@@ -617,6 +617,39 @@ export interface Database {
           submitted_at: string | null
           completed_at: string | null
           cancelled_at: string | null
+          // ==================== ESCROW TRACKING ====================
+          /** Whether funds are currently locked in escrow for this job */
+          escrow_locked: boolean
+          /** Solana transaction signature for the escrow lock transaction */
+          escrow_tx_signature: string | null
+          /** Total amount locked in escrow (includes job payment + platform fee) */
+          escrow_amount_tokens: number | null
+          /** SPL token mint address of escrowed funds */
+          escrow_token_mint: string | null
+          // ==================== DEADLINE MANAGEMENT ====================
+          /** When the poster hopes/expects the job to be completed */
+          poster_desired_completion: string | null
+          /** When the worker commits to completing the job (shown to poster before assignment) */
+          worker_committed_completion: string | null
+          /** Absolute deadline - auto-release happens after this time if not paused */
+          hard_deadline: string | null
+          /** When auto-release is scheduled to execute (calculated from hard_deadline) */
+          release_scheduled_at: string | null
+          // ==================== PAYMENT RELEASE CONTROLS ====================
+          /** Whether auto-release is currently paused (by poster requesting revision or admin intervention) */
+          release_paused: boolean
+          /** Wallet address of user who paused release (poster or admin) */
+          release_paused_by: string | null
+          /** When release was paused */
+          release_paused_at: string | null
+          // ==================== REVISION TRACKING ====================
+          /** How many times the poster has requested revisions */
+          revision_requests_count: number
+          /** When the most recent revision was requested */
+          last_revision_requested_at: string | null
+          // ==================== FEE TRACKING ====================
+          /** Platform fee percentage at time of job creation (locked in to prevent retroactive changes) */
+          fee_percentage_at_creation: number
           created_at: string
           updated_at: string
         }
@@ -637,6 +670,25 @@ export interface Database {
           submitted_at?: string | null
           completed_at?: string | null
           cancelled_at?: string | null
+          // Escrow tracking fields
+          escrow_locked?: boolean
+          escrow_tx_signature?: string | null
+          escrow_amount_tokens?: number | null
+          escrow_token_mint?: string | null
+          // Deadline management fields
+          poster_desired_completion?: string | null
+          worker_committed_completion?: string | null
+          hard_deadline?: string | null
+          release_scheduled_at?: string | null
+          // Payment release controls
+          release_paused?: boolean
+          release_paused_by?: string | null
+          release_paused_at?: string | null
+          // Revision tracking
+          revision_requests_count?: number
+          last_revision_requested_at?: string | null
+          // Fee tracking
+          fee_percentage_at_creation?: number
           created_at?: string
           updated_at?: string
         }
@@ -657,6 +709,25 @@ export interface Database {
           submitted_at?: string | null
           completed_at?: string | null
           cancelled_at?: string | null
+          // Escrow tracking fields
+          escrow_locked?: boolean
+          escrow_tx_signature?: string | null
+          escrow_amount_tokens?: number | null
+          escrow_token_mint?: string | null
+          // Deadline management fields
+          poster_desired_completion?: string | null
+          worker_committed_completion?: string | null
+          hard_deadline?: string | null
+          release_scheduled_at?: string | null
+          // Payment release controls
+          release_paused?: boolean
+          release_paused_by?: string | null
+          release_paused_at?: string | null
+          // Revision tracking
+          revision_requests_count?: number
+          last_revision_requested_at?: string | null
+          // Fee tracking
+          fee_percentage_at_creation?: number
           created_at?: string
           updated_at?: string
         }
@@ -759,6 +830,17 @@ export interface Database {
           created_at: string
           ends_at: string | null
           resolved_at: string | null
+          // ==================== ADMIN RESOLUTION ====================
+          /** Wallet address of admin who resolved this dispute (null if community voting resolved it) */
+          admin_wallet: string | null
+          /** Admin's explanation for their resolution decision */
+          admin_resolution_notes: string | null
+          /** When the admin made their resolution decision */
+          admin_decided_at: string | null
+          /** Percentage of escrowed funds (excluding fee) to release to worker (0-100, must sum to 100 with poster_percentage) */
+          worker_percentage: number | null
+          /** Percentage of escrowed funds (excluding fee) to refund to poster (0-100, must sum to 100 with worker_percentage) */
+          poster_percentage: number | null
         }
         Insert: {
           id?: string
@@ -770,6 +852,12 @@ export interface Database {
           created_at?: string
           ends_at?: string | null
           resolved_at?: string | null
+          // Admin resolution fields
+          admin_wallet?: string | null
+          admin_resolution_notes?: string | null
+          admin_decided_at?: string | null
+          worker_percentage?: number | null
+          poster_percentage?: number | null
         }
         Update: {
           id?: string
@@ -781,6 +869,12 @@ export interface Database {
           created_at?: string
           ends_at?: string | null
           resolved_at?: string | null
+          // Admin resolution fields
+          admin_wallet?: string | null
+          admin_resolution_notes?: string | null
+          admin_decided_at?: string | null
+          worker_percentage?: number | null
+          poster_percentage?: number | null
         }
       }
       job_dispute_votes: {
@@ -909,6 +1003,142 @@ export interface Database {
           karma_awarded_sender?: number
           karma_awarded_recipient?: number
           created_at?: string
+        }
+      }
+      /**
+       * Platform configuration settings for the escrow system
+       * @description Stores platform-wide settings like fee percentage and wallet addresses
+       * @rls Public read, admin-only write
+       */
+      platform_settings: {
+        Row: {
+          id: string
+          /** Setting identifier: 'fee_percentage' (e.g., '5'), 'fee_wallet_address', or 'escrow_wallet_address' */
+          setting_key: 'fee_percentage' | 'fee_wallet_address' | 'escrow_wallet_address'
+          /** String value of the setting (numeric values stored as strings) */
+          setting_value: string
+          /** Wallet address of admin who last updated this setting */
+          updated_by: string
+          updated_at: string
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          setting_key: 'fee_percentage' | 'fee_wallet_address' | 'escrow_wallet_address'
+          setting_value: string
+          updated_by: string
+          updated_at?: string
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          setting_key?: 'fee_percentage' | 'fee_wallet_address' | 'escrow_wallet_address'
+          setting_value?: string
+          updated_by?: string
+          updated_at?: string
+          created_at?: string
+        }
+      }
+      /**
+       * Admin wallet addresses with platform permissions
+       * @description Tracks which wallets have admin privileges
+       * @rls Public read (transparency), super_admin-only write
+       */
+      admin_wallets: {
+        Row: {
+          id: string
+          /** Solana wallet address with admin privileges */
+          wallet_address: string
+          /** super_admin: full control (manage admins, settings), moderator: limited control (resolve disputes) */
+          role: 'super_admin' | 'moderator'
+          /** Wallet address of admin who added this admin */
+          added_by: string
+          added_at: string
+          /** Whether this admin is currently active (can be deactivated without deletion) */
+          is_active: boolean
+        }
+        Insert: {
+          id?: string
+          wallet_address: string
+          role: 'super_admin' | 'moderator'
+          added_by: string
+          added_at?: string
+          is_active?: boolean
+        }
+        Update: {
+          id?: string
+          wallet_address?: string
+          role?: 'super_admin' | 'moderator'
+          added_by?: string
+          added_at?: string
+          is_active?: boolean
+        }
+      }
+      /**
+       * Immutable audit log of all escrow-related transactions
+       * @description Tracks every financial movement in the job escrow system
+       * @rls Read: job poster/worker only, Insert/Update: service role only, Delete: denied (immutable)
+       */
+      job_escrow_transactions: {
+        Row: {
+          id: string
+          /** Foreign key to jobs table */
+          job_id: string
+          /** Type of escrow operation being performed */
+          transaction_type: 'lock' | 'release_to_worker' | 'refund_to_poster' | 'fee_collection' | 'partial_release'
+          /** Source wallet address (sender) */
+          from_wallet: string
+          /** Destination wallet address (receiver) */
+          to_wallet: string
+          /** Amount of tokens transferred (raw amount, not accounting for decimals) */
+          amount_tokens: number
+          /** SPL token mint address (or 'So11111111111111111111111111111111111111112' for SOL) */
+          token_mint: string
+          /** Human-readable token symbol (e.g., 'USDC', 'SOL', 'BONK') */
+          token_symbol: string
+          /** Solana transaction signature (null if transaction hasn't been submitted yet) */
+          tx_signature: string | null
+          /** Transaction status: pending (not sent), confirmed (on-chain), failed (error occurred) */
+          status: 'pending' | 'confirmed' | 'failed'
+          /** Number of retry attempts for failed transactions */
+          retry_count: number
+          /** Error message if transaction failed */
+          error_message: string | null
+          created_at: string
+          /** When transaction was confirmed on-chain (null until confirmed) */
+          confirmed_at: string | null
+        }
+        Insert: {
+          id?: string
+          job_id: string
+          transaction_type: 'lock' | 'release_to_worker' | 'refund_to_poster' | 'fee_collection' | 'partial_release'
+          from_wallet: string
+          to_wallet: string
+          amount_tokens: number
+          token_mint: string
+          token_symbol: string
+          tx_signature?: string | null
+          status?: 'pending' | 'confirmed' | 'failed'
+          retry_count?: number
+          error_message?: string | null
+          created_at?: string
+          confirmed_at?: string | null
+        }
+        Update: {
+          id?: string
+          job_id?: string
+          transaction_type?: 'lock' | 'release_to_worker' | 'refund_to_poster' | 'fee_collection' | 'partial_release'
+          from_wallet?: string
+          to_wallet?: string
+          amount_tokens?: number
+          token_mint?: string
+          token_symbol?: string
+          tx_signature?: string | null
+          status?: 'pending' | 'confirmed' | 'failed'
+          retry_count?: number
+          error_message?: string | null
+          created_at?: string
+          confirmed_at?: string | null
         }
       }
     }
