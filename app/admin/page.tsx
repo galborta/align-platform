@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { AppHeader } from '@/components/AppHeader'
@@ -51,6 +52,7 @@ const shortenAddress = (address: string) => {
 }
 
 export default function AdminPage() {
+  const router = useRouter()
   const { publicKey, signMessage } = useWallet()
   const [pendingProjects, setPendingProjects] = useState<ProjectWithSocials[]>([])
   const [orphanedSocials, setOrphanedSocials] = useState<SocialAssetWithProject[]>([])
@@ -497,6 +499,23 @@ export default function AdminPage() {
             Manage all projects, review pending approvals, and verify social accounts
           </p>
         </div>
+
+        {/* Quick Access Card */}
+        <Card className="mb-6">
+          <CardHeader>
+            <CardTitle className="font-display text-xl">Quick Access</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="flex gap-4">
+              <Button
+                onClick={() => router.push('/admin/escrow-releases')}
+                className="bg-purple-600 hover:bg-purple-700 text-white"
+              >
+                🔄 Escrow Releases Dashboard
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
 
         <div className="space-y-6">
           {/* Dispute Resolution Section */}

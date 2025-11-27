@@ -13,6 +13,7 @@ import KeyboardIcon from '@mui/icons-material/Keyboard'
 import { useMessaging } from '@/lib/MessagingContext'
 import { supabase } from '@/lib/supabase'
 import { formatDistanceToNow } from 'date-fns'
+import { NotificationBell } from '@/components/NotificationBell'
 
 export function AppHeader() {
   const wallet = useWallet()
@@ -159,6 +160,9 @@ export function AppHeader() {
                 </Menu>
               </>
             )}
+            
+            {/* Notification Bell (only show if wallet connected) */}
+            <NotificationBell />
             
             {/* Messages Button (only show if wallet connected) */}
             {wallet?.publicKey && (

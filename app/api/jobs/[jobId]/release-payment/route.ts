@@ -44,7 +44,7 @@ export async function POST(
     console.log(`[Release Payment] Starting for job ${params.jobId}`)
     
     // Parse request body
-    const { poster_wallet } = await request.json()
+    const { poster_wallet, auto_release } = await request.json()
     
     if (!poster_wallet) {
       console.error('[Release Payment] Missing poster_wallet in request')
@@ -55,6 +55,7 @@ export async function POST(
     }
 
     console.log(`[Release Payment] Poster: ${poster_wallet}`)
+    console.log(`[Release Payment] Auto-release: ${auto_release || false}`)
     
     // ==================== GET JOB DETAILS ====================
     
@@ -78,13 +79,29 @@ export async function POST(
     
     // ==================== AUTHORIZATION CHECKS ====================
     
-    // Verify poster
-    if (job.poster_wallet !== poster_wallet) {
-      console.error('[Release Payment] Unauthorized: wallet does not match poster')
-      return NextResponse.json(
-        { error: 'Only poster can release payment' },
-        { status: 403 }
-      )
+    // For auto-release, verify service token instead of poster wallet
+    if (auto_release) {
+      const authHeader = request.headers.get('authorization')
+      const serviceToken = process.env.SERVICE_AUTH_TOKEN || 'auto-release-internal'
+      
+      if (authHeader !== `Bearer ${serviceToken}`) {
+        console.error('[Release Payment] Invalid service token for auto-release')
+        return NextResponse.json(
+          { error: 'Unauthorized auto-release request' },
+          { status: 403 }
+        )
+      }
+      
+      console.log('[Release Payment] ✅ Service token validated for auto-release')
+    } else {
+      // Manual release: verify poster
+      if (job.poster_wallet !== poster_wallet) {
+        console.error('[Release Payment] Unauthorized: wallet does not match poster')
+        return NextResponse.json(
+          { error: 'Only poster can release payment' },
+          { status: 403 }
+        )
+      }
     }
     
     // ==================== STATUS VALIDATION ====================

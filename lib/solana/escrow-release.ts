@@ -11,6 +11,7 @@ import {
   TOKEN_PROGRAM_ID
 } from '@solana/spl-token'
 import { getFeeWallet, getFeePercentage } from '../platform-settings'
+import { supabase } from '../supabase'
 import bs58 from 'bs58'
 
 /**
@@ -49,6 +50,18 @@ export interface ReleasePaymentResult {
   feeCollected: number
   /** Error message if operation failed */
   error?: string
+}
+
+/**
+ * Interface for tracking retryable release attempts
+ */
+export interface RetryableRelease {
+  /** UUID of the job being released */
+  jobId: string
+  /** Current attempt number (1-indexed) */
+  attemptNumber: number
+  /** Error message from last failed attempt */
+  lastError?: string
 }
 
 /**
@@ -441,6 +454,328 @@ export async function validateEscrowBalance(
       valid: false,
       error: errorMessage
     }
+  }
+}
+
+/**
+ * Release payment with automatic retry tracking and logging
+ * 
+ * This function wraps releasePaymentFromEscrow with comprehensive retry logic:
+ * - Tracks attempt number for each release
+ * - Determines if errors are retryable
+ * - Logs all attempts to database
+ * - Returns whether another retry should be attempted
+ * 
+ * **Retry Strategy:**
+ * - Maximum 3 attempts per job
+ * - Only retries on transient/network errors
+ * - Logs success/failure to job_escrow_transactions
+ * - Returns shouldRetry flag for cron job handling
+ * 
+ * **Retryable Errors:**
+ * - Blockhash not found (transaction too old)
+ * - Network errors and timeouts
+ * - RPC errors and connection issues
+ * - Transaction simulation failures
+ * 
+ * **Non-Retryable Errors:**
+ * - Insufficient funds (needs manual intervention)
+ * - Invalid wallet addresses
+ * - Missing environment configuration
+ * 
+ * @param params - Release payment parameters
+ * @param attemptNumber - Current attempt number (1-indexed, defaults to 1)
+ * @returns Release result with shouldRetry flag
+ * 
+ * @example
+ * ```typescript
+ * // First attempt
+ * const result = await releasePaymentWithRetry(params, 1)
+ * 
+ * if (!result.success && result.shouldRetry) {
+ *   // Retry on next cron run
+ *   console.log('Will retry on next cron execution')
+ * } else if (!result.success && !result.shouldRetry) {
+ *   // Max retries exceeded or non-retryable error
+ *   console.log('Admin intervention required')
+ *   await notifyAdmin(params.jobId, result.error)
+ * }
+ * ```
+ */
+export async function releasePaymentWithRetry(
+  params: ReleasePaymentParams,
+  attemptNumber: number = 1
+): Promise<ReleasePaymentResult & { shouldRetry: boolean }> {
+  const startTime = Date.now()
+  
+  try {
+    console.log(`[Escrow Release Retry] Attempt ${attemptNumber}/3 for job ${params.jobId}`)
+    
+    // Attempt the release
+    const result = await releasePaymentFromEscrow(params)
+    
+    if (!result.success) {
+      // Determine if should retry
+      const shouldRetry = attemptNumber < 3 && isRetryableError(result.error)
+      
+      console.log(`[Escrow Release Retry] Attempt ${attemptNumber} failed: ${result.error}`)
+      console.log(`[Escrow Release Retry] Should retry: ${shouldRetry}`)
+      
+      // Log failure to database
+      await logReleaseAttempt({
+        job_id: params.jobId,
+        attempt_number: attemptNumber,
+        success: false,
+        error_message: result.error,
+        should_retry: shouldRetry,
+        duration_ms: Date.now() - startTime,
+        worker_wallet: params.workerWallet,
+        escrow_amount: params.escrowAmount,
+        token_mint: params.tokenMint
+      })
+      
+      return {
+        ...result,
+        shouldRetry
+      }
+    }
+    
+    // Success - log it
+    console.log(`[Escrow Release Retry] ✅ Attempt ${attemptNumber} succeeded`)
+    console.log(`[Escrow Release Retry] Worker received: ${result.workerReceived}`)
+    console.log(`[Escrow Release Retry] Fee collected: ${result.feeCollected}`)
+    
+    await logReleaseAttempt({
+      job_id: params.jobId,
+      attempt_number: attemptNumber,
+      success: true,
+      worker_tx_signature: result.workerTxSignature,
+      fee_tx_signature: result.feeTxSignature,
+      worker_amount: result.workerReceived,
+      fee_amount: result.feeCollected,
+      duration_ms: Date.now() - startTime,
+      worker_wallet: params.workerWallet,
+      escrow_amount: params.escrowAmount,
+      token_mint: params.tokenMint
+    })
+    
+    return {
+      ...result,
+      shouldRetry: false
+    }
+    
+  } catch (error) {
+    const duration = Date.now() - startTime
+    const shouldRetry = attemptNumber < 3
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error'
+    
+    console.error(`[Escrow Release Retry] ❌ Attempt ${attemptNumber} threw exception:`, error)
+    console.log(`[Escrow Release Retry] Should retry: ${shouldRetry}`)
+    
+    // Log exception to database
+    await logReleaseAttempt({
+      job_id: params.jobId,
+      attempt_number: attemptNumber,
+      success: false,
+      error_message: errorMessage,
+      should_retry: shouldRetry,
+      duration_ms: duration,
+      worker_wallet: params.workerWallet,
+      escrow_amount: params.escrowAmount,
+      token_mint: params.tokenMint
+    })
+    
+    return {
+      success: false,
+      error: errorMessage,
+      workerReceived: 0,
+      feeCollected: 0,
+      shouldRetry
+    }
+  }
+}
+
+/**
+ * Determine if an error is transient and should be retried
+ * 
+ * Analyzes error messages to identify temporary failures that may
+ * succeed on retry vs permanent failures requiring intervention.
+ * 
+ * **Retryable Patterns:**
+ * - Blockhash expired (transaction too old)
+ * - Network connectivity issues
+ * - RPC node temporary failures
+ * - Connection timeouts
+ * - Rate limiting (429 errors)
+ * 
+ * **Non-Retryable Patterns:**
+ * - Insufficient funds
+ * - Invalid addresses
+ * - Configuration errors
+ * - Permission/signature errors
+ * 
+ * @param error - Error message to analyze
+ * @returns true if error should be retried, false otherwise
+ */
+function isRetryableError(error?: string): boolean {
+  if (!error) return false
+  
+  const errorLower = error.toLowerCase()
+  
+  // Retry on network/temporary errors
+  const retryablePatterns = [
+    'blockhash not found',
+    'blockhash has expired',
+    'transaction too old',
+    'network error',
+    'timeout',
+    'timed out',
+    'rpc error',
+    'connection refused',
+    'connection reset',
+    'econnrefused',
+    'econnreset',
+    'etimedout',
+    'transaction simulation failed',
+    'rate limit',
+    '429',
+    'too many requests',
+    'temporary failure',
+    'try again',
+    'node is unhealthy'
+  ]
+  
+  // Don't retry on permanent errors
+  const nonRetryablePatterns = [
+    'insufficient funds',
+    'insufficient balance',
+    'invalid public key',
+    'invalid wallet',
+    'not configured',
+    'missing',
+    'invalid signature',
+    'unauthorized'
+  ]
+  
+  // Check for non-retryable patterns first (higher priority)
+  const hasNonRetryable = nonRetryablePatterns.some(pattern => 
+    errorLower.includes(pattern)
+  )
+  
+  if (hasNonRetryable) {
+    console.log(`[Retry Check] Non-retryable error detected: ${error}`)
+    return false
+  }
+  
+  // Check for retryable patterns
+  const isRetryable = retryablePatterns.some(pattern => 
+    errorLower.includes(pattern)
+  )
+  
+  if (isRetryable) {
+    console.log(`[Retry Check] Retryable error detected: ${error}`)
+  } else {
+    console.log(`[Retry Check] Unknown error type (defaulting to non-retryable): ${error}`)
+  }
+  
+  return isRetryable
+}
+
+/**
+ * Log a payment release attempt to the database
+ * 
+ * Creates a comprehensive audit trail of all release attempts including:
+ * - Success/failure status
+ * - Attempt number
+ * - Transaction signatures (on success)
+ * - Error messages (on failure)
+ * - Should retry flag
+ * - Execution duration
+ * 
+ * Uses job_escrow_transactions table with enhanced retry tracking.
+ * 
+ * @param data - Attempt data to log
+ */
+async function logReleaseAttempt(data: {
+  job_id: string
+  attempt_number: number
+  success: boolean
+  error_message?: string
+  should_retry?: boolean
+  worker_tx_signature?: string
+  fee_tx_signature?: string
+  worker_amount?: number
+  fee_amount?: number
+  duration_ms?: number
+  worker_wallet: string
+  escrow_amount: number
+  token_mint: string
+}) {
+  try {
+    console.log(`[Release Attempt Log] Logging attempt ${data.attempt_number} for job ${data.job_id}`)
+    
+    // Get escrow wallet address
+    const escrowWalletAddress = process.env.ESCROW_WALLET_ADDRESS || 
+                                process.env.FEE_WALLET_ADDRESS || 
+                                'UNKNOWN'
+    
+    // Insert into job_escrow_transactions table
+    const { error } = await supabase
+      .from('job_escrow_transactions')
+      .insert({
+        job_id: data.job_id,
+        transaction_type: 'release_to_worker',
+        from_wallet: escrowWalletAddress,
+        to_wallet: data.worker_wallet,
+        amount_tokens: data.worker_amount || data.escrow_amount,
+        token_mint: data.token_mint,
+        token_symbol: 'SOL', // TODO: Get from token metadata
+        tx_signature: data.worker_tx_signature || null,
+        status: data.success ? 'confirmed' : 'failed',
+        retry_count: data.attempt_number,
+        error_message: data.error_message || null,
+        created_at: new Date().toISOString(),
+        confirmed_at: data.success ? new Date().toISOString() : null
+      })
+    
+    if (error) {
+      console.error('[Release Attempt Log] Failed to log attempt:', error)
+      // Don't throw - logging failures shouldn't break the release flow
+    } else {
+      console.log(`[Release Attempt Log] ✅ Logged attempt ${data.attempt_number}`)
+    }
+    
+    // If we have a fee transaction, log that too
+    if (data.success && data.fee_tx_signature) {
+      const feeWalletAddress = await getFeeWallet() || 'UNKNOWN'
+      
+      const { error: feeError } = await supabase
+        .from('job_escrow_transactions')
+        .insert({
+          job_id: data.job_id,
+          transaction_type: 'fee_collection',
+          from_wallet: escrowWalletAddress,
+          to_wallet: feeWalletAddress,
+          amount_tokens: data.fee_amount || 0,
+          token_mint: data.token_mint,
+          token_symbol: 'SOL', // TODO: Get from token metadata
+          tx_signature: data.fee_tx_signature,
+          status: 'confirmed',
+          retry_count: data.attempt_number,
+          created_at: new Date().toISOString(),
+          confirmed_at: new Date().toISOString()
+        })
+      
+      if (feeError) {
+        console.error('[Release Attempt Log] Failed to log fee transaction:', feeError)
+      } else {
+        console.log('[Release Attempt Log] ✅ Logged fee transaction')
+      }
+    }
+    
+  } catch (error) {
+    console.error('[Release Attempt Log] Exception while logging:', error)
+    // Don't throw - logging failures shouldn't break the release flow
   }
 }
 
