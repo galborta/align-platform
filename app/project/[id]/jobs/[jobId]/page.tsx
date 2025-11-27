@@ -50,6 +50,10 @@ import RadioGroup from '@mui/material/RadioGroup'
 import FormControl from '@mui/material/FormControl'
 import FormControlLabel from '@mui/material/FormControlLabel'
 import Alert from '@mui/material/Alert'
+import AlertTitle from '@mui/material/AlertTitle'
+import CalendarTodayIcon from '@mui/icons-material/CalendarToday'
+import Typography from '@mui/material/Typography'
+import Box from '@mui/material/Box'
 
 type Job = Database['public']['Tables']['jobs']['Row']
 type Project = Database['public']['Tables']['projects']['Row']
@@ -86,6 +90,33 @@ const statusLabels: Record<string, string> = {
   completed: 'Completed',
   disputed: 'In Dispute',
   cancelled: 'Cancelled'
+}
+
+// Helper function to calculate days until deadline
+function getDaysUntilDeadline(deadline: string): number {
+  const deadlineDate = new Date(deadline)
+  const now = new Date()
+  const diffTime = deadlineDate.getTime() - now.getTime()
+  const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24))
+  return diffDays
+}
+
+// Helper function to format deadline with relative time
+function formatDeadline(deadline: string): string {
+  const date = new Date(deadline)
+  const days = getDaysUntilDeadline(deadline)
+  
+  if (days < 0) {
+    return `${format(date, 'MMM dd, yyyy')} (OVERDUE by ${Math.abs(days)} days)`
+  } else if (days === 0) {
+    return `${format(date, 'MMM dd, yyyy')} (TODAY)`
+  } else if (days === 1) {
+    return `${format(date, 'MMM dd, yyyy')} (TOMORROW)`
+  } else if (days <= 7) {
+    return `${format(date, 'MMM dd, yyyy')} (in ${days} days)`
+  } else {
+    return format(date, 'MMM dd, yyyy')
+  }
 }
 
 export default function JobDetailPage() {
@@ -641,12 +672,14 @@ export default function JobDetailPage() {
 
     setAssigning(true)
     try {
+      // Update job with assignment and set hard deadline from worker's commitment
       const { error: updateError } = await supabase
         .from('jobs')
         .update({
           status: 'assigned',
           assigned_to: selectedApplication.applicant_wallet,
           assigned_at: new Date().toISOString(),
+          hard_deadline: selectedApplication.committed_completion_date, // Set binding deadline
           updated_at: new Date().toISOString()
         })
         .eq('id', job.id)
@@ -1578,6 +1611,48 @@ export default function JobDetailPage() {
                     </>
                   )}
                 </div>
+
+                {/* Deadline Information */}
+                {job.hard_deadline && job.status === 'assigned' && (
+                  <Box 
+                    sx={{ 
+                      display: 'flex', 
+                      alignItems: 'center', 
+                      mt: 3,
+                      p: 2,
+                      borderRadius: 2,
+                      backgroundColor: getDaysUntilDeadline(job.hard_deadline) < 3 ? '#FEE' : '#F8F5FF'
+                    }}
+                  >
+                    <CalendarTodayIcon 
+                      sx={{ 
+                        mr: 1.5, 
+                        color: getDaysUntilDeadline(job.hard_deadline) < 3 ? '#DC2626' : '#7C4DFF',
+                        fontSize: 20
+                      }} 
+                    />
+                    <Box>
+                      <Typography 
+                        variant="body2" 
+                        sx={{ 
+                          fontWeight: 600, 
+                          color: '#1A1A1E',
+                          mb: 0.25
+                        }}
+                      >
+                        {getDaysUntilDeadline(job.hard_deadline) < 0 ? '🚨 Deadline Passed' : '⏰ Hard Deadline'}
+                      </Typography>
+                      <Typography 
+                        variant="body2" 
+                        sx={{ 
+                          color: getDaysUntilDeadline(job.hard_deadline) < 3 ? '#DC2626' : '#6F7280'
+                        }}
+                      >
+                        {formatDeadline(job.hard_deadline)}
+                      </Typography>
+                    </Box>
+                  </Box>
+                )}
               </CardContent>
             </Card>
 
@@ -1655,6 +1730,87 @@ export default function JobDetailPage() {
                   </div>
                 </CardContent>
               </Card>
+            )}
+
+            {/* Deadline Reminder for Worker */}
+            {job.status === 'assigned' && 
+             job.assigned_to === publicKey?.toString() && 
+             job.hard_deadline && (
+              <Alert 
+                severity={getDaysUntilDeadline(job.hard_deadline) < 3 ? 'error' : 'warning'}
+                sx={{ 
+                  mb: 3,
+                  backgroundColor: getDaysUntilDeadline(job.hard_deadline) < 3 ? '#FEE' : '#FFF4E6',
+                  '& .MuiAlert-icon': {
+                    color: getDaysUntilDeadline(job.hard_deadline) < 3 ? '#DC2626' : '#FB923C'
+                  }
+                }}
+              >
+                <AlertTitle sx={{ fontWeight: 700, color: '#1A1A1E' }}>
+                  {getDaysUntilDeadline(job.hard_deadline) < 3 ? '🚨 Urgent Deadline' : '⏰ Deadline Reminder'}
+                </AlertTitle>
+                <Typography variant="body2" sx={{ mb: 0.5 }}>
+                  <strong>Delivery deadline:</strong> {formatDeadline(job.hard_deadline)}
+                </Typography>
+                <Typography variant="body2" sx={{ mb: getDaysUntilDeadline(job.hard_deadline) < 3 ? 1 : 0 }}>
+                  {getDaysUntilDeadline(job.hard_deadline) > 0 
+                    ? `${getDaysUntilDeadline(job.hard_deadline)} ${getDaysUntilDeadline(job.hard_deadline) === 1 ? 'day' : 'days'} remaining to submit your work`
+                    : 'Deadline has passed - submit immediately to avoid penalties'}
+                </Typography>
+                {getDaysUntilDeadline(job.hard_deadline) < 3 && (
+                  <Typography 
+                    variant="body2" 
+                    sx={{ 
+                      mt: 1, 
+                      fontWeight: 600,
+                      color: getDaysUntilDeadline(job.hard_deadline) < 0 ? '#DC2626' : '#1A1A1E'
+                    }}
+                  >
+                    ⚠️ Missing this deadline without submission will result in job cancellation and karma penalties
+                  </Typography>
+                )}
+              </Alert>
+            )}
+
+            {/* Missed Deadline Alert for Poster */}
+            {job.status === 'assigned' && 
+             job.poster_wallet === publicKey?.toString() &&
+             job.hard_deadline &&
+             getDaysUntilDeadline(job.hard_deadline) < 0 &&
+             !job.submitted_at && (
+              <Alert 
+                severity="warning" 
+                sx={{ 
+                  mb: 3,
+                  backgroundColor: '#FFF4E6',
+                  '& .MuiAlert-icon': {
+                    color: '#FB923C'
+                  }
+                }}
+              >
+                <AlertTitle sx={{ fontWeight: 700, color: '#1A1A1E' }}>
+                  ⚠️ Worker Missed Deadline
+                </AlertTitle>
+                <Typography variant="body2" sx={{ mb: 2 }}>
+                  The worker has not submitted work by the committed deadline ({formatDeadline(job.hard_deadline)}).
+                  You can now cancel this job and receive a full refund.
+                </Typography>
+                <Button 
+                  variant="contained" 
+                  onClick={handleCancel}
+                  sx={{
+                    backgroundColor: '#FB923C',
+                    color: '#fff',
+                    textTransform: 'none',
+                    fontWeight: 600,
+                    '&:hover': {
+                      backgroundColor: '#F97316'
+                    }
+                  }}
+                >
+                  Cancel Job & Get Refund
+                </Button>
+              </Alert>
             )}
 
             {/* Work Submission Card (if submitted) */}
@@ -2788,6 +2944,7 @@ export default function JobDetailPage() {
           completedJobsCount={userCompletedJobs}
           assignmentMode={job.assignment_mode}
           jobStatus={job.status}
+          job={job}
           onApplicationSubmitted={() => {
             fetchJobData() // Refresh to show new application
           }}

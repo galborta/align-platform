@@ -740,6 +740,7 @@ export interface Database {
           pitch: string
           image_urls: string[]
           estimated_completion: string
+          committed_completion_date: string
           is_invalidated: boolean
           created_at: string
           updated_at: string
@@ -751,6 +752,7 @@ export interface Database {
           pitch: string
           image_urls?: string[]
           estimated_completion: string
+          committed_completion_date: string
           is_invalidated?: boolean
           created_at?: string
           updated_at?: string
@@ -762,6 +764,7 @@ export interface Database {
           pitch?: string
           image_urls?: string[]
           estimated_completion?: string
+          committed_completion_date?: string
           is_invalidated?: boolean
           created_at?: string
           updated_at?: string

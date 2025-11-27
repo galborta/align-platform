@@ -13,20 +13,33 @@ import {
   FormControl,
   InputLabel,
   Alert,
+  AlertTitle,
   CircularProgress,
   IconButton,
-  Chip
+  Chip,
+  Box,
+  Typography,
+  Tooltip
 } from '@mui/material'
+import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider'
+import { DatePicker } from '@mui/x-date-pickers/DatePicker'
+import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns'
 import { applyToJob } from '@/lib/jobs'
 import { supabase } from '@/lib/supabase'
 import { calculateJobKarma, calculateJobCompletionKarma } from '@/lib/karma'
 import { getWalletTokenData } from '@/lib/token-balance'
 import { toast } from 'react-hot-toast'
+import { addDays, isBefore, isAfter, format, differenceInDays } from 'date-fns'
 import CloseIcon from '@mui/icons-material/Close'
 import CloudUploadIcon from '@mui/icons-material/CloudUpload'
 import DeleteIcon from '@mui/icons-material/Delete'
 import WorkIcon from '@mui/icons-material/Work'
 import EmojiEventsIcon from '@mui/icons-material/EmojiEvents'
+import InfoIcon from '@mui/icons-material/Info'
+import WarningIcon from '@mui/icons-material/Warning'
+import { Database } from '@/types/database'
+
+type Job = Database['public']['Tables']['jobs']['Row']
 
 interface JobApplicationModalProps {
   isOpen: boolean
@@ -40,6 +53,7 @@ interface JobApplicationModalProps {
   completedJobsCount: number
   assignmentMode: 'first_come' | 'review'
   jobStatus: string
+  job?: Job | null
   onApplicationSubmitted?: () => void
 }
 
@@ -72,6 +86,7 @@ export function JobApplicationModal({
   completedJobsCount,
   assignmentMode,
   jobStatus,
+  job,
   onApplicationSubmitted
 }: JobApplicationModalProps) {
   const [loading, setLoading] = useState(false)
@@ -83,6 +98,10 @@ export function JobApplicationModal({
   const [tokenPercentage, setTokenPercentage] = useState<number>(0)
   const [immediateKarma, setImmediateKarma] = useState<number>(0)
   const [delayedKarma, setDelayedKarma] = useState<number>(0)
+  
+  // Deadline commitment state
+  const [committedDeadline, setCommittedDeadline] = useState<Date | null>(null)
+  const [deadlineError, setDeadlineError] = useState<string | null>(null)
 
   // Reset form when modal closes
   useEffect(() => {
@@ -104,7 +123,57 @@ export function JobApplicationModal({
     setCustomTime('')
     setImages([])
     setErrors({})
+    setCommittedDeadline(null)
+    setDeadlineError(null)
   }
+
+  // Validate deadline
+  const validateDeadline = (date: Date | null): boolean => {
+    setDeadlineError(null)
+    
+    if (!date) {
+      setDeadlineError('Completion date is required')
+      return false
+    }
+    
+    const tomorrow = addDays(new Date(), 1)
+    if (isBefore(date, tomorrow)) {
+      setDeadlineError('Deadline must be at least 1 day from now')
+      return false
+    }
+    
+    const maxDate = addDays(new Date(), 90)
+    if (isAfter(date, maxDate)) {
+      setDeadlineError('Deadline cannot be more than 90 days from now')
+      return false
+    }
+    
+    return true
+  }
+
+  // Calculate deadline bonus karma
+  const getDeadlineBonus = (days: number): number => {
+    // Faster delivery = bonus karma
+    if (days <= 3) return 20 // +20% for 3-day delivery
+    if (days <= 7) return 10 // +10% for 1-week delivery
+    return 0
+  }
+
+  // Update karma calculation when deadline changes
+  useEffect(() => {
+    if (committedDeadline && tokenPercentage) {
+      const daysUntilDeadline = differenceInDays(committedDeadline, new Date())
+      const bonusPercent = getDeadlineBonus(daysUntilDeadline)
+      
+      // Recalculate with bonus
+      const baseImmediate = calculateJobKarma('APPLY_TO_JOB', tokenPercentage, true)
+      const baseDelayed = calculateJobKarma('APPLY_TO_JOB', tokenPercentage, false)
+      const completionBonus = calculateJobCompletionKarma(jobUsdValue)
+      
+      setImmediateKarma(Math.round(baseImmediate * (1 + bonusPercent / 100)))
+      setDelayedKarma(Math.round((baseDelayed + completionBonus) * (1 + bonusPercent / 100)))
+    }
+  }, [committedDeadline, tokenPercentage, jobUsdValue])
 
   const fetchTokenPercentageAndCalculateKarma = async () => {
     try {
@@ -247,6 +316,11 @@ export function JobApplicationModal({
       newErrors.customTime = 'Please specify your custom timeline'
     }
 
+    // Deadline validation
+    if (!validateDeadline(committedDeadline)) {
+      newErrors.deadline = deadlineError || 'Valid deadline is required'
+    }
+
     setErrors(newErrors)
     return Object.keys(newErrors).length === 0
   }
@@ -271,13 +345,14 @@ export function JobApplicationModal({
         ? customTime
         : TIME_OPTIONS.find(opt => opt.value === estimatedCompletion)?.label || estimatedCompletion
 
-      // Submit application
+      // Submit application with deadline commitment
       const applicationData = await applyToJob({
         job_id: jobId,
         applicant_wallet: walletAddress,
         pitch: pitch.trim(),
         image_urls: imageUrls,
-        estimated_completion: completionText
+        estimated_completion: completionText,
+        committed_completion_date: committedDeadline!.toISOString()
       })
 
       // TODO: Award karma via job-karma helper
@@ -533,6 +608,128 @@ export function JobApplicationModal({
           />
         )}
 
+        {/* Committed Completion Date */}
+        <Box sx={{ mb: 3 }}>
+          <Typography 
+            variant="subtitle2" 
+            sx={{ 
+              mb: 1.5, 
+              fontWeight: 600,
+              color: '#1A1A1E',
+              display: 'flex',
+              alignItems: 'center',
+              fontFamily: 'var(--font-display), Space Grotesk, sans-serif'
+            }}
+          >
+            Committed Completion Date *
+            <Tooltip 
+              title="You MUST deliver by this date. Missing it will result in karma penalties and job cancellation."
+              arrow
+              placement="top"
+            >
+              <InfoIcon sx={{ ml: 0.5, fontSize: '1rem', color: '#7C4DFF', cursor: 'help' }} />
+            </Tooltip>
+          </Typography>
+          
+          <LocalizationProvider dateAdapter={AdapterDateFns}>
+            <DatePicker
+              value={committedDeadline}
+              onChange={(date) => {
+                setCommittedDeadline(date)
+                validateDeadline(date)
+              }}
+              minDate={addDays(new Date(), 1)}
+              maxDate={addDays(new Date(), 90)}
+              slotProps={{
+                textField: {
+                  fullWidth: true,
+                  helperText: deadlineError || 'This becomes a HARD deadline after assignment',
+                  error: !!deadlineError,
+                  placeholder: 'Select completion date',
+                  sx: {
+                    '& .MuiOutlinedInput-root': {
+                      '&:hover fieldset': {
+                        borderColor: '#7C4DFF',
+                      },
+                      '&.Mui-focused fieldset': {
+                        borderColor: '#7C4DFF',
+                      }
+                    }
+                  }
+                }
+              }}
+            />
+          </LocalizationProvider>
+          
+          {/* Show poster's desired deadline if available */}
+          {job?.poster_desired_completion && (
+            <Alert 
+              severity="info" 
+              sx={{ 
+                mt: 1.5,
+                backgroundColor: '#E8F4FF',
+                color: '#1A1A1E',
+                '& .MuiAlert-icon': {
+                  color: '#2563EB'
+                }
+              }}
+            >
+              <strong>Poster's desired completion:</strong>{' '}
+              {format(new Date(job.poster_desired_completion), 'MMM dd, yyyy')}
+            </Alert>
+          )}
+
+          {/* Show deadline bonus if applicable */}
+          {committedDeadline && (() => {
+            const daysUntilDeadline = differenceInDays(committedDeadline, new Date())
+            const bonusPercent = getDeadlineBonus(daysUntilDeadline)
+            return bonusPercent > 0 ? (
+              <Alert 
+                severity="success" 
+                sx={{ 
+                  mt: 1.5,
+                  backgroundColor: '#E8F9F1',
+                  color: '#1A1A1E',
+                  '& .MuiAlert-icon': {
+                    color: '#36C170'
+                  }
+                }}
+              >
+                <strong>🎉 Fast delivery bonus:</strong> +{bonusPercent}% karma for {daysUntilDeadline}-day completion!
+              </Alert>
+            ) : null
+          })()}
+        </Box>
+
+        {/* Deadline Warning */}
+        {committedDeadline && (
+          <Alert 
+            severity="warning" 
+            sx={{ 
+              mb: 3,
+              backgroundColor: '#FFF4E6',
+              color: '#1A1A1E',
+              '& .MuiAlert-icon': {
+                color: '#FB923C'
+              }
+            }}
+          >
+            <AlertTitle sx={{ fontWeight: 700, color: '#1A1A1E' }}>
+              ⚠️ Deadline Commitment
+            </AlertTitle>
+            By submitting, you commit to delivering work by{' '}
+            <strong style={{ color: '#FB923C' }}>
+              {format(committedDeadline, 'MMM dd, yyyy')}
+            </strong>
+            . Missing this deadline without submission will result in:
+            <ul style={{ margin: '8px 0', paddingLeft: '20px' }}>
+              <li>Job cancellation with full refund to poster</li>
+              <li>Karma penalty for ghosting (-100 karma)</li>
+              <li>Failure record on your profile</li>
+            </ul>
+          </Alert>
+        )}
+
         {/* Your Profile Section */}
         <div 
           className="p-4 rounded-lg mb-4"
@@ -598,6 +795,24 @@ export function JobApplicationModal({
                 +{delayedKarma.toLocaleString()} karma
               </span>
             </div>
+            
+            {/* Show deadline bonus indicator */}
+            {committedDeadline && (() => {
+              const daysUntilDeadline = differenceInDays(committedDeadline, new Date())
+              const bonusPercent = getDeadlineBonus(daysUntilDeadline)
+              return bonusPercent > 0 ? (
+                <div 
+                  className="mt-2 pt-2 border-t"
+                  style={{ borderColor: 'rgba(124, 77, 255, 0.2)' }}
+                >
+                  <div className="flex items-center gap-1">
+                    <span className="text-xs font-medium" style={{ color: '#7C4DFF' }}>
+                      🚀 Fast delivery bonus applied: +{bonusPercent}%
+                    </span>
+                  </div>
+                </div>
+              ) : null
+            })()}
           </div>
         </div>
       </DialogContent>

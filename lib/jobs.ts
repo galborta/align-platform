@@ -59,6 +59,7 @@ export async function applyToJob(applicationData: {
   pitch: string
   image_urls?: string[]
   estimated_completion: string
+  committed_completion_date: string
 }): Promise<JobApplication> {
   const { data, error } = await supabase
     .from('job_applications')
@@ -227,18 +228,58 @@ export async function getJobApplicationCount(jobId: string): Promise<number> {
 
 /**
  * Assign a job to a worker
+ * 
+ * This function:
+ * 1. Fetches the worker's application to get their committed completion date
+ * 2. Sets the job status to 'assigned'
+ * 3. Records the worker's wallet address
+ * 4. Sets hard_deadline from the worker's committed_completion_date
+ * 
+ * The hard_deadline becomes the binding deadline that the worker must meet.
+ * If the worker doesn't submit work by this date, the job will be auto-cancelled
+ * and karma penalties will be applied.
+ * 
+ * @param jobId - The UUID of the job to assign
+ * @param workerWallet - The wallet address of the worker being assigned
+ * @returns Object with success status and optional error message
+ * 
+ * @example
+ * const result = await assignJobToWorker(jobId, workerWallet)
+ * if (result.success) {
+ *   console.log('Job assigned successfully')
+ * } else {
+ *   console.error('Assignment failed:', result.error)
+ * }
  */
 export async function assignJobToWorker(
   jobId: string,
   workerWallet: string
 ): Promise<{ success: boolean; error?: string }> {
   try {
+    // Get worker's committed deadline from their application
+    const { data: application, error: appError } = await supabase
+      .from('job_applications')
+      .select('committed_completion_date')
+      .eq('job_id', jobId)
+      .eq('applicant_wallet', workerWallet)
+      .single()
+    
+    if (appError || !application) {
+      console.error('Application not found:', appError)
+      return {
+        success: false,
+        error: 'Application not found'
+      }
+    }
+    
+    // Update job with assignment AND set hard deadline
     const { error } = await supabase
       .from('jobs')
       .update({
         status: 'assigned',
         assigned_to: workerWallet,
         assigned_at: new Date().toISOString(),
+        hard_deadline: application.committed_completion_date, // Set binding deadline from worker's commitment
         updated_at: new Date().toISOString()
       })
       .eq('id', jobId)

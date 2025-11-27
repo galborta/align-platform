@@ -27,13 +27,26 @@ export async function POST(
       return NextResponse.json({ error: 'Job is not in first-come mode' }, { status: 400 })
     }
 
-    // 2. Assign the job to this applicant
+    // 2. Get worker's committed deadline from their application
+    const { data: application, error: appError } = await supabase
+      .from('job_applications')
+      .select('committed_completion_date')
+      .eq('id', applicationId)
+      .single()
+
+    if (appError || !application) {
+      console.error('Application not found:', appError)
+      return NextResponse.json({ error: 'Application not found' }, { status: 404 })
+    }
+
+    // 3. Assign the job to this applicant with hard deadline
     const { error: updateError } = await supabase
       .from('jobs')
       .update({
         status: 'assigned',
         assigned_to: applicantWallet,
         assigned_at: new Date().toISOString(),
+        hard_deadline: application.committed_completion_date, // Set binding deadline from worker's commitment
         updated_at: new Date().toISOString()
       })
       .eq('id', params.jobId)
@@ -44,10 +57,10 @@ export async function POST(
       return NextResponse.json({ error: 'Failed to assign job' }, { status: 500 })
     }
 
-    // 3. Award application karma (TODO: integrate with job-karma.ts)
+    // 4. Award application karma (TODO: integrate with job-karma.ts)
     // await awardApplyToJobKarma(applicantWallet, job.project_id, job.token_mint)
 
-    console.log(`✅ Auto-assigned job ${params.jobId} to ${applicantWallet}`)
+    console.log(`✅ Auto-assigned job ${params.jobId} to ${applicantWallet} with deadline ${application.committed_completion_date}`)
 
     return NextResponse.json({
       success: true,
