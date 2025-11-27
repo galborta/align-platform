@@ -343,3 +343,88 @@ export async function getApplicationWithStats(
     return null
   }
 }
+
+/**
+ * Submit completed work for a job
+ * 
+ * This function:
+ * 1. Creates a submission record with deliverables (message, images, links)
+ * 2. Updates job status to 'submitted'
+ * 3. Sets submitted_at timestamp
+ * 4. Sets release_scheduled_at to 10 days from submission
+ * 
+ * The release_scheduled_at triggers the automatic payment release countdown.
+ * If the poster doesn't manually release payment or open a dispute within 10 days,
+ * the payment will be automatically released to the worker by the cron job.
+ * 
+ * @param jobId - The UUID of the job to submit work for
+ * @param workerWallet - The wallet address of the worker submitting work
+ * @param submissionData - Object containing submission details
+ * @param submissionData.message - Delivery message describing the completed work
+ * @param submissionData.image_urls - Array of Supabase storage URLs for deliverable images
+ * @param submissionData.external_links - Array of external links (Google Drive, Figma, etc.)
+ * @returns Object with success status and optional error message
+ * 
+ * @example
+ * const result = await submitWork(jobId, workerWallet, {
+ *   message: "Completed all design mockups as requested",
+ *   image_urls: ["https://...image1.jpg", "https://...image2.png"],
+ *   external_links: ["https://drive.google.com/..."]
+ * })
+ * if (result.success) {
+ *   console.log('Work submitted successfully - 10 day countdown started')
+ * } else {
+ *   console.error('Submission failed:', result.error)
+ * }
+ */
+export async function submitWork(
+  jobId: string,
+  workerWallet: string,
+  submissionData: {
+    message: string
+    image_urls: string[]
+    external_links: string[]
+  }
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    // Create submission record
+    const { error: submissionError } = await supabase
+      .from('job_submissions')
+      .insert({
+        job_id: jobId,
+        worker_wallet: workerWallet,
+        message: submissionData.message,
+        image_urls: submissionData.image_urls,
+        external_links: submissionData.external_links,
+        submitted_at: new Date().toISOString()
+      })
+    
+    if (submissionError) throw submissionError
+    
+    // Calculate release date (10 days from now)
+    const releaseDate = new Date()
+    releaseDate.setDate(releaseDate.getDate() + 10)
+    
+    // Update job status and set release_scheduled_at
+    const { error: jobError } = await supabase
+      .from('jobs')
+      .update({
+        status: 'submitted',
+        submitted_at: new Date().toISOString(),
+        release_scheduled_at: releaseDate.toISOString(), // 10 days from now
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', jobId)
+    
+    if (jobError) throw jobError
+    
+    return { success: true }
+    
+  } catch (error) {
+    console.error('Error submitting work:', error)
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Failed to submit work'
+    }
+  }
+}

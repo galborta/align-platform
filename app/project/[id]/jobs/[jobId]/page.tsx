@@ -54,6 +54,9 @@ import AlertTitle from '@mui/material/AlertTitle'
 import CalendarTodayIcon from '@mui/icons-material/CalendarToday'
 import Typography from '@mui/material/Typography'
 import Box from '@mui/material/Box'
+import Paper from '@mui/material/Paper'
+import Link from '@mui/material/Link'
+import Divider from '@mui/material/Divider'
 
 type Job = Database['public']['Tables']['jobs']['Row']
 type Project = Database['public']['Tables']['projects']['Row']
@@ -140,6 +143,9 @@ export default function JobDetailPage() {
   const [submission, setSubmission] = useState<JobSubmission | null>(null)
   const [showReleaseConfirm, setShowReleaseConfirm] = useState(false)
   const [releasing, setReleasing] = useState(false)
+  const [releaseError, setReleaseError] = useState<string | null>(null)
+  const [workerTxSignature, setWorkerTxSignature] = useState<string | null>(null)
+  const [feeTxSignature, setFeeTxSignature] = useState<string | null>(null)
   const [lightboxImage, setLightboxImage] = useState<{ url: string; index: number } | null>(null)
   const [showApplyModal, setShowApplyModal] = useState(false)
   const [showSubmitWorkModal, setShowSubmitWorkModal] = useState(false)
@@ -274,6 +280,22 @@ export default function JobDetailPage() {
       // Fetch dispute if job is disputed
       if (jobData.status === 'disputed') {
         await fetchDisputeData(params.jobId as string, jobData.project_id)
+      }
+
+      // Fetch transaction signatures if job is completed
+      if (jobData.status === 'completed') {
+        const { data: transactions, error: txError } = await supabase
+          .from('job_escrow_transactions')
+          .select('transaction_type, tx_signature')
+          .eq('job_id', params.jobId as string)
+          .in('transaction_type', ['release_to_worker', 'fee_collection'])
+
+        if (!txError && transactions) {
+          const workerTx = transactions.find(tx => tx.transaction_type === 'release_to_worker')
+          const feeTx = transactions.find(tx => tx.transaction_type === 'fee_collection')
+          setWorkerTxSignature(workerTx?.tx_signature || null)
+          setFeeTxSignature(feeTx?.tx_signature || null)
+        }
       }
 
     } catch (err) {
@@ -745,44 +767,69 @@ export default function JobDetailPage() {
   }
 
   const handleReleasePayment = async () => {
-    if (!job) return
+    if (!job || !publicKey) return
 
     setReleasing(true)
+    setReleaseError(null)
+
     try {
-      // Update job status to 'completed'
-      const { error: updateError } = await supabase
-        .from('jobs')
-        .update({
-          status: 'completed',
-          completed_at: new Date().toISOString(),
-          updated_at: new Date().toISOString()
+      console.log('[Release Payment] Calling API for job:', job.id)
+      
+      // Call the payment release API endpoint
+      const response = await fetch(`/api/jobs/${job.id}/release-payment`, {
+        method: 'POST',
+        headers: { 
+          'Content-Type': 'application/json' 
+        },
+        body: JSON.stringify({
+          poster_wallet: publicKey.toString()
         })
-        .eq('id', job.id)
-
-      if (updateError) throw updateError
-
-      // TODO: Award karma to both parties
-      // const completionKarma = calculateJobCompletionKarma(job.payment_amount_usd)
-      // await awardJobCompletionKarma(job.poster_wallet, job.assigned_to, job.project_id, completionKarma)
-
-      // Award upvoter bonuses
-      await awardApplicationUpvoterBonuses(job.id, job.payment_amount_usd)
-
-      toast.success('🎉 Payment released! Karma awarded to all parties', {
-        duration: 5000,
-        style: {
-          background: '#36C170',
-          color: '#fff',
-        }
       })
 
+      const result = await response.json()
+
+      if (!response.ok) {
+        throw new Error(result.error || 'Failed to release payment')
+      }
+
+      console.log('[Release Payment] Success:', result)
+
+      // Award upvoter bonuses
+      try {
+        await awardApplicationUpvoterBonuses(job.id, job.payment_amount_usd)
+      } catch (karmaError) {
+        console.error('[Release Payment] Upvoter bonus failed:', karmaError)
+        // Non-critical - continue
+      }
+
+      // Success notification with transaction details
+      const tokenSymbol = 'SOL' // TODO: Get from job metadata
+      toast.success(
+        `🎉 Payment released! Worker received ${result.workerReceived.toFixed(2)} ${tokenSymbol}`,
+        {
+          duration: 6000,
+          style: {
+            background: '#36C170',
+            color: '#fff',
+          }
+        }
+      )
+
+      console.log('[Release Payment] Worker TX:', result.workerTxSignature)
+      console.log('[Release Payment] Fee TX:', result.feeTxSignature)
+
+      // Close dialog and refresh
       setShowReleaseConfirm(false)
       
-      // Refresh job data
+      // Refresh job data to show updated status
       await fetchJobData()
     } catch (err) {
-      console.error('Error releasing payment:', err)
-      toast.error('Failed to release payment')
+      console.error('[Release Payment] Error:', err)
+      const errorMessage = err instanceof Error ? err.message : 'Failed to release payment'
+      setReleaseError(errorMessage)
+      toast.error(errorMessage, {
+        duration: 6000
+      })
     } finally {
       setReleasing(false)
     }
@@ -946,114 +993,112 @@ export default function JobDetailPage() {
           Jobs
         </Button>
 
-        {/* Completion Banner (for completed jobs) */}
+        {/* Completion Success UI */}
         {job.status === 'completed' && job.completed_at && (
-          <Card className="mb-6" style={{ borderColor: '#36C170', borderWidth: '2px' }}>
-            <CardContent className="p-6" style={{ backgroundColor: '#F0FDF4' }}>
-              <div className="flex items-start gap-4">
-                <CheckCircleIcon sx={{ fontSize: 48, color: '#36C170' }} />
-                <div className="flex-1">
-                  <h2 
-                    className="text-2xl font-bold mb-4"
-                    style={{ color: '#1A1A1E' }}
+          <Paper sx={{ p: 3, mb: 3, bgcolor: '#0a3d0a', border: '1px solid #4caf50' }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
+              <CheckCircleIcon sx={{ fontSize: 40, color: '#4caf50', mr: 2 }} />
+              <Box>
+                <Typography variant="h6" sx={{ color: '#4caf50', fontWeight: 700 }}>
+                  ✅ Job Completed Successfully
+                </Typography>
+                <Typography variant="body2" sx={{ color: '#a5d6a7' }}>
+                  Completed on {format(new Date(job.completed_at), 'MMM dd, yyyy')}
+                </Typography>
+              </Box>
+            </Box>
+            
+            <Divider sx={{ my: 2, borderColor: '#4caf50' }} />
+            
+            {/* Payment Breakdown */}
+            <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
+              <Typography variant="body2" sx={{ color: '#a5d6a7' }}>
+                Worker Received:
+              </Typography>
+              <Typography variant="body2" sx={{ color: '#4caf50', fontWeight: 'bold' }}>
+                {(job.escrow_amount_tokens * 0.95).toFixed(2)} {job.token_symbol || 'SOL'}
+              </Typography>
+            </Box>
+            
+            <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 2 }}>
+              <Typography variant="body2" sx={{ color: '#a5d6a7' }}>
+                Platform Fee (5%):
+              </Typography>
+              <Typography variant="body2" sx={{ color: '#a5d6a7' }}>
+                {(job.escrow_amount_tokens * 0.05).toFixed(2)} {job.token_symbol || 'SOL'}
+              </Typography>
+            </Box>
+            
+            {/* Transaction Signatures */}
+            {workerTxSignature && (
+              <Box sx={{ mb: 1 }}>
+                <Typography variant="caption" sx={{ color: '#a5d6a7' }}>
+                  Worker payment:{' '}
+                  <Link 
+                    href={`https://solscan.io/tx/${workerTxSignature}`} 
+                    target="_blank"
+                    sx={{ 
+                      color: '#66bb6a',
+                      textDecoration: 'none',
+                      '&:hover': { textDecoration: 'underline' }
+                    }}
                   >
-                    ✅ Completed on {format(new Date(job.completed_at), 'MMMM dd, yyyy')}
-                  </h2>
-                  
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-                    {/* Worker Karma */}
-                    {job.assigned_to && (
-                      <div 
-                        className="p-3 rounded-lg"
-                        style={{ backgroundColor: '#DCFCE7' }}
-                      >
-                        <div className="flex items-center gap-2 mb-1">
-                          <span className="text-sm font-semibold" style={{ color: '#166534' }}>
-                            WORKER
-                          </span>
-                        </div>
-                         <div className="flex items-center gap-2">
-                           <span 
-                             className="text-sm font-mono"
-                             style={{ color: '#1A1A1E' }}
-                           >
-                             {formatWalletAddress(job.assigned_to)}
-                           </span>
-                           <Tooltip title="Copy address">
-                             <IconButton
-                               size="small"
-                               onClick={() => handleCopyAddress(job.assigned_to!)}
-                               sx={{ 
-                                 padding: '2px',
-                                 color: '#6F7280',
-                                 '&:hover': { color: '#36C170' }
-                               }}
-                             >
-                               <ContentCopyIcon sx={{ fontSize: 14 }} />
-                             </IconButton>
-                           </Tooltip>
-                           {renderMessageTipButtons(job.assigned_to)}
-                         </div>
-                        <p className="text-sm font-bold mt-1" style={{ color: '#16A34A' }}>
-                          Earned +{(job.payment_amount_usd * 50).toLocaleString()} karma
-                        </p>
-                      </div>
-                    )}
-
-                    {/* Poster Karma */}
-                    <div 
-                      className="p-3 rounded-lg"
-                      style={{ backgroundColor: '#DCFCE7' }}
-                    >
-                      <div className="flex items-center gap-2 mb-1">
-                        <span className="text-sm font-semibold" style={{ color: '#166534' }}>
-                          POSTER
-                        </span>
-                      </div>
-                       <div className="flex items-center gap-2">
-                         <span 
-                           className="text-sm font-mono"
-                           style={{ color: '#1A1A1E' }}
-                         >
-                           {formatWalletAddress(job.poster_wallet)}
-                         </span>
-                         <Tooltip title="Copy address">
-                           <IconButton
-                             size="small"
-                             onClick={() => handleCopyAddress(job.poster_wallet)}
-                             sx={{ 
-                               padding: '2px',
-                               color: '#6F7280',
-                               '&:hover': { color: '#36C170' }
-                             }}
-                           >
-                             <ContentCopyIcon sx={{ fontSize: 14 }} />
-                           </IconButton>
-                         </Tooltip>
-                         {renderMessageTipButtons(job.poster_wallet)}
-                       </div>
-                      <p className="text-sm font-bold mt-1" style={{ color: '#16A34A' }}>
-                        Earned +{(job.payment_amount_usd * 50).toLocaleString()} karma
-                      </p>
-                    </div>
-                  </div>
-
-                  {/* Voter Bonus Karma Section */}
-                  <div 
-                    className="p-3 rounded-lg"
-                    style={{ backgroundColor: '#DCFCE7' }}
+                    {workerTxSignature.substring(0, 8)}...{workerTxSignature.substring(workerTxSignature.length - 6)}
+                    <OpenInNewIcon sx={{ fontSize: 12, ml: 0.5, verticalAlign: 'middle' }} />
+                  </Link>
+                </Typography>
+              </Box>
+            )}
+            
+            {feeTxSignature && (
+              <Box>
+                <Typography variant="caption" sx={{ color: '#a5d6a7' }}>
+                  Platform fee:{' '}
+                  <Link 
+                    href={`https://solscan.io/tx/${feeTxSignature}`} 
+                    target="_blank"
+                    sx={{ 
+                      color: '#66bb6a',
+                      textDecoration: 'none',
+                      '&:hover': { textDecoration: 'underline' }
+                    }}
                   >
-                    <p className="text-sm font-medium" style={{ color: '#166534' }}>
-                      🏆 Bonus karma distributed to voters who upvoted the winning application
-                    </p>
-                    <p className="text-xs mt-1" style={{ color: '#166534' }}>
-                      Voters earned: ${job.payment_amount_usd.toFixed(0)} × 5 × tier multiplier karma
-                    </p>
-                  </div>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
+                    {feeTxSignature.substring(0, 8)}...{feeTxSignature.substring(feeTxSignature.length - 6)}
+                    <OpenInNewIcon sx={{ fontSize: 12, ml: 0.5, verticalAlign: 'middle' }} />
+                  </Link>
+                </Typography>
+              </Box>
+            )}
+
+            {/* Karma Earned Section */}
+            <Box sx={{ mt: 3, pt: 2, borderTop: '1px solid #4caf50' }}>
+              <Typography variant="subtitle2" sx={{ color: '#4caf50', mb: 1.5, fontWeight: 600 }}>
+                🏆 Karma Distributed
+              </Typography>
+              
+              <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 0.5 }}>
+                <Typography variant="body2" sx={{ color: '#a5d6a7' }}>
+                  Worker ({job.assigned_to ? formatWalletAddress(job.assigned_to) : 'N/A'}):
+                </Typography>
+                <Typography variant="body2" sx={{ color: '#4caf50', fontWeight: 'bold' }}>
+                  +{(job.payment_amount_usd * 50).toLocaleString()} karma
+                </Typography>
+              </Box>
+              
+              <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 0.5 }}>
+                <Typography variant="body2" sx={{ color: '#a5d6a7' }}>
+                  Poster ({formatWalletAddress(job.poster_wallet)}):
+                </Typography>
+                <Typography variant="body2" sx={{ color: '#4caf50', fontWeight: 'bold' }}>
+                  +{(job.payment_amount_usd * 50).toLocaleString()} karma
+                </Typography>
+              </Box>
+              
+              <Typography variant="caption" sx={{ color: '#66bb6a', display: 'block', mt: 1 }}>
+                💎 Bonus karma distributed to application upvoters
+              </Typography>
+            </Box>
+          </Paper>
         )}
 
         {/* Dispute Banner and Voting Section (for disputed jobs) */}
@@ -2832,7 +2877,7 @@ export default function JobDetailPage() {
         <DialogTitle>
           <div className="flex items-center gap-2">
             <CheckCircleIcon sx={{ color: '#36C170' }} />
-            <span style={{ color: '#1A1A1E' }}>Release Payment?</span>
+            <span style={{ color: '#1A1A1E' }}>Confirm Payment Release</span>
           </div>
         </DialogTitle>
         <DialogContent>
@@ -2841,8 +2886,60 @@ export default function JobDetailPage() {
               className="text-base"
               style={{ color: '#1A1A1E' }}
             >
-              Confirm that the work meets all KPIs and release payment to the worker.
+              You are about to release payment to the worker. This action cannot be undone.
             </p>
+
+            {/* Payment Breakdown */}
+            {job && (
+              <Alert severity="info" sx={{ mb: 2 }}>
+                <Typography 
+                  variant="subtitle2" 
+                  sx={{ mb: 1.5, fontWeight: 600 }}
+                >
+                  Payment Breakdown:
+                </Typography>
+                <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 0.5 }}>
+                  <Typography variant="body2">Locked Amount:</Typography>
+                  <Typography variant="body2" fontWeight={500}>
+                    {job.escrow_amount_tokens} {job.token_symbol || 'SOL'}
+                  </Typography>
+                </Box>
+                <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 0.5 }}>
+                  <Typography variant="body2">Platform Fee (5%):</Typography>
+                  <Typography variant="body2">
+                    {(job.escrow_amount_tokens * 0.05).toFixed(2)} {job.token_symbol || 'SOL'}
+                  </Typography>
+                </Box>
+                <Box 
+                  sx={{ 
+                    display: 'flex', 
+                    justifyContent: 'space-between',
+                    pt: 1,
+                    mt: 1,
+                    borderTop: '1px solid rgba(0,0,0,0.1)'
+                  }}
+                >
+                  <Typography variant="body2" fontWeight="bold">
+                    Worker Receives:
+                  </Typography>
+                  <Typography 
+                    variant="body2" 
+                    fontWeight="bold" 
+                    sx={{ color: '#36C170' }}
+                  >
+                    {(job.escrow_amount_tokens * 0.95).toFixed(2)} {job.token_symbol || 'SOL'}
+                  </Typography>
+                </Box>
+              </Alert>
+            )}
+
+            {/* Error Display */}
+            {releaseError && (
+              <Alert severity="error" sx={{ mb: 2 }}>
+                <AlertTitle>Error</AlertTitle>
+                {releaseError}
+              </Alert>
+            )}
 
             <div 
               className="p-4 rounded-lg border-2"
@@ -2855,7 +2952,8 @@ export default function JobDetailPage() {
                 WHAT HAPPENS NEXT:
               </h4>
               <ul className="space-y-2 text-sm" style={{ color: '#1A1A1E' }}>
-                <li>✓ Worker receives payment immediately</li>
+                <li>✓ Worker receives payment on-chain via Solana</li>
+                <li>✓ Platform fee collected automatically</li>
                 <li>✓ Both parties earn completion karma</li>
                 <li>✓ Application upvoters get bonus karma</li>
                 <li>✓ Job marked as completed</li>
@@ -2867,7 +2965,7 @@ export default function JobDetailPage() {
               style={{ backgroundColor: '#FFF4E6' }}
             >
               <p className="text-sm" style={{ color: '#1A1A1E' }}>
-                <strong>Note:</strong> This action cannot be undone. Only release payment if you're satisfied with the work.
+                <strong>Note:</strong> Blockchain transactions cannot be reversed. Only release payment if you're satisfied with the work.
               </p>
             </div>
           </div>
@@ -2875,7 +2973,10 @@ export default function JobDetailPage() {
         <DialogActions sx={{ p: 3, pt: 0 }}>
           <Button
             variant="outline"
-            onClick={() => setShowReleaseConfirm(false)}
+            onClick={() => {
+              setShowReleaseConfirm(false)
+              setReleaseError(null)
+            }}
             disabled={releasing}
           >
             Cancel
@@ -2890,7 +2991,7 @@ export default function JobDetailPage() {
             {releasing ? (
               <CircularProgress size={20} sx={{ color: 'white' }} />
             ) : (
-              'Release Payment'
+              'Confirm Release'
             )}
           </Button>
         </DialogActions>
@@ -2962,6 +3063,8 @@ export default function JobDetailPage() {
           onWorkSubmitted={() => {
             fetchJobData() // Refresh to show submission
           }}
+          escrowAmountTokens={job.escrow_amount_tokens}
+          tokenSymbol={job.token_symbol || 'SOL'}
         />
       )}
 

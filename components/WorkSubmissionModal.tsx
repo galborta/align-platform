@@ -9,12 +9,16 @@ import {
   Button,
   TextField,
   Alert,
+  AlertTitle,
   CircularProgress,
   IconButton,
-  Chip
+  Chip,
+  Typography,
+  Box
 } from '@mui/material'
 import { supabase } from '@/lib/supabase'
 import { calculateJobCompletionKarma } from '@/lib/karma'
+import { submitWork } from '@/lib/jobs'
 import { toast } from 'react-hot-toast'
 import CloseIcon from '@mui/icons-material/Close'
 import CloudUploadIcon from '@mui/icons-material/CloudUpload'
@@ -32,6 +36,8 @@ interface WorkSubmissionModalProps {
   jobUsdValue: number
   workerWallet: string
   onWorkSubmitted?: () => void
+  escrowAmountTokens?: number
+  tokenSymbol?: string
 }
 
 interface ImagePreview {
@@ -48,7 +54,9 @@ export function WorkSubmissionModal({
   jobId,
   jobUsdValue,
   workerWallet,
-  onWorkSubmitted
+  onWorkSubmitted,
+  escrowAmountTokens,
+  tokenSymbol = 'SOL'
 }: WorkSubmissionModalProps) {
   const [loading, setLoading] = useState(false)
   const [deliveryMessage, setDeliveryMessage] = useState('')
@@ -257,31 +265,16 @@ export function WorkSubmissionModal({
       // Filter out empty links
       const validLinks = externalLinks.filter(link => link.trim())
 
-      // Create submission entry in database
-      const { error: submissionError } = await supabase
-        .from('job_submissions')
-        .insert({
-          job_id: jobId,
-          worker_wallet: workerWallet,
-          message: deliveryMessage.trim(),
-          image_urls: imageUrls,
-          external_links: validLinks,
-          submitted_at: new Date().toISOString()
-        })
+      // Submit work using the centralized function
+      const result = await submitWork(jobId, workerWallet, {
+        message: deliveryMessage.trim(),
+        image_urls: imageUrls,
+        external_links: validLinks
+      })
 
-      if (submissionError) throw submissionError
-
-      // Update job status to 'submitted'
-      const { error: jobUpdateError } = await supabase
-        .from('jobs')
-        .update({
-          status: 'submitted',
-          submitted_at: new Date().toISOString(),
-          updated_at: new Date().toISOString()
-        })
-        .eq('id', jobId)
-
-      if (jobUpdateError) throw jobUpdateError
+      if (!result.success) {
+        throw new Error(result.error || 'Failed to submit work')
+      }
 
       // TODO: Send notification to poster
       // await notifyPoster(jobId, workerWallet)
@@ -355,6 +348,41 @@ export function WorkSubmissionModal({
           }}
         >
           <strong>Poster:</strong> Review all files carefully before downloading. Never run executable files from unknown sources.
+        </Alert>
+
+        {/* Auto-Release Protection */}
+        <Alert severity="info" sx={{ mb: 2 }}>
+          <AlertTitle>⏰ Auto-Release Protection</AlertTitle>
+          <Typography variant="body2">
+            After you submit, the poster has 10 days to review your work.
+          </Typography>
+          <Typography variant="body2" sx={{ mt: 1 }}>
+            If they don't take action within 10 days, payment will be{' '}
+            <strong>automatically released</strong> to you.
+          </Typography>
+        </Alert>
+
+        {/* Payment Amount Breakdown */}
+        {escrowAmountTokens && (
+          <Box sx={{ p: 2, bgcolor: '#0a0a0a', borderRadius: 1, mb: 2 }}>
+            <Typography variant="subtitle2" sx={{ mb: 1, color: '#E5E7F0' }}>
+              You will receive:
+            </Typography>
+            <Typography variant="h5" sx={{ color: '#E3F06F', fontWeight: 700 }}>
+              {(escrowAmountTokens * 0.95).toFixed(2)} {tokenSymbol}
+            </Typography>
+            <Typography variant="caption" sx={{ color: '#6F7280' }}>
+              (95% of locked amount, 5% platform fee)
+            </Typography>
+          </Box>
+        )}
+
+        {/* Quality Warning */}
+        <Alert severity="warning" sx={{ mb: 3 }}>
+          <Typography variant="body2">
+            ⚠️ Submit only high-quality work that meets the job requirements.
+            Poor quality may result in disputes or revision requests.
+          </Typography>
         </Alert>
 
         {/* Delivery Message */}
