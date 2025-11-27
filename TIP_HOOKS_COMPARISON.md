@@ -496,3 +496,4 @@ Together, they enable:
 **Next Step**: Create `/api/karma/daily-tip-status` endpoint to power `useDailyTipKarma`!
 
 
+

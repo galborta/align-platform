@@ -418,3 +418,4 @@ export function getBatchingType(type: FeedItem['type']): 'batchable' | 'individu
   return batchableTypes.includes(type) ? 'batchable' : 'individual'
 }
 
+

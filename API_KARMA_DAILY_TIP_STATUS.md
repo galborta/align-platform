@@ -502,3 +502,4 @@ console.log('Karma status fetched:', {
 **Endpoint**: `/api/karma/daily-tip-status`
 
 
+

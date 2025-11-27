@@ -295,3 +295,4 @@ The Activity Feed now provides a **polished, native-feeling mobile experience** 
 6. ⏳ **Add accessibility features** (next phase)
 7. ⏳ **Add dark mode support** (next phase)
 
+

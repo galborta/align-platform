@@ -288,3 +288,4 @@ BEGIN
   RAISE NOTICE '✅ Added check constraints';
 END $$;
 
+

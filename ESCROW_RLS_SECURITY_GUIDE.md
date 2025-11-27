@@ -668,3 +668,4 @@ UPDATE jobs SET escrow_locked = false;
 **Status**: ✅ Complete and deployed  
 **Security Level**: Database-enforced row-level security active
 
+

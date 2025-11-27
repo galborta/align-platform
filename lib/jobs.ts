@@ -19,6 +19,12 @@ export async function createJob(jobData: {
   payment_amount_tokens: number
   payment_amount_usd: number
   assignment_mode: 'first_come' | 'review'
+  poster_desired_completion?: string | null
+  fee_percentage_at_creation?: number
+  escrow_locked?: boolean
+  escrow_tx_signature?: string | null
+  escrow_amount_tokens?: number | null
+  escrow_token_mint?: string | null
 }): Promise<Job> {
   const { data, error } = await supabase
     .from('jobs')

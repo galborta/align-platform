@@ -310,3 +310,4 @@ BEGIN
   RAISE NOTICE '✅ Initialized default settings and super admin';
 END $$;
 
+

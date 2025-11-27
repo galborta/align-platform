@@ -540,3 +540,4 @@ The **KarmaPreview** component is **100% complete** and ready to integrate into 
 **Next Step**: Integrate into TipModal and test with real data! 🧪
 
 
+

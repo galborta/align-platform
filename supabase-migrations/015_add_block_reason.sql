@@ -22,3 +22,4 @@ COMMENT ON COLUMN messages.deleted_at IS 'Soft delete timestamp when conversatio
 
 
 
+

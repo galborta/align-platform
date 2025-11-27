@@ -42,3 +42,4 @@ COMMENT ON COLUMN job_failures.job_id IS 'Reference to the job that was not comp
 
 
 
+

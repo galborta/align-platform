@@ -403,3 +403,4 @@ Before marking real-time as working, verify:
 - `/lib/feed-subscriptions.ts` (inline comments)
 - `/components/ActivityFeed.tsx` (subscription setup)
 
+
