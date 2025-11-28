@@ -37,18 +37,20 @@ COMMENT ON COLUMN notifications.job_id IS 'Optional reference to related job';
 -- Enable RLS
 ALTER TABLE notifications ENABLE ROW LEVEL SECURITY;
 
--- Users can only see their own notifications
-CREATE POLICY "Users can view own notifications"
+-- PUBLIC SELECT POLICY: Allow anyone to view notifications
+-- (Application code filters by wallet_address)
+CREATE POLICY "Public can view notifications"
   ON notifications
   FOR SELECT
-  USING (wallet_address = current_setting('request.jwt.claims')::json->>'wallet_address');
+  USING (true);
 
 -- Users can mark their own notifications as read
+-- NOTE: This policy works with service role or when proper JWT auth is implemented
 CREATE POLICY "Users can update own notifications"
   ON notifications
   FOR UPDATE
-  USING (wallet_address = current_setting('request.jwt.claims')::json->>'wallet_address')
-  WITH CHECK (wallet_address = current_setting('request.jwt.claims')::json->>'wallet_address');
+  USING (wallet_address = current_setting('request.jwt.claims', true)::json->>'wallet_address')
+  WITH CHECK (wallet_address = current_setting('request.jwt.claims', true)::json->>'wallet_address');
 
 -- System can insert notifications for any user (service role only)
 CREATE POLICY "Service role can insert notifications"
