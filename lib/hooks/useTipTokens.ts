@@ -16,7 +16,7 @@ interface TipTokensResponse {
  * Uses React Query for caching and automatic refetching
  * 
  * @param wallet - User's wallet address (required)
- * @param projectId - Project ID to prioritize project token (required)
+ * @param projectId - Project ID to prioritize project token (optional)
  * 
  * @returns Query result with tokens, loading state, and refetch function
  * 
@@ -24,7 +24,7 @@ interface TipTokensResponse {
  * ```tsx
  * const { data, isLoading, error, refetch } = useTipTokens(
  *   publicKey?.toString(),
- *   projectId
+ *   projectId  // Optional - omit for direct messages
  * )
  * 
  * if (isLoading) return <Spinner />
@@ -40,13 +40,16 @@ export function useTipTokens(
   return useQuery<TipTokensResponse>({
     queryKey: ['tip-tokens', wallet, projectId],
     queryFn: async () => {
-      if (!wallet || !projectId) {
+      if (!wallet) {
         return { success: false, tokens: [], projectToken: null }
       }
 
-      const response = await fetch(
-        `/api/tokens/user-holdings?wallet=${wallet}&projectId=${projectId}`
-      )
+      // Build URL with optional projectId
+      const url = projectId 
+        ? `/api/tokens/user-holdings?wallet=${wallet}&projectId=${projectId}`
+        : `/api/tokens/user-holdings?wallet=${wallet}`
+
+      const response = await fetch(url)
 
       if (!response.ok) {
         throw new Error('Failed to fetch tokens')
@@ -54,7 +57,7 @@ export function useTipTokens(
 
       return response.json()
     },
-    enabled: !!wallet && !!projectId,
+    enabled: !!wallet,  // Only wallet is required
     staleTime: 5 * 60 * 1000,      // 5 minutes - data stays fresh
     cacheTime: 30 * 60 * 1000,     // 30 minutes - cache persists in memory
     refetchOnWindowFocus: false,    // Don't refetch when user returns to tab

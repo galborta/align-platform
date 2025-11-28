@@ -13,11 +13,16 @@ import {
   Typography
 } from '@mui/material'
 import SendIcon from '@mui/icons-material/Send'
+import MonetizationOnIcon from '@mui/icons-material/MonetizationOn'
+import dynamic from 'next/dynamic'
+
+const TipModal = dynamic(() => import('@/components/TipModal'), { ssr: false })
 
 interface MessageComposerProps {
   conversationId: string
   senderWallet: string
   recipientWallet: string
+  projectId?: string
   onMessageSent?: () => void
 }
 
@@ -37,12 +42,14 @@ export function MessageComposer({
   conversationId,
   senderWallet,
   recipientWallet,
+  projectId,
   onMessageSent
 }: MessageComposerProps) {
   const [message, setMessage] = useState('')
   const [sending, setSending] = useState(false)
   const [canSend, setCanSend] = useState(true)
   const [blockReason, setBlockReason] = useState<string>()
+  const [showTipModal, setShowTipModal] = useState(false)
   const [rateLimit, setRateLimit] = useState<RateLimitState>({
     count: 0,
     resetTime: Date.now() + RATE_LIMIT_WINDOW_MS
@@ -282,20 +289,52 @@ export function MessageComposer({
   const isDisabled = !canSend || sending || !message.trim()
   const charCountColor = message.length >= MAX_CHARS ? 'error.main' : 'text.secondary'
 
+  const handleTipClick = () => {
+    setShowTipModal(true)
+  }
+
+  const handleCloseTipModal = () => {
+    setShowTipModal(false)
+  }
+
   return (
-    <Box
-      sx={{
-        position: 'sticky',
-        bottom: 0,
-        bgcolor: 'background.paper',
-        borderTop: '1px solid',
-        borderColor: 'divider',
-        p: 2,
-        display: 'flex',
-        gap: 1,
-        alignItems: 'flex-end'
-      }}
-    >
+    <>
+      <Box
+        sx={{
+          position: 'sticky',
+          bottom: 0,
+          bgcolor: 'background.paper',
+          borderTop: '1px solid',
+          borderColor: 'divider',
+          p: 2,
+          display: 'flex',
+          gap: 1,
+          alignItems: 'flex-end'
+        }}
+      >
+        {/* Tipping Button - Always available */}
+        <Tooltip
+          title="Send a tip"
+          arrow
+        >
+          <span>
+            <IconButton
+              onClick={handleTipClick}
+              sx={{
+                bgcolor: '#10B981',
+                color: 'white',
+                width: 48,
+                height: 48,
+                '&:hover': {
+                  bgcolor: '#059669'
+                }
+              }}
+            >
+              <MonetizationOnIcon />
+            </IconButton>
+          </span>
+        </Tooltip>
+
       {/* Text Input */}
       <TextField
         inputRef={textFieldRef}
@@ -399,7 +438,19 @@ export function MessageComposer({
           </IconButton>
         </span>
       </Tooltip>
-    </Box>
+      </Box>
+
+      {/* Tip Modal */}
+      {showTipModal && (
+        <TipModal
+          open={showTipModal}
+          onClose={handleCloseTipModal}
+          recipientWallet={recipientWallet}
+          projectId={projectId}
+          initialMessage={message.trim()}
+        />
+      )}
+    </>
   )
 }
 

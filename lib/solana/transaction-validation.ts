@@ -72,7 +72,36 @@ export async function validateTipTransaction(
       }
     }
 
-    // 2. Check sender token balance
+    // Check if this is native SOL
+    const isNativeSOL = tokenMint === 'So11111111111111111111111111111111111111112'
+
+    // 2. Check sender SOL balance first (needed for both SOL transfers and fees)
+    const solBalance = await connection.getBalance(senderWallet)
+    const solBalanceUi = solBalance / LAMPORTS_PER_SOL
+
+    if (isNativeSOL) {
+      // For native SOL transfers, check if sender has enough SOL for amount + fees
+      const totalNeeded = amount + 0.000005 // Amount + minimal fee
+      
+      if (solBalanceUi < totalNeeded) {
+        return {
+          valid: false,
+          error: `Insufficient SOL balance. You have ${solBalanceUi.toFixed(4)} SOL but need ${totalNeeded.toFixed(4)} SOL (including fees)`
+        }
+      }
+
+      // All checks passed for SOL
+      return {
+        valid: true,
+        estimatedCost: {
+          tokens: amount,
+          sol: 0.000005,
+          ataNeeded: false
+        }
+      }
+    }
+
+    // For SPL tokens, check token account balance
     const mintPubkey = new PublicKey(tokenMint)
     const senderAta = await getAssociatedTokenAddress(
       mintPubkey,
@@ -98,14 +127,10 @@ export async function validateTipTransaction(
       }
     }
 
-    // 3. Check sender SOL balance
-    const solBalance = await connection.getBalance(senderWallet)
-    const solBalanceUi = solBalance / LAMPORTS_PER_SOL
-
-    // 4. Check if recipient ATA exists
+    // 3. Check if recipient ATA exists
     const ataNeeded = !(await checkAtaExists(connection, recipientPubkey, mintPubkey))
 
-    // 5. Estimate costs
+    // 4. Estimate costs
     const baseFee = 0.000005 // ~5000 lamports for transfer
     const ataCost = ataNeeded ? estimateAtaCost() : 0
     const totalSolNeeded = baseFee + ataCost
@@ -118,7 +143,7 @@ export async function validateTipTransaction(
       }
     }
 
-    // All checks passed
+    // All checks passed for SPL token
     return {
       valid: true,
       estimatedCost: {

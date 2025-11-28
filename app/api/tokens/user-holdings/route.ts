@@ -170,9 +170,9 @@ export async function GET(request: NextRequest) {
     const allTokens = solToken ? [solToken, ...splTokens] : splTokens
     const tokensWithMetadata = allTokens
 
-    // 4. Filter tokens >= $0.10
+    // 4. Filter tokens - always include SOL, others need >= $0.01
     const eligibleTokens = tokensWithMetadata.filter(
-      token => token.usdValue >= 0.10
+      token => token.symbol === 'SOL' || token.usdValue >= 0.01
     )
 
     // 5. Sort: project token first, then by USD value

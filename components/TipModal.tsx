@@ -46,15 +46,17 @@ interface TipModalProps {
   open: boolean
   onClose: () => void
   recipientWallet: string
-  projectId: string
-  tokenMint: string  // Kept for backwards compatibility but not used
+  projectId?: string  // Optional - used for project-specific karma and token prioritization
+  tokenMint?: string  // Kept for backwards compatibility but not used
+  initialMessage?: string  // Pre-filled message
 }
 
 export default function TipModal({ 
   open, 
   onClose, 
   recipientWallet, 
-  projectId
+  projectId,
+  initialMessage
 }: TipModalProps) {
   const { publicKey, sendTransaction } = useWallet()
   const { connection } = useConnection()
@@ -62,7 +64,7 @@ export default function TipModal({
   const isMobile = useMediaQuery(theme.breakpoints.down('sm'))
   
   const [amount, setAmount] = useState('')
-  const [message, setMessage] = useState('')
+  const [message, setMessage] = useState(initialMessage || '')
   const [isPublic, setIsPublic] = useState(true)
   const [loading, setLoading] = useState(false)
   const [loadingMessage, setLoadingMessage] = useState<string>('Sending...')
@@ -79,17 +81,24 @@ export default function TipModal({
 
   const CONFIRMATION_TIMEOUT = TIP_RETRY_CONFIG.CONFIRMATION_TIMEOUT
 
-  // Fetch available tokens
+  // Fetch available tokens (works with or without projectId)
   const { data: tokenData, isLoading: loadingTokens, error: tokenError, refetch: refetchTokens } = useTipTokens(
     publicKey?.toBase58(),
     projectId
   )
 
-  // Fetch daily karma status
+  // Fetch daily karma status (only when projectId is provided)
   const { data: karmaData, isLoading: karmaLoading } = useDailyTipKarma(
     publicKey?.toBase58(),
     projectId
   )
+
+  // Update message when initialMessage changes
+  useEffect(() => {
+    if (initialMessage) {
+      setMessage(initialMessage)
+    }
+  }, [initialMessage])
 
   // Watch for wallet disconnection
   useEffect(() => {
