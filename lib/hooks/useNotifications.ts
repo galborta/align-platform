@@ -15,6 +15,8 @@ interface UseNotificationsReturn {
   markAsRead: (notificationId: string) => Promise<void>
   markAllAsRead: () => Promise<void>
   refreshNotifications: () => Promise<void>
+  adminNotifications: EnrichedNotification[]
+  adminUnreadCount: number
 }
 
 /**
@@ -208,6 +210,10 @@ export function useNotifications(): UseNotificationsReturn {
     fetchNotifications()
   }, [fetchNotifications])
 
+  // Filter admin notifications
+  const adminNotifications = notifications.filter(n => n.type.startsWith('admin_'))
+  const adminUnreadCount = adminNotifications.filter(n => !n.is_read).length
+
   return {
     notifications,
     unreadCount,
@@ -215,7 +221,9 @@ export function useNotifications(): UseNotificationsReturn {
     error,
     markAsRead,
     markAllAsRead,
-    refreshNotifications: fetchNotifications
+    refreshNotifications: fetchNotifications,
+    adminNotifications,
+    adminUnreadCount
   }
 }
 

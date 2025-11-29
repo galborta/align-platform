@@ -3,8 +3,10 @@
 import { useEffect, useRef } from 'react'
 import { Popover, Button, Avatar, CircularProgress } from '@mui/material'
 import { formatDistanceToNow } from 'date-fns'
+import { useRouter } from 'next/navigation'
 import { useNotifications } from '@/lib/hooks/useNotifications'
 import { notificationService } from '@/lib/services/notificationService'
+import { handleNotificationNavigation } from '@/lib/notifications/navigationHandler'
 import type { EnrichedNotification } from '@/lib/services/notificationService'
 
 interface NotificationDropdownProps {
@@ -27,6 +29,7 @@ interface NotificationDropdownProps {
  * - Loading state while fetching
  */
 export function NotificationDropdown({ anchorEl, open, onClose }: NotificationDropdownProps) {
+  const router = useRouter()
   const { notifications, loading, markAsRead, markAllAsRead } = useNotifications()
   const autoReadTimerRef = useRef<NodeJS.Timeout>()
 
@@ -56,14 +59,15 @@ export function NotificationDropdown({ anchorEl, open, onClose }: NotificationDr
   }, [open, recentNotifications, markAsRead])
 
   const handleNotificationClick = (notification: EnrichedNotification) => {
+    // Navigate to the appropriate page
+    handleNotificationNavigation(notification, router)
+    
     // Mark as read
     if (!notification.is_read) {
       markAsRead(notification.id)
     }
 
-    // TODO: Navigation based on notification type will be implemented in next sprint
-    // For now, just close the dropdown
-    console.log('Notification clicked:', notification.type, notification.reference_id)
+    // Close dropdown
     onClose()
   }
 
