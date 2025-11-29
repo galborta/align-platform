@@ -12,6 +12,7 @@ interface UseNotificationsReturn {
   unreadCount: number
   loading: boolean
   error: string | null
+  refreshing: boolean
   markAsRead: (notificationId: string) => Promise<void>
   markAllAsRead: () => Promise<void>
   refreshNotifications: () => Promise<void>
@@ -38,8 +39,9 @@ export function useNotifications(): UseNotificationsReturn {
   const [unreadCount, setUnreadCount] = useState(0)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [refreshing, setRefreshing] = useState(false)
 
-  // Fetch initial notifications
+  // Fetch initial notifications with error handling
   const fetchNotifications = useCallback(async () => {
     if (!walletAddress) {
       setNotifications([])
@@ -68,30 +70,59 @@ export function useNotifications(): UseNotificationsReturn {
       console.log(`📬 Loaded ${enrichedNotifications.length} notifications (${unread} unread)`)
     } catch (err) {
       console.error('Error fetching notifications:', err)
-      setError('Failed to load notifications')
+      setError(err instanceof Error ? err.message : 'Failed to load notifications')
+      // Keep existing data on error (don't clear)
     } finally {
       setLoading(false)
     }
   }, [walletAddress])
 
-  // Mark single notification as read
+  // Manual refresh with refreshing state
+  const refreshNotifications = useCallback(async () => {
+    if (!walletAddress) return
+
+    setRefreshing(true)
+    setError(null)
+    
+    try {
+      const enrichedNotifications = await notificationService.getNotifications(
+        walletAddress,
+        50,
+        0
+      )
+
+      setNotifications(enrichedNotifications)
+      const unread = enrichedNotifications.filter(n => !n.is_read).length
+      setUnreadCount(unread)
+
+      console.log(`🔄 Refreshed ${enrichedNotifications.length} notifications`)
+    } catch (err) {
+      console.error('Error refreshing notifications:', err)
+      setError(err instanceof Error ? err.message : 'Failed to refresh notifications')
+    } finally {
+      setRefreshing(false)
+    }
+  }, [walletAddress])
+
+  // Mark single notification as read with optimistic update
   const markAsRead = useCallback(async (notificationId: string) => {
+    // Optimistic update
+    setNotifications(prev =>
+      prev.map(n =>
+        n.id === notificationId ? { ...n, is_read: true } : n
+      )
+    )
+    setUnreadCount(prev => Math.max(0, prev - 1))
+
     try {
       await notificationService.markAsRead(notificationId)
-
-      // Update local state
-      setNotifications(prev =>
-        prev.map(n =>
-          n.id === notificationId ? { ...n, is_read: true } : n
-        )
-      )
-      setUnreadCount(prev => Math.max(0, prev - 1))
-
       console.log(`✅ Marked notification ${notificationId} as read`)
     } catch (err) {
       console.error('Error marking notification as read:', err)
+      // Revert on error
+      fetchNotifications()
     }
-  }, [])
+  }, [fetchNotifications])
 
   // Mark all notifications as read
   const markAllAsRead = useCallback(async () => {
@@ -112,86 +143,96 @@ export function useNotifications(): UseNotificationsReturn {
     }
   }, [walletAddress])
 
-  // Set up real-time subscription for new notifications and updates
+  // Set up real-time subscription with error handling and reconnect
   useEffect(() => {
     if (!walletAddress) return
 
     let channel: RealtimeChannel
+    let reconnectTimer: NodeJS.Timeout
 
     const setupRealtimeSubscription = async () => {
-      console.log(`🔔 Setting up real-time notifications for ${walletAddress}`)
+      try {
+        console.log(`🔔 Setting up real-time notifications for ${walletAddress}`)
 
-      channel = supabase
-        .channel(`notifications:${walletAddress}`)
-        .on(
-          'postgres_changes',
-          {
-            event: 'INSERT',
-            schema: 'public',
-            table: 'notifications',
-            filter: `user_wallet=eq.${walletAddress}`
-          },
-          async (payload) => {
-            console.log('🔔 New notification received:', payload.new)
+        channel = supabase
+          .channel(`notifications:${walletAddress}`)
+          .on(
+            'postgres_changes',
+            {
+              event: 'INSERT',
+              schema: 'public',
+              table: 'notifications',
+              filter: `user_wallet=eq.${walletAddress}`
+            },
+            async (payload) => {
+              console.log('🔔 New notification received:', payload.new)
 
-            try {
-              // Enrich the new notification with actor profile data
-              const enriched = await notificationService.enrichNotification(
-                payload.new as any
+              try {
+                // Enrich the new notification with actor profile data
+                const enriched = await notificationService.enrichNotification(
+                  payload.new as any
+                )
+
+                // Add to state (keep only last 50)
+                setNotifications(prev => [enriched, ...prev].slice(0, 50))
+                
+                // Increment unread count if notification is unread
+                if (!enriched.is_read) {
+                  setUnreadCount(prev => prev + 1)
+                }
+
+                console.log(`✅ Added new notification to state (unread: ${!enriched.is_read})`)
+              } catch (err) {
+                console.error('Error handling new notification:', err)
+              }
+            }
+          )
+          .on(
+            'postgres_changes',
+            {
+              event: 'UPDATE',
+              schema: 'public',
+              table: 'notifications',
+              filter: `user_wallet=eq.${walletAddress}`
+            },
+            (payload) => {
+              console.log('🔄 Notification updated:', payload.new)
+
+              const updated = payload.new as any
+
+              // Update notification in state
+              setNotifications(prev =>
+                prev.map(n => (n.id === updated.id ? { ...n, ...updated } : n))
               )
 
-              // Add to state (keep only last 50)
-              setNotifications(prev => [enriched, ...prev].slice(0, 50))
-              
-              // Increment unread count if notification is unread
-              if (!enriched.is_read) {
-                setUnreadCount(prev => prev + 1)
-              }
+              // Recalculate unread count
+              setNotifications(prev => {
+                const unread = prev.filter(n => !n.is_read).length
+                setUnreadCount(unread)
+                return prev
+              })
 
-              console.log(`✅ Added new notification to state (unread: ${!enriched.is_read})`)
-
-              // Note: Browser notification is handled by existing system in /lib/notifications.ts
-              // based on notification type and BROWSER_NOTIFICATION_TYPES array
-            } catch (err) {
-              console.error('Error enriching new notification:', err)
+              console.log('✅ Updated notification in state')
             }
-          }
-        )
-        .on(
-          'postgres_changes',
-          {
-            event: 'UPDATE',
-            schema: 'public',
-            table: 'notifications',
-            filter: `user_wallet=eq.${walletAddress}`
-          },
-          (payload) => {
-            console.log('🔄 Notification updated:', payload.new)
-
-            const updated = payload.new as any
-
-            // Update notification in state
-            setNotifications(prev =>
-              prev.map(n => (n.id === updated.id ? { ...n, ...updated } : n))
-            )
-
-            // Recalculate unread count
-            setNotifications(prev => {
-              const unread = prev.filter(n => !n.is_read).length
-              setUnreadCount(unread)
-              return prev
-            })
-
-            console.log('✅ Updated notification in state')
-          }
-        )
-        .subscribe((status) => {
-          if (status === 'SUBSCRIBED') {
-            console.log('✅ Real-time notification subscription active')
-          } else if (status === 'CHANNEL_ERROR') {
-            console.error('❌ Real-time notification subscription error')
-          }
-        })
+          )
+          .subscribe((status) => {
+            if (status === 'SUBSCRIBED') {
+              console.log('✅ Real-time notification subscription active')
+            } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+              console.error('❌ Subscription error, retrying in 5s...')
+              // Retry connection after 5 seconds
+              reconnectTimer = setTimeout(() => {
+                setupRealtimeSubscription()
+              }, 5000)
+            }
+          })
+      } catch (err) {
+        console.error('Error setting up real-time subscription:', err)
+        // Retry after 10 seconds on setup error
+        reconnectTimer = setTimeout(() => {
+          setupRealtimeSubscription()
+        }, 10000)
+      }
     }
 
     setupRealtimeSubscription()
@@ -201,6 +242,9 @@ export function useNotifications(): UseNotificationsReturn {
       if (channel) {
         console.log('🔌 Unsubscribing from notification updates')
         supabase.removeChannel(channel)
+      }
+      if (reconnectTimer) {
+        clearTimeout(reconnectTimer)
       }
     }
   }, [walletAddress])
@@ -219,9 +263,10 @@ export function useNotifications(): UseNotificationsReturn {
     unreadCount,
     loading,
     error,
+    refreshing,
     markAsRead,
     markAllAsRead,
-    refreshNotifications: fetchNotifications,
+    refreshNotifications,
     adminNotifications,
     adminUnreadCount
   }

@@ -30,11 +30,21 @@ interface NotificationDropdownProps {
  */
 export function NotificationDropdown({ anchorEl, open, onClose }: NotificationDropdownProps) {
   const router = useRouter()
-  const { notifications, loading, markAsRead, markAllAsRead } = useNotifications()
+  const { 
+    notifications, 
+    loading, 
+    error,
+    refreshing,
+    markAsRead, 
+    markAllAsRead,
+    refreshNotifications 
+  } = useNotifications()
   const autoReadTimerRef = useRef<NodeJS.Timeout>()
 
-  // Get last 4 notifications
-  const recentNotifications = notifications.slice(0, 4)
+  // Show fewer notifications on mobile
+  const isMobile = typeof window !== 'undefined' && window.innerWidth < 640
+  const displayCount = isMobile ? 2 : 4
+  const recentNotifications = notifications.slice(0, displayCount)
 
   // Auto-mark as read after 10 seconds
   useEffect(() => {
@@ -91,18 +101,21 @@ export function NotificationDropdown({ anchorEl, open, onClose }: NotificationDr
       sx={{
         mt: 1,
         '& .MuiPopover-paper': {
-          width: 380,
-          maxHeight: 500,
-          borderRadius: 2,
+          width: { xs: '100vw', sm: 380 },
+          maxWidth: { xs: '100vw', sm: 380 },
+          maxHeight: { xs: '70vh', sm: 500 },
+          borderRadius: { xs: 0, sm: 2 },
           boxShadow: '0 4px 20px rgba(0,0,0,0.15)',
-          bgcolor: '#ffffff'
+          bgcolor: '#ffffff',
+          left: { xs: '0 !important', sm: 'auto' },
+          right: { xs: '0 !important', sm: 'auto' }
         }
       }}
     >
-      <div className="p-4">
+      <div className="p-3 sm:p-4">
         {/* Header */}
         <div className="flex items-center justify-between mb-3">
-          <h3 className="text-lg font-semibold text-gray-900">Notifications</h3>
+          <h3 className="text-base sm:text-lg font-semibold text-gray-900">Notifications</h3>
           {recentNotifications.some(n => !n.is_read) && (
             <Button 
               size="small" 
@@ -111,7 +124,7 @@ export function NotificationDropdown({ anchorEl, open, onClose }: NotificationDr
                 color: '#7C4DFF', 
                 textTransform: 'none',
                 fontWeight: 600,
-                fontSize: '0.875rem'
+                fontSize: { xs: '0.75rem', sm: '0.875rem' }
               }}
             >
               Mark all read
@@ -119,10 +132,39 @@ export function NotificationDropdown({ anchorEl, open, onClose }: NotificationDr
           )}
         </div>
 
+        {/* Error State */}
+        {error && (
+          <div className="p-3 bg-red-50 border border-red-200 rounded-lg mb-3">
+            <p className="text-sm text-red-800 mb-2">{error}</p>
+            <Button 
+              size="small" 
+              onClick={refreshNotifications}
+              disabled={refreshing}
+              sx={{ 
+                color: '#EF4444', 
+                textTransform: 'none',
+                fontSize: '0.875rem'
+              }}
+            >
+              {refreshing ? 'Retrying...' : 'Try Again'}
+            </Button>
+          </div>
+        )}
+
         {/* Notifications List */}
         {loading ? (
-          <div className="flex justify-center py-8">
-            <CircularProgress size={32} sx={{ color: '#7C4DFF' }} />
+          <div className="space-y-2">
+            {[1, 2, 3, 4].map(i => (
+              <div key={i} className="flex gap-3 p-3 animate-pulse">
+                <div className="w-8 h-8 bg-gray-200 rounded-full flex-shrink-0" />
+                <div className="w-10 h-10 bg-gray-200 rounded-full flex-shrink-0" />
+                <div className="flex-1 space-y-2 min-w-0">
+                  <div className="h-4 bg-gray-200 rounded w-3/4" />
+                  <div className="h-3 bg-gray-200 rounded w-full" />
+                </div>
+                <div className="w-12 h-4 bg-gray-200 rounded flex-shrink-0" />
+              </div>
+            ))}
           </div>
         ) : recentNotifications.length === 0 ? (
           <div className="text-center py-8">
@@ -188,11 +230,19 @@ export function NotificationDropdown({ anchorEl, open, onClose }: NotificationDr
                 </div>
               )
             })}
+
+            {/* Refreshing Indicator */}
+            {refreshing && (
+              <div className="flex justify-center py-2 border-t border-gray-200 mt-2 pt-2">
+                <CircularProgress size={16} sx={{ color: '#7C4DFF' }} />
+                <span className="text-xs text-gray-500 ml-2">Refreshing...</span>
+              </div>
+            )}
           </div>
         )}
 
         {/* Footer */}
-        {recentNotifications.length > 0 && (
+        {recentNotifications.length > 0 && !loading && (
           <div className="mt-3 pt-3 border-t border-gray-200">
             <Button
               fullWidth
@@ -201,6 +251,8 @@ export function NotificationDropdown({ anchorEl, open, onClose }: NotificationDr
                 color: '#7C4DFF', 
                 textTransform: 'none',
                 fontWeight: 600,
+                fontSize: { xs: '0.875rem', sm: '1rem' },
+                padding: { xs: '8px 12px', sm: '10px 16px' },
                 '&:hover': {
                   bgcolor: 'rgba(124, 77, 255, 0.05)'
                 }

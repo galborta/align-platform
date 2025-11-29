@@ -123,7 +123,9 @@ export function NotificationItem({
     <div
       onClick={handleClick}
       className={`
-        relative flex items-start gap-3 p-4 rounded-lg cursor-pointer
+        relative flex flex-col sm:flex-row items-start gap-3 
+        p-3 sm:p-4 
+        rounded-lg cursor-pointer
         transition-all duration-200
         ${!notification.is_read 
           ? 'bg-purple-50 hover:bg-purple-100' 
@@ -131,6 +133,7 @@ export function NotificationItem({
         }
         border border-transparent hover:border-gray-200
         ${isAdminNotification ? 'border-l-4 border-l-purple-500' : ''}
+        min-h-[60px] sm:min-h-0
       `}
     >
       {/* Admin Badge (top-right corner) */}
@@ -140,35 +143,54 @@ export function NotificationItem({
         </div>
       )}
 
-      {/* Notification Icon */}
-      <div 
-        className="flex-shrink-0 w-10 h-10 rounded-full flex items-center justify-center"
-        style={{ backgroundColor: `${iconColor}20` }}
-      >
-        <IconComponent size={20} color={iconColor} />
+      {/* Icon + Avatar Row (always horizontal on mobile and desktop) */}
+      <div className="flex gap-3 items-center w-full sm:w-auto">
+        {/* Notification Icon */}
+        <div 
+          className="flex-shrink-0 w-8 h-8 sm:w-10 sm:h-10 rounded-full flex items-center justify-center"
+          style={{ backgroundColor: `${iconColor}20` }}
+        >
+          <IconComponent size={16} className="sm:w-5 sm:h-5" color={iconColor} />
+        </div>
+
+        {/* Actor Avatar */}
+        <Avatar 
+          src={notification.actor_avatar_url || undefined} 
+          sx={{ 
+            width: { xs: 36, sm: 40 }, 
+            height: { xs: 36, sm: 40 },
+            bgcolor: '#7C4DFF'
+          }}
+        >
+          {notification.actor_username?.[0]?.toUpperCase() || 
+           notification.user_wallet?.slice(0, 2).toUpperCase() || '?'}
+        </Avatar>
+
+        {/* Time + Unread (mobile only - top right) */}
+        <div className="flex sm:hidden ml-auto gap-2 items-center">
+          <span className="text-xs text-gray-500">
+            {formatDistanceToNow(new Date(notification.created_at), { addSuffix: true })
+              .replace(' ago', '')
+              .replace('about ', '')}
+          </span>
+          {!notification.is_read && (
+            <div className="w-2 h-2 bg-purple-500 rounded-full" />
+          )}
+        </div>
       </div>
 
-      {/* Actor Avatar */}
-      <Avatar 
-        src={notification.actor_avatar_url || undefined} 
-        sx={{ width: 40, height: 40, bgcolor: '#7C4DFF' }}
-      >
-        {notification.actor_username?.[0]?.toUpperCase() || 
-         notification.user_wallet?.slice(0, 2).toUpperCase() || '?'}
-      </Avatar>
-
       {/* Content */}
-      <div className="flex-1 min-w-0">
-        <p className="text-sm font-medium text-gray-900">
+      <div className="flex-1 w-full sm:w-auto min-w-0">
+        <p className="text-sm font-medium text-gray-900 line-clamp-2">
           {text.title}
         </p>
         <p className="text-sm text-gray-600 mt-1 line-clamp-2">
           {text.body}
         </p>
 
-        {/* Quick Actions */}
+        {/* Quick Actions - hidden on mobile in panel view */}
         {showActions && (
-          <div className="flex gap-2 mt-3">
+          <div className="hidden sm:flex gap-2 mt-3">
             <Button
               size="small"
               variant="outlined"
@@ -177,6 +199,8 @@ export function NotificationItem({
                 textTransform: 'none',
                 borderColor: '#7C4DFF',
                 color: '#7C4DFF',
+                fontSize: { xs: '0.75rem', sm: '0.875rem' },
+                padding: { xs: '4px 12px', sm: '6px 16px' },
                 '&:hover': {
                   borderColor: '#6A3FDD',
                   backgroundColor: 'rgba(124, 77, 255, 0.05)'
@@ -192,7 +216,11 @@ export function NotificationItem({
                 size="small"
                 variant="text"
                 onClick={(e) => handleActionClick(e, 'reply')}
-                sx={{ textTransform: 'none', color: '#7C4DFF' }}
+                sx={{ 
+                  textTransform: 'none', 
+                  color: '#7C4DFF',
+                  fontSize: { xs: '0.75rem', sm: '0.875rem' }
+                }}
               >
                 Reply
               </Button>
@@ -202,7 +230,11 @@ export function NotificationItem({
                 size="small"
                 variant="text"
                 onClick={(e) => handleActionClick(e, 'thank')}
-                sx={{ textTransform: 'none', color: '#7C4DFF' }}
+                sx={{ 
+                  textTransform: 'none', 
+                  color: '#7C4DFF',
+                  fontSize: { xs: '0.75rem', sm: '0.875rem' }
+                }}
               >
                 Thank
               </Button>
@@ -212,7 +244,11 @@ export function NotificationItem({
                 size="small"
                 variant="text"
                 onClick={(e) => handleActionClick(e, 'review')}
-                sx={{ textTransform: 'none', color: '#7C4DFF' }}
+                sx={{ 
+                  textTransform: 'none', 
+                  color: '#7C4DFF',
+                  fontSize: { xs: '0.75rem', sm: '0.875rem' }
+                }}
               >
                 Review
               </Button>
@@ -221,8 +257,8 @@ export function NotificationItem({
         )}
       </div>
 
-      {/* Time + Unread Indicator */}
-      <div className="flex flex-col items-end gap-2 flex-shrink-0">
+      {/* Time + Unread Indicator (desktop only) */}
+      <div className="hidden sm:flex flex-col items-end gap-2 flex-shrink-0">
         <span className="text-xs text-gray-500 whitespace-nowrap">
           {formatDistanceToNow(new Date(notification.created_at), { addSuffix: true })}
         </span>
