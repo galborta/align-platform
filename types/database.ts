@@ -961,7 +961,7 @@ export interface Database {
       chat_tips: {
         Row: {
           id: string
-          project_id: string
+          project_id: string | null
           from_wallet: string
           to_wallet: string
           amount_tokens: number
@@ -977,7 +977,7 @@ export interface Database {
         }
         Insert: {
           id?: string
-          project_id: string
+          project_id?: string | null
           from_wallet: string
           to_wallet: string
           amount_tokens: number
@@ -993,7 +993,7 @@ export interface Database {
         }
         Update: {
           id?: string
-          project_id?: string
+          project_id?: string | null
           from_wallet?: string
           to_wallet?: string
           amount_tokens?: number
@@ -1144,6 +1144,47 @@ export interface Database {
           confirmed_at?: string | null
         }
       }
+      notifications: {
+        Row: {
+          id: string
+          user_wallet: string
+          type: NotificationType
+          actor_wallet: string | null
+          reference_id: string | null
+          reference_type: NotificationReferenceType | null
+          batch_group_key: string | null
+          batch_count: number
+          is_read: boolean
+          created_at: string
+          metadata: NotificationMetadata | null
+        }
+        Insert: {
+          id?: string
+          user_wallet: string
+          type: NotificationType
+          actor_wallet?: string | null
+          reference_id?: string | null
+          reference_type?: NotificationReferenceType | null
+          batch_group_key?: string | null
+          batch_count?: number
+          is_read?: boolean
+          created_at?: string
+          metadata?: NotificationMetadata | null
+        }
+        Update: {
+          id?: string
+          user_wallet?: string
+          type?: NotificationType
+          actor_wallet?: string | null
+          reference_id?: string | null
+          reference_type?: NotificationReferenceType | null
+          batch_group_key?: string | null
+          batch_count?: number
+          is_read?: boolean
+          created_at?: string
+          metadata?: NotificationMetadata | null
+        }
+      }
     }
     Views: {
       [_ in never]: never
@@ -1156,6 +1197,114 @@ export interface Database {
     }
   }
 }
+
+// ==================== NOTIFICATION TYPES ====================
+
+/**
+ * All possible notification types in the platform
+ */
+export type NotificationType =
+  | 'job_application_received'
+  | 'job_assigned'
+  | 'job_submitted'
+  | 'job_completed'
+  | 'job_dispute_created'
+  | 'job_dispute_vote'
+  | 'job_comment'
+  | 'asset_upvote'
+  | 'asset_verified'
+  | 'asset_hidden'
+  | 'tip_received'
+  | 'message_received'
+  | 'karma_milestone'
+  | 'karma_warning'
+  | 'karma_ban'
+  | 'payment_released'
+  | 'payment_refunded'
+  | 'admin_dispute_new'
+  | 'admin_job_new'
+  | 'admin_asset_new'
+  | 'admin_revenue_earned';
+
+/**
+ * Types of entities that can be referenced in notifications
+ */
+export type NotificationReferenceType =
+  | 'job'
+  | 'asset'
+  | 'message'
+  | 'tip'
+  | 'conversation'
+  | 'karma'
+  | 'payment'
+  | 'dispute';
+
+/**
+ * Flexible metadata structure for different notification types
+ * Each notification type can include different metadata fields
+ */
+export interface NotificationMetadata {
+  // Job related
+  job_title?: string;
+  job_type?: string;
+  applicant_count?: number;
+  
+  // Payment related
+  amount?: number;
+  token?: string;
+  token_mint?: string;
+  
+  // Karma related
+  karma_points?: number;
+  karma_level?: string;
+  new_karma_score?: number;
+  old_karma_score?: number;
+  
+  // Asset related
+  asset_name?: string;
+  asset_type?: string;
+  upvote_count?: number;
+  
+  // Message related
+  message_preview?: string;
+  conversation_id?: string;
+  
+  // Comment related
+  comment_text?: string;
+  comment_preview?: string;
+  
+  // Dispute related
+  dispute_reason?: string;
+  dispute_id?: string;
+  vote_type?: 'worker' | 'poster';
+  
+  // Admin related
+  revenue_amount?: number;
+  admin_action?: string;
+  
+  // Generic fields
+  url?: string;
+  icon?: string;
+  action_label?: string;
+}
+
+/**
+ * Type-safe notification insert (omits auto-generated fields)
+ */
+export type NotificationInsert = Omit<
+  Database['public']['Tables']['notifications']['Insert'],
+  'id' | 'created_at'
+>;
+
+/**
+ * Type-safe notification update
+ */
+export type NotificationUpdate = Database['public']['Tables']['notifications']['Update'];
+
+/**
+ * Full notification row type
+ */
+export type Notification = Database['public']['Tables']['notifications']['Row'];
 
 // ==================== TIP SYSTEM TYPES ====================
 

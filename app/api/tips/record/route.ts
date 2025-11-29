@@ -45,8 +45,8 @@ export async function POST(request: NextRequest) {
       recipientTierMultiplier
     } = body
 
-    // Validation
-    if (!projectId || !fromWallet || !toWallet || !tokenMint || !tokenSymbol || !txSignature) {
+    // Validation - projectId is now optional for direct conversation tips
+    if (!fromWallet || !toWallet || !tokenMint || !tokenSymbol || !txSignature) {
       return NextResponse.json(
         { error: 'Missing required fields' },
         { status: 400 }
@@ -72,41 +72,50 @@ export async function POST(request: NextRequest) {
     const senderKarmaCalculated = baseKarma * senderTierMultiplier
     const recipientKarmaCalculated = baseKarma * recipientTierMultiplier
 
-    // Award karma to sender (with daily cap via database function)
-    const { data: senderKarmaData, error: senderKarmaError } = await supabase
-      .rpc('award_tip_karma', {
-        p_wallet_address: fromWallet,
-        p_project_id: projectId,
-        p_karma_amount: senderKarmaCalculated,
-        p_is_sender: true
-      })
+    // Award karma - only if projectId is provided
+    let actualSenderKarma = 0
+    let actualRecipientKarma = 0
 
-    if (senderKarmaError) {
-      console.error('Sender karma error:', senderKarmaError)
+    if (projectId) {
+      // Award karma to sender (with daily cap via database function)
+      const { data: senderKarmaData, error: senderKarmaError } = await supabase
+        .rpc('award_tip_karma', {
+          p_wallet_address: fromWallet,
+          p_project_id: projectId,
+          p_karma_amount: senderKarmaCalculated,
+          p_is_sender: true
+        })
+
+      if (senderKarmaError) {
+        console.error('Sender karma error:', senderKarmaError)
+      }
+
+      actualSenderKarma = senderKarmaData || 0
+
+      // Award karma to recipient (with daily cap)
+      const { data: recipientKarmaData, error: recipientKarmaError } = await supabase
+        .rpc('award_tip_karma', {
+          p_wallet_address: toWallet,
+          p_project_id: projectId,
+          p_karma_amount: recipientKarmaCalculated,
+          p_is_sender: false
+        })
+
+      if (recipientKarmaError) {
+        console.error('Recipient karma error:', recipientKarmaError)
+      }
+
+      actualRecipientKarma = recipientKarmaData || 0
+    } else {
+      // Direct conversation tip - no karma awarded
+      console.log('💬 Direct conversation tip - no project karma awarded')
     }
 
-    const actualSenderKarma = senderKarmaData || 0
-
-    // Award karma to recipient (with daily cap)
-    const { data: recipientKarmaData, error: recipientKarmaError } = await supabase
-      .rpc('award_tip_karma', {
-        p_wallet_address: toWallet,
-        p_project_id: projectId,
-        p_karma_amount: recipientKarmaCalculated,
-        p_is_sender: false
-      })
-
-    if (recipientKarmaError) {
-      console.error('Recipient karma error:', recipientKarmaError)
-    }
-
-    const actualRecipientKarma = recipientKarmaData || 0
-
-    // Create tip record
+    // Create tip record - projectId can be null for direct conversation tips
     const { data: tip, error: tipError } = await supabase
       .from('chat_tips')
       .insert({
-        project_id: projectId,
+        project_id: projectId || null,
         from_wallet: fromWallet,
         to_wallet: toWallet,
         amount_tokens: amountTokens,
@@ -176,14 +185,15 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // TODO: Create feed event if isPublic (integrate with activity feed)
-    if (isPublic) {
+    // Create feed event only if in project context and public
+    if (isPublic && projectId) {
       console.log('📣 TODO: Create public feed event for tip')
       // await createFeedEvent(projectId, tip.id, 'tip')
     }
 
     console.log('📝 Tip recorded:', {
       tipId: tip.id,
+      projectId: projectId || 'direct-conversation',
       senderKarma: actualSenderKarma,
       recipientKarma: actualRecipientKarma,
       isPublic

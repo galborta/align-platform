@@ -3,7 +3,8 @@ import {
   PublicKey, 
   Transaction,
   SystemProgram,
-  LAMPORTS_PER_SOL
+  LAMPORTS_PER_SOL,
+  TransactionInstruction
 } from '@solana/web3.js'
 import {
   getAssociatedTokenAddress,
@@ -12,6 +13,9 @@ import {
   TOKEN_PROGRAM_ID
 } from '@solana/spl-token'
 import { getEscrowWallet } from '../platform-settings'
+
+// Memo Program ID (SPL Memo Program)
+const MEMO_PROGRAM_ID = new PublicKey('MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr')
 
 /**
  * Parameters for transferring tokens to escrow
@@ -27,6 +31,12 @@ export interface EscrowTransferParams {
   amount: number
   /** Token decimals (usually 9 for most SPL tokens) */
   decimals: number
+  /** Token symbol for display (e.g., 'NUB') */
+  tokenSymbol?: string
+  /** Job title for transaction description */
+  jobTitle?: string
+  /** Worker payment amount (before fees) */
+  workerPayment?: number
 }
 
 /**
@@ -54,7 +64,7 @@ export interface EscrowTransferResult {
  * 5. Waits for transaction confirmation
  * 
  * @param params - Transfer parameters including connection, wallets, and amount
- * @param signTransaction - Function to sign the transaction (from wallet adapter)
+ * @param sendTransaction - Function to send the transaction (from wallet adapter)
  * @returns Promise with transfer result including signature or error
  * 
  * @example
@@ -67,7 +77,7 @@ export interface EscrowTransferResult {
  *     amount: 105, // 100 payment + 5 fee
  *     decimals: 9
  *   },
- *   signTransaction
+ *   sendTransaction
  * )
  * 
  * if (result.success) {
@@ -79,10 +89,10 @@ export interface EscrowTransferResult {
  */
 export async function transferToEscrow(
   params: EscrowTransferParams,
-  signTransaction: (tx: Transaction) => Promise<Transaction>
+  sendTransaction: (tx: Transaction, connection: Connection) => Promise<string>
 ): Promise<EscrowTransferResult> {
   try {
-    const { connection, senderWallet, tokenMint, amount, decimals } = params
+    const { connection, senderWallet, tokenMint, amount, decimals, tokenSymbol, jobTitle, workerPayment } = params
     
     // Get escrow wallet from platform settings
     const escrowWalletAddress = await getEscrowWallet()
@@ -144,6 +154,20 @@ export async function transferToEscrow(
       }
     }
     
+    // Create descriptive memo for wallet display
+    const symbol = tokenSymbol || 'tokens'
+    const workerAmount = workerPayment || amount
+    const titleText = jobTitle ? ` for "${jobTitle.slice(0, 40)}${jobTitle.length > 40 ? '...' : ''}"` : ''
+    const memoText = `🔒 Lock ${amount.toFixed(2)} ${symbol} in escrow${titleText} (${workerAmount.toFixed(2)} ${symbol} to worker + fees)`
+    
+    // Add memo instruction BEFORE transfer for better visibility in wallet
+    const memoInstruction = new TransactionInstruction({
+      keys: [],
+      programId: MEMO_PROGRAM_ID,
+      data: Buffer.from(memoText, 'utf-8')
+    })
+    transaction.add(memoInstruction)
+    
     // Add transfer instruction
     transaction.add(
       createTransferInstruction(
@@ -161,17 +185,9 @@ export async function transferToEscrow(
     transaction.recentBlockhash = blockhash
     transaction.feePayer = senderWallet
     
-    // Sign transaction with wallet adapter
-    const signed = await signTransaction(transaction)
-    
-    // Send transaction
-    const signature = await connection.sendRawTransaction(
-      signed.serialize(),
-      {
-        skipPreflight: false,
-        preflightCommitment: 'confirmed'
-      }
-    )
+    // Send transaction using wallet adapter's sendTransaction
+    // This allows Phantom to simulate and show balance changes before signing
+    const signature = await sendTransaction(transaction, connection)
     
     console.log('Escrow transfer sent:', signature)
     

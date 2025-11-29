@@ -87,7 +87,7 @@ export function CreateJobModal({
   onJobCreated
 }: CreateJobModalProps) {
   const { connection } = useConnection()
-  const { publicKey, signTransaction } = useWallet()
+  const { publicKey, sendTransaction } = useWallet()
   
   const [loading, setLoading] = useState(false)
   const [checkingPrice, setCheckingPrice] = useState(false)
@@ -436,7 +436,7 @@ export function CreateJobModal({
           return
         }
 
-        if (!publicKey || !connection || !signTransaction) {
+        if (!publicKey || !connection || !sendTransaction) {
           setLockError('Wallet not connected')
           setIsLocking(false)
           return
@@ -454,9 +454,12 @@ export function CreateJobModal({
             senderWallet: publicKey,
             tokenMint: new PublicKey(tokenMint),
             amount: totalEscrowAmount,
-            decimals: 9 // TODO: Get actual decimals from token metadata
+            decimals: 9, // TODO: Get actual decimals from token metadata
+            tokenSymbol: tokenSymbol,
+            jobTitle: title.trim(),
+            workerPayment: amount
           },
-          signTransaction
+          sendTransaction
         )
 
         if (!transferResult.success) {
