@@ -17,6 +17,7 @@ import { supabase } from '@/lib/supabase'
 import { getJobById } from '@/lib/jobs'
 import { upvoteApplication, getApplicationVotes, hasUserVoted } from '@/lib/job-upvoting'
 import { awardApplicationUpvoterBonuses } from '@/lib/job-karma'
+import { notificationService } from '@/lib/services/notificationService'
 import { Database } from '@/types/database'
 import { useWallet } from '@solana/wallet-adapter-react'
 import { formatDistanceToNow, addDays, format } from 'date-fns'
@@ -436,6 +437,34 @@ export default function JobDetailPage() {
       // TODO: Award karma to wallet (Sprint 2.3)
       // await awardKarma(publicKey.toString(), job.project_id, immediateKarma)
 
+      // ==================== NOTIFY DISPUTE CREATOR ====================
+      
+      // Notify dispute creator of vote (non-blocking, batchable)
+      try {
+        if (job) {
+          // Determine dispute creator wallet
+          const creatorWallet = dispute.opened_by === 'poster' 
+            ? job.poster_wallet 
+            : job.assigned_to
+
+          if (creatorWallet) {
+            await notificationService.createNotification({
+              userWallet: creatorWallet,
+              type: 'job_dispute_vote',
+              actorWallet: publicKey.toString(),
+              referenceId: dispute.id,
+              referenceType: 'dispute',
+              metadata: {
+                job_title: job.title
+              }
+            })
+          }
+        }
+      } catch (notificationError) {
+        console.error('[handleVote] Failed to create vote notification:', notificationError)
+        // Don't throw - notification failure is non-critical
+      }
+
       // Update local state
       setUserVote(selectedVote)
       await fetchDisputeData(params.jobId as string, job!.project_id)
@@ -707,6 +736,24 @@ export default function JobDetailPage() {
         .eq('id', job.id)
 
       if (updateError) throw updateError
+
+      // Notify the assigned worker (non-blocking)
+      try {
+        await notificationService.createNotification({
+          userWallet: selectedApplication.applicant_wallet,
+          type: 'job_assigned',
+          actorWallet: job.poster_wallet,
+          referenceId: job.id,
+          referenceType: 'job',
+          metadata: {
+            job_title: job.title,
+            job_type: job.category
+          }
+        })
+      } catch (notificationError) {
+        console.error('[handleConfirmAssignment] Failed to create notification:', notificationError)
+        // Continue - notification failure is non-critical
+      }
 
       toast.success(`Job assigned to ${formatWalletAddress(selectedApplication.applicant_wallet)}! 🎉`)
       setShowAssignConfirm(false)

@@ -13,6 +13,7 @@ import {
   Chip
 } from '@mui/material'
 import { supabase } from '@/lib/supabase'
+import { notificationService } from '@/lib/services/notificationService'
 import { toast } from 'react-hot-toast'
 import GavelIcon from '@mui/icons-material/Gavel'
 import WarningIcon from '@mui/icons-material/Warning'
@@ -77,7 +78,7 @@ export function OpenDisputeModal({
       endsAt.setDate(endsAt.getDate() + 14)
 
       // Create dispute entry
-      const { error: disputeError } = await supabase
+      const { data: disputeData, error: disputeError } = await supabase
         .from('job_disputes')
         .insert({
           job_id: jobId,
@@ -85,6 +86,8 @@ export function OpenDisputeModal({
           reason: reason.trim(),
           ends_at: endsAt.toISOString()
         })
+        .select('id')
+        .single()
 
       if (disputeError) throw disputeError
 
@@ -99,8 +102,49 @@ export function OpenDisputeModal({
 
       if (jobError) throw jobError
 
-      // TODO: Send notification to other party (Sprint 2.3)
-      // await notifyOtherParty(jobId, openedBy)
+      // ==================== NOTIFY OTHER PARTY & ADMINS ====================
+      
+      // Send notifications (non-blocking)
+      try {
+        const { data: job } = await supabase
+          .from('jobs')
+          .select('poster_wallet, assigned_to, title')
+          .eq('id', jobId)
+          .single()
+
+        if (job) {
+          // Determine the other party
+          const otherPartyWallet = openedBy === 'poster' 
+            ? job.assigned_to 
+            : job.poster_wallet
+
+          // Notify the other party
+          if (otherPartyWallet) {
+            await notificationService.createNotification({
+              userWallet: otherPartyWallet,
+              type: 'job_dispute_created',
+              actorWallet: openedBy === 'poster' ? job.poster_wallet : job.assigned_to!,
+              referenceId: disputeData.id,
+              referenceType: 'dispute',
+              metadata: {
+                job_title: job.title,
+                dispute_reason: reason.trim().slice(0, 200) // First 200 chars
+              }
+            })
+          }
+
+          // Notify all admins
+          await notificationService.notifyAdminsOfNewDispute({
+            jobId: jobId,
+            jobTitle: job.title,
+            reason: reason.trim(),
+            creatorWallet: openedBy === 'poster' ? job.poster_wallet : job.assigned_to!
+          })
+        }
+      } catch (notificationError) {
+        console.error('[OpenDisputeModal] Failed to create dispute notifications:', notificationError)
+        // Don't throw - notification failure is non-critical
+      }
 
       toast.success('Dispute opened. Community voting begins now. ⚖️', {
         duration: 5000,

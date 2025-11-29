@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabase } from '@/lib/supabase'
+import { notificationService } from '@/lib/services/notificationService'
 
 export async function POST(
   request: NextRequest,
@@ -59,6 +60,24 @@ export async function POST(
 
     // 4. Award application karma (TODO: integrate with job-karma.ts)
     // await awardApplyToJobKarma(applicantWallet, job.project_id, job.token_mint)
+
+    // 5. Notify the assigned worker (non-blocking)
+    try {
+      await notificationService.createNotification({
+        userWallet: applicantWallet,
+        type: 'job_assigned',
+        actorWallet: job.poster_wallet,
+        referenceId: params.jobId,
+        referenceType: 'job',
+        metadata: {
+          job_title: job.title,
+          job_type: job.category
+        }
+      })
+    } catch (notificationError) {
+      console.error('[auto-assign] Failed to create notification:', notificationError)
+      // Continue - notification failure is non-critical
+    }
 
     console.log(`✅ Auto-assigned job ${params.jobId} to ${applicantWallet} with deadline ${application.committed_completion_date}`)
 

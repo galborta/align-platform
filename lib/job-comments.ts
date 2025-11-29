@@ -5,6 +5,7 @@
  */
 
 import { supabase } from './supabase'
+import { notificationService } from './services/notificationService'
 import { Database } from '@/types/database'
 import { Connection } from '@solana/web3.js'
 import { getHolderInfo } from './token-balance'
@@ -97,6 +98,52 @@ export async function postJobComment(
       console.error('Error details:', JSON.stringify(error, null, 2))
       console.error('Insert data:', insertData)
       return { success: false, error: 'Failed to post comment. Please try again.' }
+    }
+
+    // ==================== NOTIFY JOB PARTICIPANTS ====================
+    
+    // Notify poster and worker about the comment (non-blocking, batchable)
+    try {
+      const { data: job } = await supabase
+        .from('jobs')
+        .select('poster_wallet, assigned_to, title')
+        .eq('id', jobId)
+        .single()
+
+      if (job) {
+        // Notify poster if they're not the commenter
+        if (job.poster_wallet && job.poster_wallet !== walletAddress) {
+          await notificationService.createNotification({
+            userWallet: job.poster_wallet,
+            type: 'job_comment',
+            actorWallet: walletAddress,
+            referenceId: jobId,
+            referenceType: 'job',
+            metadata: {
+              job_title: job.title,
+              comment_text: trimmedMessage.slice(0, 100) // First 100 chars
+            }
+          })
+        }
+
+        // Notify worker if assigned and they're not the commenter
+        if (job.assigned_to && job.assigned_to !== walletAddress) {
+          await notificationService.createNotification({
+            userWallet: job.assigned_to,
+            type: 'job_comment',
+            actorWallet: walletAddress,
+            referenceId: jobId,
+            referenceType: 'job',
+            metadata: {
+              job_title: job.title,
+              comment_text: trimmedMessage.slice(0, 100) // First 100 chars
+            }
+          })
+        }
+      }
+    } catch (notificationError) {
+      console.error('[postJobComment] Failed to create comment notifications:', notificationError)
+      // Don't throw - notification failure is non-critical
     }
 
     return { success: true }

@@ -3,6 +3,7 @@ import { createClient } from '@supabase/supabase-js'
 import { Connection } from '@solana/web3.js'
 import { releasePaymentFromEscrow, validateEscrowBalance } from '@/lib/solana/escrow-release'
 import { getFeePercentage, getFeeWallet, getEscrowWallet } from '@/lib/platform-settings'
+import { notificationService } from '@/lib/services/notificationService'
 import { Database } from '@/types/database'
 
 // Create Supabase client with service role for server-side operations
@@ -247,6 +248,30 @@ export async function POST(
       // Continue to record transactions
     } else {
       console.log('[Release Payment] ✅ Job status updated to completed')
+    }
+
+    // ==================== NOTIFY WORKER ====================
+    
+    // Notify the worker of job completion (non-blocking)
+    try {
+      if (job.assigned_to) {
+        await notificationService.createNotification({
+          userWallet: job.assigned_to,
+          type: 'job_completed',
+          actorWallet: job.poster_wallet,
+          referenceId: job.id,
+          referenceType: 'job',
+          metadata: {
+            job_title: job.title,
+            amount: result.workerReceived,
+            token: job.token_symbol || 'tokens'
+          }
+        })
+        console.log('[Release Payment] ✅ Worker notification sent')
+      }
+    } catch (notificationError) {
+      console.error('[Release Payment] Failed to create notification:', notificationError)
+      // Continue - notification failure is non-critical
     }
     
     // ==================== RECORD TRANSACTIONS ====================

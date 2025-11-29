@@ -1,5 +1,6 @@
 import { supabase } from './supabase'
 import { Database } from '@/types/database'
+import { notificationService } from '@/lib/services/notificationService'
 
 type Job = Database['public']['Tables']['jobs']['Row']
 type JobInsert = Database['public']['Tables']['jobs']['Insert']
@@ -52,6 +53,8 @@ export async function getProjectJobs(projectId: string): Promise<Job[]> {
 
 /**
  * Apply to a job
+ * 
+ * Creates a job application and notifies the job poster
  */
 export async function applyToJob(applicationData: {
   job_id: string
@@ -61,6 +64,7 @@ export async function applyToJob(applicationData: {
   estimated_completion: string
   committed_completion_date: string
 }): Promise<JobApplication> {
+  // Create the application
   const { data, error } = await supabase
     .from('job_applications')
     .insert(applicationData)
@@ -68,6 +72,32 @@ export async function applyToJob(applicationData: {
     .single()
 
   if (error) throw error
+
+  // Notify the job poster (non-blocking)
+  try {
+    const { data: job } = await supabase
+      .from('jobs')
+      .select('poster_wallet, title')
+      .eq('id', applicationData.job_id)
+      .single()
+
+    if (job) {
+      await notificationService.createNotification({
+        userWallet: job.poster_wallet,
+        type: 'job_application_received',
+        actorWallet: applicationData.applicant_wallet,
+        referenceId: applicationData.job_id,
+        referenceType: 'job',
+        metadata: {
+          job_title: job.title
+        }
+      })
+    }
+  } catch (notificationError) {
+    console.error('[applyToJob] Failed to create notification:', notificationError)
+    // Don't throw - notification failure should not block application
+  }
+
   return data
 }
 
@@ -234,6 +264,7 @@ export async function getJobApplicationCount(jobId: string): Promise<number> {
  * 2. Sets the job status to 'assigned'
  * 3. Records the worker's wallet address
  * 4. Sets hard_deadline from the worker's committed_completion_date
+ * 5. Notifies the assigned worker
  * 
  * The hard_deadline becomes the binding deadline that the worker must meet.
  * If the worker doesn't submit work by this date, the job will be auto-cancelled
@@ -285,6 +316,32 @@ export async function assignJobToWorker(
       .eq('id', jobId)
 
     if (error) throw error
+
+    // Notify the assigned worker (non-blocking)
+    try {
+      const { data: job } = await supabase
+        .from('jobs')
+        .select('poster_wallet, title, category')
+        .eq('id', jobId)
+        .single()
+
+      if (job) {
+        await notificationService.createNotification({
+          userWallet: workerWallet,
+          type: 'job_assigned',
+          actorWallet: job.poster_wallet,
+          referenceId: jobId,
+          referenceType: 'job',
+          metadata: {
+            job_title: job.title,
+            job_type: job.category
+          }
+        })
+      }
+    } catch (notificationError) {
+      console.error('[assignJobToWorker] Failed to create notification:', notificationError)
+      // Continue - notification failure is non-critical
+    }
 
     return { success: true }
   } catch (error) {
@@ -352,6 +409,7 @@ export async function getApplicationWithStats(
  * 2. Updates job status to 'submitted'
  * 3. Sets submitted_at timestamp
  * 4. Sets release_scheduled_at to 10 days from submission
+ * 5. Notifies the job poster
  * 
  * The release_scheduled_at triggers the automatic payment release countdown.
  * If the poster doesn't manually release payment or open a dispute within 10 days,
@@ -417,6 +475,31 @@ export async function submitWork(
       .eq('id', jobId)
     
     if (jobError) throw jobError
+
+    // Notify the job poster (non-blocking)
+    try {
+      const { data: job } = await supabase
+        .from('jobs')
+        .select('poster_wallet, title')
+        .eq('id', jobId)
+        .single()
+
+      if (job) {
+        await notificationService.createNotification({
+          userWallet: job.poster_wallet,
+          type: 'job_submitted',
+          actorWallet: workerWallet,
+          referenceId: jobId,
+          referenceType: 'job',
+          metadata: {
+            job_title: job.title
+          }
+        })
+      }
+    } catch (notificationError) {
+      console.error('[submitWork] Failed to create notification:', notificationError)
+      // Continue - notification failure is non-critical
+    }
     
     return { success: true }
     
