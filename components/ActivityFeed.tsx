@@ -62,6 +62,7 @@ export function ActivityFeed({ projectId, tokenMint }: ActivityFeedProps) {
   const [loadingMore, setLoadingMore] = useState(false)
   const [allItemsLoaded, setAllItemsLoaded] = useState(false)
   const [retryCount, setRetryCount] = useState(0)
+  const [displayedItemsCount, setDisplayedItemsCount] = useState(4) // Start with 4 items
   
   // Refs for optimization
   const loadMoreTimeoutRef = useRef<NodeJS.Timeout | null>(null)
@@ -70,8 +71,10 @@ export function ActivityFeed({ projectId, tokenMint }: ActivityFeedProps) {
   // Analytics tracking
   const initialLoadTime = useRef<number>(Date.now())
   
-  // Adaptive batch size based on screen height
-  const ITEMS_PER_PAGE = typeof window !== 'undefined' && window.innerHeight > 1000 ? 30 : 20
+  // Feed display configuration
+  const INITIAL_ITEMS = 4  // Show 4 items initially
+  const AUTO_LOAD_LIMIT = 15  // Auto-load up to 15 items
+  const ITEMS_PER_PAGE = 20  // Load 20 items per page after manual "Load more"
   const MAX_RETRIES = 3
   
   // Pull-to-refresh state (mobile only)
@@ -168,6 +171,7 @@ export function ActivityFeed({ projectId, tokenMint }: ActivityFeedProps) {
         const initialItems = batched.slice(0, ITEMS_PER_PAGE)
         
         setFeedItems(initialItems)
+        setDisplayedItemsCount(INITIAL_ITEMS) // Reset to initial display count
         setHasMore(batched.length > ITEMS_PER_PAGE)
         setCurrentOffset(0)
         setAllItemsLoaded(false)
@@ -229,11 +233,12 @@ export function ActivityFeed({ projectId, tokenMint }: ActivityFeedProps) {
           reduction: `${Math.round(((items.length - batched.length) / items.length) * 100)}%`
         })
 
-        // Take first batch of items for initial display (adaptive based on screen size)
-        const initialItems = batched.slice(0, ITEMS_PER_PAGE)
+        // Load more items initially but only display the first 4
+        const initialItems = batched.slice(0, AUTO_LOAD_LIMIT)
 
         setFeedItems(initialItems)
-        setHasMore(batched.length > ITEMS_PER_PAGE)
+        setDisplayedItemsCount(INITIAL_ITEMS) // Show only 4 items initially
+        setHasMore(batched.length > AUTO_LOAD_LIMIT)
         setCurrentOffset(0) // Reset offset for pagination
         setAllItemsLoaded(false) // Reset all loaded flag
         setLoading(false)
@@ -347,6 +352,9 @@ export function ActivityFeed({ projectId, tokenMint }: ActivityFeedProps) {
 
         return limited
       })
+      
+      // Update displayed items count to show newly loaded items
+      setDisplayedItemsCount(prev => prev + batched.length)
 
       // Update offset for next load (tracks pagination items only, not real-time)
       setCurrentOffset(nextOffset)
@@ -445,24 +453,35 @@ export function ActivityFeed({ projectId, tokenMint }: ActivityFeedProps) {
     }
   }, [])
 
-  // Intersection Observer for infinite scroll (optional enhancement)
+  // Unified Intersection Observer for both auto-scroll and manual load more
   useEffect(() => {
-    if (!loadMoreTriggerRef.current || allItemsLoaded) return
+    if (!loadMoreTriggerRef.current) return
     
     const observer = new IntersectionObserver(
       (entries) => {
-        if (entries[0].isIntersecting && !loadingMore && hasMore) {
-          console.log('📍 Intersection triggered - loading more')
-          handleLoadMore()
+        if (!entries[0].isIntersecting) return
+        
+        // Phase 1: Auto-load up to 15 items (from already fetched data)
+        if (displayedItemsCount < AUTO_LOAD_LIMIT && feedItems.length > displayedItemsCount) {
+          console.log('📍 Auto-loading more items (scroll-triggered)')
+          setDisplayedItemsCount(prev => Math.min(prev + 4, AUTO_LOAD_LIMIT, feedItems.length))
+        }
+        // Phase 2: Manual load more from server (after 15 items)
+        else if (displayedItemsCount >= AUTO_LOAD_LIMIT && !loadingMore && hasMore && !allItemsLoaded) {
+          console.log('📍 Loading more data from server')
+          // Only load if we've displayed all current items
+          if (displayedItemsCount >= feedItems.length) {
+            handleLoadMore()
+          }
         }
       },
-      { threshold: 0.5, rootMargin: '100px' }
+      { threshold: 0.5, rootMargin: '50px' }
     )
     
     observer.observe(loadMoreTriggerRef.current)
     
     return () => observer.disconnect()
-  }, [allItemsLoaded, loadingMore, hasMore, handleLoadMore])
+  }, [displayedItemsCount, feedItems.length, AUTO_LOAD_LIMIT, loadingMore, hasMore, allItemsLoaded, handleLoadMore])
 
   // Performance monitoring - track feed render times
   useEffect(() => {
@@ -644,58 +663,107 @@ export function ActivityFeed({ projectId, tokenMint }: ActivityFeedProps) {
       )}
       
       {!loading && !error && feedItems.length > 0 && (
-        <Box 
-          sx={{ 
-            display: 'flex', 
-            flexDirection: 'column', 
-            gap: { xs: 1, md: 1.5 }  // Tighter spacing on mobile
-          }}
-        >
-          {feedItems.map(item => (
-            <FeedItem 
-              key={getStableItemId(item)} 
-              item={item}
-              projectId={projectId}
-              tokenMint={tokenMint}
-              onClickBatched={handleBatchedItemClick}
-              isMobile={typeof window !== 'undefined' && window.innerWidth < 900}
-            />
-          ))}
-        </Box>
+        <>
+          <Box 
+            sx={{ 
+              display: 'flex', 
+              flexDirection: 'column', 
+              gap: { xs: 1, md: 1.5 },  // Tighter spacing on mobile
+              maxHeight: '500px',  // Always keep scrollable
+              overflowY: 'auto',  // Always scrollable
+              '&::-webkit-scrollbar': {
+                width: '8px',
+              },
+              '&::-webkit-scrollbar-track': {
+                backgroundColor: 'rgba(0,0,0,0.05)',
+                borderRadius: '4px',
+              },
+              '&::-webkit-scrollbar-thumb': {
+                backgroundColor: 'rgba(0,0,0,0.2)',
+                borderRadius: '4px',
+                '&:hover': {
+                  backgroundColor: 'rgba(0,0,0,0.3)',
+                },
+              },
+            }}
+          >
+            {feedItems.slice(0, displayedItemsCount).map(item => (
+              <FeedItem 
+                key={getStableItemId(item)} 
+                item={item}
+                projectId={projectId}
+                tokenMint={tokenMint}
+                onClickBatched={handleBatchedItemClick}
+                isMobile={typeof window !== 'undefined' && window.innerWidth < 900}
+              />
+            ))}
+            
+            {/* Intersection Observer Trigger for auto-load - inside scrollable container */}
+            {displayedItemsCount < AUTO_LOAD_LIMIT && feedItems.length > displayedItemsCount && (
+              <Box 
+                ref={loadMoreTriggerRef}
+                sx={{ 
+                  height: '20px',
+                  width: '100%',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  py: 1
+                }}
+              >
+                <Typography variant="caption" color="text.secondary">
+                  Scroll for more...
+                </Typography>
+              </Box>
+            )}
+            
+            {/* Load More trigger for after 15 items - inside scrollable container */}
+            {displayedItemsCount >= AUTO_LOAD_LIMIT && (displayedItemsCount < feedItems.length || hasMore) && (
+              <Box 
+                ref={loadMoreTriggerRef}
+                sx={{ 
+                  height: '1px',
+                  width: '100%',
+                  visibility: 'hidden'
+                }}
+                aria-hidden="true"
+              />
+            )}
+          </Box>
+        </>
       )}
       
-      {/* Load More Section */}
-      {!loading && feedItems.length > 0 && (
+      {/* Load More Section - Shows after reaching 15 items, OUTSIDE scrollable container */}
+      {!loading && feedItems.length > 0 && displayedItemsCount >= AUTO_LOAD_LIMIT && (
         <Box sx={{ mt: 2, textAlign: 'center' }}>
-          {/* Intersection Observer Trigger (for infinite scroll) */}
-          {!allItemsLoaded && hasMore && (
-            <div 
-              ref={loadMoreTriggerRef} 
-              style={{ height: 1, visibility: 'hidden' }} 
-              aria-hidden="true"
-            />
-          )}
-          
-          {/* Loading State with Skeleton */}
+          {/* Loading State */}
           {loadingMore && (
-            <Box sx={{ mt: 2 }}>
-              <FeedSkeleton count={3} />
+            <Box sx={{ py: 2 }}>
+              <CircularProgress size={24} sx={{ mb: 1 }} />
               <Typography 
                 variant="caption" 
                 color="text.secondary" 
-                sx={{ display: 'block', textAlign: 'center', mt: 1 }}
+                sx={{ display: 'block' }}
               >
                 Loading more activities...
               </Typography>
             </Box>
           )}
           
-          {/* Load More Button */}
-          {!loadingMore && !allItemsLoaded && hasMore && (
+          {/* Load More Button - Only shown after AUTO_LOAD_LIMIT (15 items) reached */}
+          {!loadingMore && (displayedItemsCount < feedItems.length || hasMore) && !allItemsLoaded && (
             <Button 
               variant="outlined" 
               fullWidth 
-              onClick={handleLoadMoreDebounced}
+              onClick={() => {
+                // If we have more items in feedItems, display them
+                if (displayedItemsCount < feedItems.length) {
+                  setDisplayedItemsCount(prev => Math.min(prev + ITEMS_PER_PAGE, feedItems.length))
+                } else if (hasMore && !allItemsLoaded) {
+                  // Otherwise, load more from server
+                  handleLoadMoreDebounced()
+                }
+              }}
               sx={{ 
                 borderColor: 'divider',
                 color: 'text.primary',
@@ -710,7 +778,7 @@ export function ActivityFeed({ projectId, tokenMint }: ActivityFeedProps) {
           )}
           
           {/* All Caught Up Message */}
-          {allItemsLoaded && (
+          {allItemsLoaded && displayedItemsCount >= feedItems.length && (
             <Box sx={{ py: 2 }}>
               <Typography 
                 variant="body2" 

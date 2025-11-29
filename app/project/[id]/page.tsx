@@ -353,37 +353,28 @@ export default function ProjectDetailPage() {
           gridTemplateColumns: {
             xs: '1fr',           // Mobile: single column
             md: '1fr',           // Tablet: single column
-            lg: '2fr 1fr'        // Desktop: 2 columns (feed+chat | stats)
+            lg: '2fr 1fr'        // Desktop: 2 columns (chat+content | feed+stats)
           },
           gap: { xs: 2, md: 3 },
           mt: 2
         }}>
-          {/* Left Column - Activity Feed, Chat + IP Registry */}
+          {/* Left Column - Chat + IP Registry */}
           <Box sx={{
             display: 'flex',
             flexDirection: 'column',
             gap: { xs: 2, md: 3 },
             minWidth: 0  // Prevent overflow
           }}>
-            {/* Activity Feed - Appears first on mobile */}
-            {project.status === 'live' && showMockFeed && (
-              <Box sx={{ order: { xs: 1, lg: 1 } }}>
-                <FeedErrorBoundary>
-                  <ActivityFeed projectId={project.id} tokenMint={project.token_mint} />
-                </FeedErrorBoundary>
-              </Box>
-            )}
-
-            {/* Chat Component - Appears second on mobile */}
+            {/* Chat Component - Appears first on mobile */}
             {project.status === 'live' && (
-              <Box sx={{ order: { xs: 2, lg: 2 } }}>
+              <Box sx={{ order: { xs: 1, lg: 1 } }}>
                 <ProjectChat projectId={project.id} tokenMint={project.token_mint} />
               </Box>
             )}
 
-            {/* Community Curation Section - Third on mobile */}
+            {/* Community Curation Section - Second on mobile */}
             {project.status === 'live' && (
-              <Box sx={{ order: { xs: 3, lg: 3 } }}>
+              <Box sx={{ order: { xs: 2, lg: 2 } }}>
                 <Card>
                   <CardHeader>
                     <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
@@ -415,7 +406,7 @@ export default function ProjectDetailPage() {
             )}
 
             {/* Social Assets - Compact */}
-            <Box sx={{ order: { xs: 4, lg: 4 } }}>
+            <Box sx={{ order: { xs: 3, lg: 3 } }}>
               <Card>
                 <CardHeader>
                   <CardTitle className="text-lg">Social Assets</CardTitle>
@@ -453,7 +444,7 @@ export default function ProjectDetailPage() {
             </Box>
 
             {/* Creative Assets - Album Style */}
-            <Box sx={{ order: { xs: 5, lg: 5 } }}>
+            <Box sx={{ order: { xs: 4, lg: 4 } }}>
               <Card>
                 <CardHeader>
                   <CardTitle className="text-lg">Creative Assets</CardTitle>
@@ -499,7 +490,7 @@ export default function ProjectDetailPage() {
             </Box>
 
             {/* Legal Assets - Compact List */}
-            <Box sx={{ order: { xs: 6, lg: 6 } }}>
+            <Box sx={{ order: { xs: 5, lg: 5 } }}>
               <Card>
                 <CardHeader>
                   <CardTitle className="text-lg">Legal Assets</CardTitle>
@@ -538,13 +529,22 @@ export default function ProjectDetailPage() {
             </Box>
           </Box>
 
-          {/* Right Column - Stats & Holders (moves below on mobile) */}
+          {/* Right Column - Activity Feed + Stats & Holders (moves below on mobile) */}
           <Box sx={{
             display: 'flex',
             flexDirection: 'column',
             gap: { xs: 2, md: 3 },
-            order: { xs: 7, lg: 2 }  // Appears last on mobile, right column on desktop
+            order: { xs: 6, lg: 2 }  // Appears after left column content on mobile, right column on desktop
           }}>
+            {/* Activity Feed - Now at top of right column */}
+            {project.status === 'live' && showMockFeed && (
+              <Box>
+                <FeedErrorBoundary>
+                  <ActivityFeed projectId={project.id} tokenMint={project.token_mint} />
+                </FeedErrorBoundary>
+              </Box>
+            )}
+
             {/* Top Contributors Section */}
             {project.status === 'live' && (
               <Card>

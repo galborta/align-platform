@@ -416,6 +416,13 @@ export default function JobDetailPage() {
       return
     }
 
+    // Prevent parties involved in dispute from voting
+    const voterWallet = publicKey.toString()
+    if (job && (voterWallet === job.poster_wallet || voterWallet === job.assigned_to)) {
+      toast.error('You cannot vote on a dispute you are involved in')
+      return
+    }
+
     setVoting(true)
 
     try {

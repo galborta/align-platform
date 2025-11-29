@@ -95,6 +95,12 @@ export function AssetVotingCard({ asset, currentWallet, projectId }: AssetVoting
   const handleVote = async (type: 'upvote' | 'report') => {
     if (!currentWallet || hasVoted || voting) return
     
+    // Prevent voting on own asset
+    if (currentWallet === asset.submitter_wallet) {
+      toast.error('You cannot vote on your own asset')
+      return
+    }
+    
     setVoting(true)
     
     try {
