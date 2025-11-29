@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabase } from '@/lib/supabase'
+import { notificationService } from '@/lib/services/notificationService'
 
 export async function POST(request: NextRequest) {
   try {
@@ -151,11 +152,27 @@ export async function POST(request: NextRequest) {
           //   await awardKarma(voter.voter_wallet, job.project_id, bonusKarma)
           // }
 
-          // TODO: Refund payment to poster
+          // TODO: Refund payment to poster (Phase 2: on-chain escrow)
           // await refundEscrow(job.id, job.poster_wallet)
 
-          // TODO: Notify both parties
-          // await notifyParties(dispute.job_id, 'refund_to_poster')
+          // ✨ NEW: Notify poster of refund (HIGH PRIORITY - triggers browser notification)
+          try {
+            await notificationService.createNotification({
+              userWallet: job.poster_wallet,
+              type: 'payment_refunded',
+              referenceId: dispute.job_id,
+              referenceType: 'payment',
+              metadata: {
+                amount: job.payment_amount,
+                token: job.payment_token || job.token_symbol || 'tokens',
+                job_title: job.title
+              }
+            })
+            console.log(`🔔 Payment refund notification sent to ${job.poster_wallet}`)
+          } catch (notificationError) {
+            console.error('Failed to create refund notification:', notificationError)
+            // Don't fail dispute resolution if notification fails
+          }
 
           results.push({
             disputeId: dispute.id,

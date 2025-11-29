@@ -10,6 +10,7 @@ import {
   calculateApplicationUpvoteBonusKarma,
   calculateDisputeVoteBonusKarma
 } from './karma'
+import { notificationService } from './services/notificationService'
 
 /**
  * Get token percentage for a wallet in a project
@@ -23,6 +24,7 @@ async function getTokenPercentage(walletAddress: string, tokenMint: string): Pro
 
 /**
  * Award karma to a wallet for a specific project
+ * Automatically creates notifications for milestones, warnings, and bans
  */
 async function awardKarma(params: {
   walletAddress: string
@@ -52,6 +54,9 @@ async function awardKarma(params: {
     .eq('wallet_address', walletAddress)
     .eq('project_id', projectId)
     .single()
+
+  const currentKarma = existingKarma?.total_karma_points || 0
+  const newKarma = currentKarma + karmaAmount
 
   if (!existingKarma) {
     // Create new record
@@ -96,6 +101,78 @@ async function awardKarma(params: {
       .eq('project_id', projectId)
 
     if (error) throw error
+  }
+
+  // ==================== KARMA NOTIFICATIONS ====================
+  // Check for milestones, warnings, and bans after karma update
+  
+  try {
+    // 1. Check for MILESTONE crossings (positive achievements)
+    if (karmaAmount > 0) {
+      const milestones = [100, 500, 1000, 5000, 10000]
+      const crossedMilestone = milestones.find(
+        m => currentKarma < m && newKarma >= m
+      )
+
+      if (crossedMilestone) {
+        await notificationService.createNotification({
+          userWallet: walletAddress,
+          type: 'karma_milestone',
+          referenceType: 'karma',
+          metadata: {
+            karma_points: newKarma,
+            karma_level: crossedMilestone.toString()
+          }
+        })
+        console.log(`🎉 Karma milestone notification: ${walletAddress} reached ${crossedMilestone}`)
+      }
+    }
+
+    // 2. Check for WARNING (first time going negative or dropping to -50)
+    if (karmaAmount < 0) {
+      // Warning at 0 threshold
+      if (currentKarma >= 0 && newKarma < 0) {
+        await notificationService.createNotification({
+          userWallet: walletAddress,
+          type: 'karma_warning',
+          referenceType: 'karma',
+          metadata: {
+            karma_points: newKarma
+          }
+        })
+        console.log(`⚠️ Karma warning notification: ${walletAddress} dropped below 0`)
+      }
+      
+      // Warning at -50 threshold
+      if (currentKarma >= -50 && newKarma < -50 && newKarma >= -100) {
+        await notificationService.createNotification({
+          userWallet: walletAddress,
+          type: 'karma_warning',
+          referenceType: 'karma',
+          metadata: {
+            karma_points: newKarma
+          }
+        })
+        console.log(`⚠️ Karma warning notification: ${walletAddress} dropped below -50`)
+      }
+
+      // 3. Check for BAN (dropping below -100)
+      if (currentKarma >= -100 && newKarma < -100) {
+        await notificationService.createNotification({
+          userWallet: walletAddress,
+          type: 'karma_ban',
+          referenceType: 'karma',
+          metadata: {
+            karma_points: newKarma
+          }
+        })
+        console.log(`🚫 Karma ban notification: ${walletAddress} dropped below -100`)
+      }
+    }
+
+  } catch (notificationError) {
+    console.error('Failed to create karma notification:', notificationError)
+    // Don't fail karma award if notification fails
   }
 }
 

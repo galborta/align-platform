@@ -4,6 +4,7 @@ import { useState, useEffect, useRef, useCallback } from 'react'
 import { supabase } from '@/lib/supabase'
 import { canMessageUser } from '@/lib/messaging'
 import { toast } from 'react-hot-toast'
+import { notificationService } from '@/lib/services/notificationService'
 import {
   Box,
   TextField,
@@ -216,7 +217,38 @@ export function MessageComposer({
         return
       }
 
-      // 2. Update conversation.last_message_at
+      // 2. Create database notification record (HIGH PRIORITY - triggers browser notification)
+      try {
+        // Check recipient's notification preferences
+        const { data: recipientProfile } = await supabase
+          .from('user_profiles')
+          .select('notification_enabled')
+          .eq('wallet_address', recipientWallet)
+          .maybeSingle()
+
+        // Only create notification if recipient has notifications enabled (default: true)
+        if (recipientProfile?.notification_enabled !== false) {
+          await notificationService.createNotification({
+            userWallet: recipientWallet,
+            type: 'message_received',
+            actorWallet: senderWallet,
+            referenceId: newMessage.id,
+            referenceType: 'message',
+            metadata: {
+              message_preview: trimmedMessage.slice(0, 100),
+              conversation_id: conversationId
+            }
+          })
+          console.log('🔔 Message notification created successfully')
+        } else {
+          console.log('📵 Recipient has notifications disabled')
+        }
+      } catch (notificationError) {
+        console.error('Failed to create message notification:', notificationError)
+        // Don't fail the message if notification fails
+      }
+
+      // 3. Update conversation.last_message_at
       const { error: updateError } = await supabase
         .from('conversations')
         .update({
@@ -230,19 +262,19 @@ export function MessageComposer({
         // Don't show error to user since message was sent
       }
 
-      // 3. Clear input field
+      // 4. Clear input field
       setMessage('')
 
-      // 4. Update rate limit
+      // 5. Update rate limit
       setRateLimit(prev => ({
         ...prev,
         count: prev.count + 1
       }))
 
-      // 5. Send typing indicator stop signal
+      // 6. Send typing indicator stop signal
       await clearTypingIndicator()
 
-      // 6. Call callback
+      // 7. Call callback
       if (onMessageSent) {
         onMessageSent()
       }

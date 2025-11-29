@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabase } from '@/lib/supabase'
 import { getOrCreateConversation, canMessageUser } from '@/lib/messaging'
+import { notificationService } from '@/lib/services/notificationService'
 
 /**
  * POST /api/tips/record
@@ -134,6 +135,27 @@ export async function POST(request: NextRequest) {
     if (tipError) {
       console.error('Tip insert error:', tipError)
       throw tipError
+    }
+
+    // ✨ Create notification for tip recipient (HIGH PRIORITY - triggers browser notification)
+    try {
+      await notificationService.createNotification({
+        userWallet: toWallet,
+        type: 'tip_received',
+        actorWallet: fromWallet,
+        referenceId: tip.id,
+        referenceType: 'tip',
+        metadata: {
+          amount: amountTokens,
+          token: tokenSymbol,
+          token_mint: tokenMint,
+          message_preview: message?.trim()?.slice(0, 100) || undefined
+        }
+      })
+      console.log('🔔 Tip notification created successfully')
+    } catch (notificationError) {
+      console.error('Failed to create tip notification:', notificationError)
+      // Don't fail the tip if notification fails
     }
 
     // Send DM if message provided (integrate with existing messaging system)
