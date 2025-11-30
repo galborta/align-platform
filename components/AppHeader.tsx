@@ -193,7 +193,6 @@ export function AppHeader() {
                   >
                     <Badge
                       badgeContent={unreadCount}
-                      overlap="circular"
                       anchorOrigin={{
                         vertical: 'top',
                         horizontal: 'right',
@@ -209,16 +208,16 @@ export function AppHeader() {
                           borderRadius: '8px',
                           border: '2px solid white', // White border for contrast
                           boxShadow: '0 2px 4px rgba(0, 0, 0, 0.2)',
-                          transform: 'scale(1) translate(60%, -60%)', // Push to corner
-                          transformOrigin: '100% 0%',
+                          top: '-8px',
+                          right: '-9px',
                           animation: unreadCount > 0 ? 'pulse 2s infinite' : 'none',
                           '@keyframes pulse': {
                             '0%, 100%': {
-                              transform: 'scale(1) translate(60%, -60%)',
+                              transform: 'scale(1)',
                               opacity: 1
                             },
                             '50%': {
-                              transform: 'scale(1.1) translate(60%, -60%)',
+                              transform: 'scale(1.1)',
                               opacity: 0.9
                             }
                           }

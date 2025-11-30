@@ -245,19 +245,27 @@ export function NotificationBell() {
         >
           <Badge
             badgeContent={unreadCount}
-            color="error"
+            anchorOrigin={{
+              vertical: 'top',
+              horizontal: 'right',
+            }}
             sx={{
               '& .MuiBadge-badge': {
                 bgcolor: '#7C4DFF',
                 color: 'white',
-                fontSize: '0.65rem',
-                fontWeight: 'bold',
-                minWidth: 16,
-                height: 16
+                fontSize: '10px',
+                fontWeight: 700,
+                minWidth: '16px',
+                height: '16px',
+                borderRadius: '8px',
+                border: '2px solid white',
+                boxShadow: '0 2px 4px rgba(0, 0, 0, 0.2)',
+                top: '-8px',
+                right: '-8px',
               }
             }}
           >
-            {unreadCount > 0 ? <NotificationsIcon /> : <NotificationsNoneIcon />}
+            <NotificationsIcon />
           </Badge>
         </IconButton>
       </Tooltip>
