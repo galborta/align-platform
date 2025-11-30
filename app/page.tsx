@@ -13,10 +13,13 @@ interface Project {
   token_name: string
   profile_image_url: string | null
   token_symbol: string
+  token_mint: string
   created_at: string
   active_jobs_count: number
   total_jobs_completed: number
   activity_score: number
+  price: number | null
+  marketCap: number | null
 }
 
 export default function Home() {
@@ -30,7 +33,7 @@ export default function Home() {
         // Start with basic query (just projects with live status)
         const { data: baseData, error: baseError } = await supabase
           .from('projects')
-          .select('id, token_name, profile_image_url, token_symbol, created_at')
+          .select('id, token_name, profile_image_url, token_symbol, token_mint, created_at')
           .eq('status', 'live')
           .order('created_at', { ascending: false })
 
@@ -41,7 +44,7 @@ export default function Home() {
           return
         }
 
-        // For each project, count jobs dynamically
+        // For each project, count jobs dynamically and fetch token stats
         const projectsWithCounts = await Promise.all(
           baseData.map(async (project) => {
             // Count active jobs
@@ -62,11 +65,32 @@ export default function Home() {
             const completed = completedCount || 0
             const score = active * 3 + completed
 
+            // Fetch token stats from DexScreener
+            let price = null
+            let marketCap = null
+            
+            if (project.token_mint) {
+              try {
+                const dexRes = await fetch(`https://api.dexscreener.com/latest/dex/tokens/${project.token_mint}`)
+                const dexData = await dexRes.json()
+                
+                if (dexData.pairs && dexData.pairs.length > 0) {
+                  const mainPair = dexData.pairs[0]
+                  price = parseFloat(mainPair.priceUsd) || null
+                  marketCap = parseFloat(mainPair.fdv) || parseFloat(mainPair.marketCap) || null
+                }
+              } catch (e) {
+                console.error(`Error fetching stats for ${project.token_name}:`, e)
+              }
+            }
+
             return {
               ...project,
               active_jobs_count: active,
               total_jobs_completed: completed,
-              activity_score: score
+              activity_score: score,
+              price,
+              marketCap
             }
           })
         )
@@ -138,6 +162,8 @@ export default function Home() {
                     tokenSymbol={project.token_symbol}
                     activeJobsCount={project.active_jobs_count || 0}
                     totalJobsCompleted={project.total_jobs_completed || 0}
+                    price={project.price}
+                    marketCap={project.marketCap}
                   />
                 ))}
               </div>

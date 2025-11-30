@@ -11,6 +11,8 @@ interface ProjectCardProps {
   tokenSymbol: string
   activeJobsCount: number
   totalJobsCompleted?: number
+  price?: number | null
+  marketCap?: number | null
 }
 
 export default function ProjectCard({
@@ -20,6 +22,8 @@ export default function ProjectCard({
   tokenSymbol,
   activeJobsCount,
   totalJobsCompleted = 0,
+  price,
+  marketCap,
 }: ProjectCardProps) {
   const [imageError, setImageError] = useState(false)
   
@@ -35,6 +39,17 @@ export default function ProjectCard({
   const completedJobsText = totalJobsCompleted > 0
     ? `${totalJobsCompleted} Job${totalJobsCompleted !== 1 ? 's' : ''} Completed`
     : null
+  
+  // Format market cap
+  const formatMarketCap = (mc: number) => {
+    if (mc >= 1000000) {
+      return `$${(mc / 1000000).toFixed(2)}M`
+    } else if (mc >= 1000) {
+      return `$${(mc / 1000).toFixed(2)}K`
+    } else {
+      return `$${mc.toFixed(2)}`
+    }
+  }
 
   return (
     <Link href={`/project/${id}`} className="project-card-link">
@@ -81,6 +96,22 @@ export default function ProjectCard({
         
         {/* Token Symbol */}
         <div className="token-symbol">${tokenSymbol}</div>
+        
+        {/* Price and Market Cap */}
+        {(price || marketCap) && (
+          <div className="token-stats">
+            {price && (
+              <div className="stat-badge price-badge">
+                ${price.toFixed(8)}
+              </div>
+            )}
+            {marketCap && (
+              <div className="stat-badge mc-badge">
+                MC: {formatMarketCap(marketCap)}
+              </div>
+            )}
+          </div>
+        )}
         
         {/* Metrics Section */}
         <div className="metrics">
@@ -209,7 +240,34 @@ export default function ProjectCard({
           color: var(--text-secondary);
           text-transform: uppercase;
           letter-spacing: 0.05em;
+          margin-bottom: var(--space-sm);
+        }
+
+        /* Token Stats */
+        .token-stats {
+          display: flex;
+          flex-wrap: wrap;
+          gap: var(--space-xs);
           margin-bottom: var(--space-md);
+        }
+
+        .stat-badge {
+          font-family: var(--font-body);
+          font-size: var(--text-body-small);
+          font-weight: var(--weight-medium);
+          padding: 4px 10px;
+          border-radius: 12px;
+          white-space: nowrap;
+        }
+
+        .price-badge {
+          background: rgba(34, 197, 94, 0.1);
+          color: #16a34a;
+        }
+
+        .mc-badge {
+          background: rgba(59, 130, 246, 0.1);
+          color: #2563eb;
         }
 
         /* Metrics */
