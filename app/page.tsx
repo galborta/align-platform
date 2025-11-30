@@ -1,100 +1,173 @@
 'use client'
 
-import { Button } from '@/components/ui/Button'
-import { Card, CardContent } from '@/components/ui/Card'
+import { useEffect, useState } from 'react'
 import { AppHeader } from '@/components/AppHeader'
-import VerifiedIcon from '@mui/icons-material/Verified'
-import GroupIcon from '@mui/icons-material/Group'
+import { Hero } from '@/components/Hero'
+import ProjectCard from '@/components/ProjectCard'
+import { supabase } from '@/lib/supabase'
+import ErrorOutlineIcon from '@mui/icons-material/ErrorOutline'
 import AccountBalanceWalletIcon from '@mui/icons-material/AccountBalanceWallet'
 
+interface Project {
+  id: string
+  token_name: string
+  profile_image_url: string | null
+  token_symbol: string
+  created_at: string
+  active_jobs_count: number
+  total_jobs_completed: number
+  activity_score: number
+}
+
 export default function Home() {
+  const [projects, setProjects] = useState<Project[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    async function fetchProjects() {
+      try {
+        // Start with basic query (just projects with live status)
+        const { data: baseData, error: baseError } = await supabase
+          .from('projects')
+          .select('id, token_name, profile_image_url, token_symbol, created_at')
+          .eq('status', 'live')
+          .order('created_at', { ascending: false })
+
+        if (baseError) throw baseError
+
+        if (!baseData || baseData.length === 0) {
+          setProjects([])
+          return
+        }
+
+        // For each project, count jobs dynamically
+        const projectsWithCounts = await Promise.all(
+          baseData.map(async (project) => {
+            // Count active jobs
+            const { count: activeCount } = await supabase
+              .from('jobs')
+              .select('*', { count: 'exact', head: true })
+              .eq('project_id', project.id)
+              .eq('status', 'open')
+
+            // Count completed jobs
+            const { count: completedCount } = await supabase
+              .from('jobs')
+              .select('*', { count: 'exact', head: true })
+              .eq('project_id', project.id)
+              .eq('status', 'completed')
+
+            const active = activeCount || 0
+            const completed = completedCount || 0
+            const score = active * 3 + completed
+
+            return {
+              ...project,
+              active_jobs_count: active,
+              total_jobs_completed: completed,
+              activity_score: score
+            }
+          })
+        )
+
+        // Sort by activity_score (descending)
+        projectsWithCounts.sort((a, b) => {
+          if (b.activity_score !== a.activity_score) {
+            return b.activity_score - a.activity_score
+          }
+          // Tie-breaker: created_at (newer first)
+          return new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+        })
+
+        setProjects(projectsWithCounts)
+      } catch (err) {
+        console.error('Error fetching projects:', err)
+        setError(err instanceof Error ? err.message : 'Failed to load projects')
+      } finally {
+        setLoading(false)
+      }
+    }
+
+    fetchProjects()
+  }, [])
   
   return (
-    <div className="min-h-screen bg-page-bg">
+    <div className="page-wrapper">
       <AppHeader />
 
-      {/* Main Content */}
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        {/* Hero Section */}
-        <section className="py-16 sm:py-24 text-center">
-          <h1 className="font-display text-[32px] sm:text-5xl md:text-6xl font-bold text-text-primary mb-6">
-            Transparency for Token Projects
-          </h1>
-          <p className="font-body text-lg sm:text-xl text-text-secondary max-w-2xl mx-auto mb-8">
-            Build credibility with verifiable IP. Manage your treasury professionally.
-          </p>
-          <div className="flex flex-col sm:flex-row gap-4 justify-center items-center">
-            <a href="/create">
-              <Button variant="primary" size="lg">
-                Add Your Project
-              </Button>
-            </a>
-            <a href="/projects">
-              <Button variant="outline" size="lg" className="bg-card-bg">
-                Explore Projects
-              </Button>
-            </a>
-          </div>
-        </section>
+      {/* Hero Section */}
+      <Hero />
 
-        {/* Features Grid */}
-        <section className="py-16">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 lg:gap-8">
-            {/* Card 1: IP Verification */}
-            <Card className="p-6" hover>
-              <CardContent className="p-0 text-center">
-                <div className="flex justify-center mb-4">
-                  <VerifiedIcon 
-                    className="text-accent-primary" 
-                    sx={{ fontSize: 48 }}
-                  />
-                </div>
-                <h3 className="font-display text-xl font-semibold text-text-primary mb-3">
-                  IP Verification
-                </h3>
-                <p className="font-body text-text-secondary">
-                  Prove ownership of your social accounts and brand
-                </p>
-              </CardContent>
-            </Card>
+      {/* Main Content Grid - Projects + Karma Sidebar */}
+      <main className="home-content">
+        <div className="content-grid">
+          {/* Projects Section - Left Column */}
+          <section className="projects-section">
+            <h2 className="section-heading">Active Projects</h2>
+            
+            {/* Loading State */}
+            {loading && (
+              <div className="projects-grid">
+                {[1, 2, 3, 4, 5, 6].map((i) => (
+                  <div key={i} className="skeleton-card" />
+                ))}
+              </div>
+            )}
 
-            {/* Card 2: Team Transparency */}
-            <Card className="p-6" hover>
-              <CardContent className="p-0 text-center">
-                <div className="flex justify-center mb-4">
-                  <GroupIcon 
-                    className="text-accent-primary" 
-                    sx={{ fontSize: 48 }}
-                  />
-                </div>
-                <h3 className="font-display text-xl font-semibold text-text-primary mb-3">
-                  Team Transparency
-                </h3>
-                <p className="font-body text-text-secondary">
-                  Show holders who controls the token
-                </p>
-              </CardContent>
-            </Card>
+            {/* Error State */}
+            {error && (
+              <div className="error-state">
+                <ErrorOutlineIcon sx={{ fontSize: 48, color: 'var(--text-secondary)', mb: 2 }} />
+                <p>Unable to load projects. Please try again.</p>
+                <button onClick={() => window.location.reload()}>
+                  Retry
+                </button>
+              </div>
+            )}
 
-            {/* Card 3: Optional Treasury */}
-            <Card className="p-6" hover>
-              <CardContent className="p-0 text-center">
-                <div className="flex justify-center mb-4">
-                  <AccountBalanceWalletIcon 
-                    className="text-accent-primary" 
-                    sx={{ fontSize: 48 }}
+            {/* Projects Grid */}
+            {!loading && !error && projects.length > 0 && (
+              <div className="projects-grid">
+                {projects.map((project) => (
+                  <ProjectCard
+                    key={project.id}
+                    id={project.id}
+                    name={project.token_name}
+                    logo={project.profile_image_url}
+                    tokenSymbol={project.token_symbol}
+                    activeJobsCount={project.active_jobs_count || 0}
+                    totalJobsCompleted={project.total_jobs_completed || 0}
                   />
-                </div>
-                <h3 className="font-display text-xl font-semibold text-text-primary mb-3">
-                  Optional Treasury
-                </h3>
-                <p className="font-body text-text-secondary">
-                  Professional tools for buybacks and distributions
-                </p>
-              </CardContent>
-            </Card>
-          </div>
-        </section>
+                ))}
+              </div>
+            )}
+
+            {/* Empty State */}
+            {!loading && !error && projects.length === 0 && (
+              <div className="empty-state">
+                <AccountBalanceWalletIcon 
+                  sx={{ fontSize: 64, color: 'var(--accent-primary)', mb: 2 }} 
+                />
+                <h3>No projects yet</h3>
+                <p>Be the first to add your project to Align!</p>
+                <a href="/create" className="cta-button">
+                  Add Your Project
+                </a>
+              </div>
+            )}
+          </section>
+
+          {/* Karma Leaderboard - Right Column */}
+          <aside className="karma-sidebar">
+            <div className="karma-card">
+              <h3 className="sidebar-heading">Karma Leaderboard</h3>
+              <div className="leaderboard-placeholder">
+                <p>Top 10 karma leaders will appear here in Sprint 4...</p>
+              </div>
+            </div>
+          </aside>
+        </div>
       </main>
 
       {/* Footer */}
@@ -127,6 +200,243 @@ export default function Home() {
           </div>
         </div>
       </footer>
+
+      <style jsx>{`
+        /* Page Wrapper with Pattern */
+        .page-wrapper {
+          min-height: 100vh;
+          background: var(--page-background);
+          position: relative;
+        }
+
+        /* Subtle pattern overlay for entire page */
+        .page-wrapper::before {
+          content: '';
+          position: fixed;
+          top: 0;
+          left: 0;
+          right: 0;
+          bottom: 0;
+          background-image: 
+            linear-gradient(var(--accent-primary) 1px, transparent 1px),
+            linear-gradient(90deg, var(--accent-primary) 1px, transparent 1px);
+          background-size: 50px 50px;
+          opacity: 0.02;
+          pointer-events: none;
+          z-index: 0;
+        }
+
+        .page-wrapper > * {
+          position: relative;
+          z-index: 1;
+        }
+
+        /* Main Content Grid Layout */
+        .home-content {
+          padding: var(--space-xxl) 0;
+        }
+
+        .content-grid {
+          display: grid;
+          grid-template-columns: 1fr 400px;
+          gap: var(--space-lg);
+          max-width: var(--container-max-width);
+          margin: 0 auto;
+          padding: 0 var(--content-padding);
+          align-items: start;
+        }
+
+        /* Projects Section - Left Column */
+        .projects-section {
+          min-height: 400px;
+        }
+
+        .section-heading {
+          font-family: var(--font-heading);
+          font-size: var(--text-title);
+          font-weight: var(--weight-semibold);
+          color: var(--text-primary);
+          margin-bottom: var(--space-lg);
+        }
+
+        .projects-grid {
+          display: grid;
+          grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+          gap: var(--space-lg);
+          width: 100%;
+        }
+
+        /* Skeleton Loading Cards */
+        .skeleton-card {
+          background: var(--card-background);
+          border-radius: var(--radius-card-lg);
+          padding: var(--space-lg);
+          box-shadow: var(--shadow-card);
+          min-height: 180px;
+          animation: skeleton-pulse 1.5s ease-in-out infinite;
+        }
+
+        @keyframes skeleton-pulse {
+          0%, 100% {
+            opacity: 1;
+          }
+          50% {
+            opacity: 0.6;
+          }
+        }
+
+        /* Empty State */
+        .empty-state {
+          background: var(--card-background);
+          border-radius: var(--radius-card-lg);
+          padding: var(--space-xxl);
+          box-shadow: var(--shadow-card);
+          text-align: center;
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          grid-column: 1 / -1;
+        }
+
+        .empty-state h3 {
+          font-family: var(--font-heading);
+          font-size: var(--text-title);
+          font-weight: var(--weight-semibold);
+          color: var(--text-primary);
+          margin: 0 0 var(--space-sm) 0;
+        }
+
+        .empty-state p {
+          font-family: var(--font-body);
+          font-size: var(--text-body);
+          color: var(--text-secondary);
+          margin: 0 0 var(--space-lg) 0;
+        }
+
+        .cta-button {
+          background: var(--accent-primary);
+          color: white;
+          padding: var(--space-sm) var(--space-lg);
+          border-radius: var(--radius-control);
+          font-family: var(--font-body);
+          font-size: var(--text-label);
+          font-weight: var(--weight-semibold);
+          text-decoration: none;
+          display: inline-block;
+          box-shadow: var(--shadow-chip);
+          transition: all 0.3s ease;
+        }
+
+        .cta-button:hover {
+          transform: translateY(-2px);
+          box-shadow: var(--shadow-floating);
+        }
+
+        /* Error State */
+        .error-state {
+          background: var(--card-background);
+          border-radius: var(--radius-card-lg);
+          padding: var(--space-xxl);
+          box-shadow: var(--shadow-card);
+          text-align: center;
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          grid-column: 1 / -1;
+        }
+
+        .error-state p {
+          font-family: var(--font-body);
+          font-size: var(--text-body);
+          color: var(--text-secondary);
+          margin: 0 0 var(--space-md) 0;
+        }
+
+        .error-state button {
+          background: white;
+          border: 2px solid var(--accent-primary);
+          color: var(--accent-primary);
+          padding: var(--space-sm) var(--space-lg);
+          border-radius: var(--radius-control);
+          font-family: var(--font-body);
+          font-size: var(--text-label);
+          font-weight: var(--weight-semibold);
+          cursor: pointer;
+          transition: all 0.3s ease;
+        }
+
+        .error-state button:hover {
+          background: var(--accent-primary-soft);
+        }
+
+        /* Karma Sidebar - Right Column */
+        .karma-sidebar {
+          position: sticky;
+          top: 100px;
+          align-self: start;
+        }
+
+        .karma-card {
+          background: var(--card-background);
+          border-radius: var(--radius-card-lg);
+          padding: var(--space-lg);
+          box-shadow: var(--shadow-card);
+          min-height: 400px;
+        }
+
+        .sidebar-heading {
+          font-family: var(--font-heading);
+          font-size: var(--text-headline);
+          font-weight: var(--weight-semibold);
+          color: var(--text-primary);
+          margin-bottom: var(--space-md);
+        }
+
+        .leaderboard-placeholder {
+          padding: var(--space-xl) 0;
+          text-align: center;
+        }
+
+        .leaderboard-placeholder p {
+          color: var(--text-secondary);
+          font-family: var(--font-body);
+          font-size: var(--text-body-small);
+          font-style: italic;
+        }
+
+        /* Tablet Breakpoint (768px - 1024px) */
+        @media (max-width: 1024px) {
+          .content-grid {
+            grid-template-columns: 1fr 320px;
+            gap: var(--space-md);
+          }
+
+          .projects-grid {
+            grid-template-columns: 1fr;
+          }
+        }
+
+        /* Mobile Breakpoint (< 768px) */
+        @media (max-width: 768px) {
+          .home-content {
+            padding: var(--space-lg) 0;
+          }
+
+          .content-grid {
+            grid-template-columns: 1fr;
+            gap: var(--space-xl);
+            padding: 0 var(--space-md);
+          }
+
+          .karma-sidebar {
+            position: static;
+          }
+
+          .projects-grid {
+            grid-template-columns: 1fr;
+          }
+        }
+      `}</style>
     </div>
   )
 }

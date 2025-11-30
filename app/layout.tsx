@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from 'next'
-import { Space_Grotesk, Inter } from 'next/font/google'
+import { Space_Grotesk } from 'next/font/google'
 import './globals.css'
 import ThemeProvider from '@/components/ThemeProvider'
 import { WalletConfigProvider } from '@/lib/wallet-config'
@@ -7,8 +7,9 @@ import { LayoutClient } from '@/components/LayoutClient'
 import { Toaster } from 'react-hot-toast'
 import { QueryProvider } from '@/components/providers/QueryProvider'
 
+// Space Grotesk for headings/display text
 const spaceGrotesk = Space_Grotesk({ subsets: ['latin'], variable: '--font-display' })
-const inter = Inter({ subsets: ['latin'], variable: '--font-body' })
+// Satoshi is loaded via @font-face in globals.css for body text
 
 export const metadata: Metadata = {
   title: 'Align - Modular infrastructure for token projects on Solana',
@@ -27,7 +28,7 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en" suppressHydrationWarning>
-      <body className={`${spaceGrotesk.variable} ${inter.variable} font-body`}>
+      <body className={`${spaceGrotesk.variable} font-body`}>
         <QueryProvider>
           <ThemeProvider>
             <WalletConfigProvider>

@@ -1,36 +1,263 @@
+/* ===========================================
+   SATOSHI FONT DECLARATIONS
+   Matching actual font files in /public/fonts/satoshi/
+   =========================================== */
+@font-face {
+  font-family: 'Satoshi';
+  src: url('/fonts/satoshi/Satoshi-Light.woff2') format('woff2');
+  font-weight: 300;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Satoshi';
+  src: url('/fonts/satoshi/Satoshi-Regular.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Satoshi';
+  src: url('/fonts/satoshi/Satoshi-Italic.woff2') format('woff2');
+  font-weight: 400;
+  font-style: italic;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Satoshi';
+  src: url('/fonts/satoshi/Satoshi-Medium.woff2') format('woff2');
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Satoshi';
+  src: url('/fonts/satoshi/Satoshi-Bold.woff2') format('woff2');
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Satoshi';
+  src: url('/fonts/satoshi/Satoshi-BoldItalic.woff2') format('woff2');
+  font-weight: 700;
+  font-style: italic;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Satoshi';
+  src: url('/fonts/satoshi/Satoshi-Black.woff2') format('woff2');
+  font-weight: 900;
+  font-style: normal;
+  font-display: swap;
+}
+
+/* ===========================================
+   TAILWIND DIRECTIVES
+   =========================================== */
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
+/* ===========================================
+   ALIGN DESIGN SYSTEM - CSS VARIABLES
+   Based on design.json and brand brief
+   =========================================== */
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  /* Align Brand Colors - from design.json palette */
+  --page-background: #E3F06F;        /* lime yellow-green */
+  --card-background: #FFFFFF;        /* pure white */
+  --subtle-background: #F7F8FB;      /* nested elements */
+  --accent-primary: #7C4DFF;         /* vibrant purple */
+  --accent-primary-soft: #EEE7FF;    /* soft purple bg */
+  --accent-success: #36C170;         /* green */
+  --accent-success-soft: #E3F8ED;    /* soft green bg */
+  --accent-warning: #FFC857;         /* yellow */
+  
+  /* Text Colors */
+  --text-primary: #1A1A1E;           /* almost black */
+  --text-secondary: #6F7280;         /* medium gray */
+  --text-muted: #A3A7B5;             /* light gray */
+  
+  /* UI Colors */
+  --icon-default: #B6BAC7;           /* neutral icons */
+  --border-subtle: #E5E7F0;          /* use sparingly */
+  --shadow-color: rgba(15, 23, 42, 0.06);
+  
+  /* Typography - from brand brief */
+  --font-heading: 'Space Grotesk', sans-serif;
+  --font-body: 'Satoshi', -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-mono: 'JetBrains Mono', 'Courier New', monospace;
+  
+  /* Font Weights */
+  --weight-regular: 400;
+  --weight-medium: 500;
+  --weight-semibold: 600;  /* Note: Browser will interpolate between Medium (500) and Bold (700) */
+  --weight-bold: 700;
+  
+  /* Font Sizes - from brand brief type scale */
+  --text-display: 48px;      /* Hero */
+  --text-title: 22px;        /* Card titles */
+  --text-headline: 18px;     /* Names, important labels */
+  --text-body: 16px;         /* Body text */
+  --text-body-small: 14px;   /* Small body */
+  --text-caption: 12px;      /* Timestamps, meta */
+  --text-label: 14px;        /* Buttons */
+  
+  /* Line Heights */
+  --line-height-tight: 1.2;
+  --line-height-normal: 1.5;
+  --line-height-relaxed: 1.6;
+  
+  /* Letter Spacing */
+  --letter-spacing-tight: -0.02em;
+  --letter-spacing-normal: 0;
+  --letter-spacing-wide: 0.01em;
+  
+  /* Spacing - from design.json spacing scale */
+  --space-xxs: 4px;
+  --space-xs: 8px;
+  --space-sm: 12px;
+  --space-md: 16px;
+  --space-lg: 24px;          /* default card padding */
+  --space-xl: 32px;
+  --space-xxl: 40px;
+  
+  /* Border Radius - from design.json radii */
+  --radius-card-lg: 24px;    /* default cards */
+  --radius-card-xl: 28px;    /* hero modules */
+  --radius-control: 999px;   /* pills, buttons */
+  --radius-avatar: 999px;    /* avatars (circles) */
+  
+  /* Shadows - from design.json shadows */
+  --shadow-card: 0 20px 40px 0 var(--shadow-color);
+  --shadow-chip: 0 8px 20px 0 rgba(15, 23, 42, 0.08);
+  --shadow-floating: 0 24px 60px 0 rgba(15, 23, 42, 0.10);
+  
+  /* Layout */
+  --container-max-width: 1280px;
+  --content-padding: var(--space-lg);
+  
+  /* Icon Sizes */
+  --icon-sm: 16px;
+  --icon-md: 20px;
+  --icon-lg: 24px;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
-}
-
-body {
-  color: var(--foreground);
-  background: var(--background);
-  font-family: Arial, Helvetica, sans-serif;
-}
-
+/* ===========================================
+   BASE STYLES
+   =========================================== */
 * {
   box-sizing: border-box;
   padding: 0;
   margin: 0;
 }
 
-/* Smooth scroll behavior */
 html {
   scroll-behavior: smooth;
 }
 
+body {
+  font-family: var(--font-body);
+  font-size: var(--text-body);
+  font-weight: var(--weight-regular);
+  color: var(--text-primary);
+  background: var(--page-background);
+  line-height: var(--line-height-relaxed);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* ===========================================
+   TYPOGRAPHY
+   =========================================== */
+h1, h2, h3, h4, h5, h6 {
+  font-family: var(--font-heading);
+  font-weight: var(--weight-bold);
+  line-height: var(--line-height-tight);
+  letter-spacing: var(--letter-spacing-tight);
+  color: var(--text-primary);
+}
+
+/* Note: No specific h1 font-size - allows Tailwind classes like text-2xl to work */
+
+h2 {
+  font-size: var(--text-title);
+}
+
+h3 {
+  font-size: var(--text-headline);
+}
+
+p {
+  line-height: var(--line-height-normal);
+}
+
+a {
+  color: var(--accent-primary);
+  text-decoration: none;
+  transition: color 0.2s ease;
+}
+
+a:hover {
+  color: var(--accent-primary);
+  opacity: 0.8;
+}
+
+/* ===========================================
+   UTILITY CLASSES
+   =========================================== */
+.text-display {
+  font-size: var(--text-display);
+  font-family: var(--font-heading);
+  font-weight: var(--weight-bold);
+  line-height: var(--line-height-tight);
+  letter-spacing: var(--letter-spacing-tight);
+}
+
+.text-title {
+  font-size: var(--text-title);
+  font-family: var(--font-heading);
+  font-weight: var(--weight-semibold);
+}
+
+.text-headline {
+  font-size: var(--text-headline);
+  font-family: var(--font-heading);
+  font-weight: var(--weight-semibold);
+}
+
+.text-body {
+  font-size: var(--text-body);
+  font-family: var(--font-body);
+}
+
+.text-body-small {
+  font-size: var(--text-body-small);
+  font-family: var(--font-body);
+}
+
+.text-caption {
+  font-size: var(--text-caption);
+  font-family: var(--font-body);
+  color: var(--text-muted);
+}
+
+.text-label {
+  font-size: var(--text-label);
+  font-family: var(--font-body);
+  font-weight: var(--weight-medium);
+}
+
+/* ===========================================
+   PERFORMANCE OPTIMIZATIONS
+   =========================================== */
 /* Activity Feed optimizations */
 .feed-item {
   contain: layout style paint;  /* CSS containment for performance */
@@ -45,4 +272,32 @@ html {
   100% {
     transform: translateX(100%);
   }
+}
+
+/* ===========================================
+   SMOOTH TRANSITIONS
+   =========================================== */
+button, a, input, select, textarea {
+  transition: all 0.2s ease;
+}
+
+/* ===========================================
+   FOCUS STYLES (Accessibility)
+   =========================================== */
+*:focus-visible {
+  outline: 2px solid var(--accent-primary);
+  outline-offset: 2px;
+}
+
+/* ===========================================
+   SELECTION COLORS
+   =========================================== */
+::selection {
+  background-color: var(--accent-primary);
+  color: white;
+}
+
+::-moz-selection {
+  background-color: var(--accent-primary);
+  color: white;
 }
