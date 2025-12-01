@@ -318,16 +318,10 @@ export default function ProjectDetailPage() {
                       <span>Verified</span>
                     </div>
                   )}
-                  {/* Price */}
-                  {!statsLoading && tokenStats.price && (
-                    <div className="px-3 py-1 bg-green-50 text-green-700 rounded-full text-sm font-medium">
-                      ${tokenStats.price.toFixed(8)}
-                    </div>
-                  )}
                   {/* Market Cap */}
                   {!statsLoading && tokenStats.marketCap && (
                     <div className="px-3 py-1 bg-blue-50 text-blue-700 rounded-full text-sm font-medium">
-                      MC: {tokenStats.marketCap >= 1000000 
+                      Market Cap: {tokenStats.marketCap >= 1000000 
                         ? `$${(tokenStats.marketCap / 1000000).toFixed(2)}M`
                         : tokenStats.marketCap >= 1000
                         ? `$${(tokenStats.marketCap / 1000).toFixed(2)}K`

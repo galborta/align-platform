@@ -18,7 +18,6 @@ interface Project {
   active_jobs_count: number
   total_jobs_completed: number
   activity_score: number
-  price: number | null
   marketCap: number | null
 }
 
@@ -65,8 +64,7 @@ export default function Home() {
             const completed = completedCount || 0
             const score = active * 3 + completed
 
-            // Fetch token stats from DexScreener
-            let price = null
+            // Fetch market cap from DexScreener
             let marketCap = null
             
             if (project.token_mint) {
@@ -76,7 +74,6 @@ export default function Home() {
                 
                 if (dexData.pairs && dexData.pairs.length > 0) {
                   const mainPair = dexData.pairs[0]
-                  price = parseFloat(mainPair.priceUsd) || null
                   marketCap = parseFloat(mainPair.fdv) || parseFloat(mainPair.marketCap) || null
                 }
               } catch (e) {
@@ -89,7 +86,6 @@ export default function Home() {
               active_jobs_count: active,
               total_jobs_completed: completed,
               activity_score: score,
-              price,
               marketCap
             }
           })
@@ -162,7 +158,6 @@ export default function Home() {
                     tokenSymbol={project.token_symbol}
                     activeJobsCount={project.active_jobs_count || 0}
                     totalJobsCompleted={project.total_jobs_completed || 0}
-                    price={project.price}
                     marketCap={project.marketCap}
                   />
                 ))}

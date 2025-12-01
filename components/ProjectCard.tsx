@@ -11,7 +11,6 @@ interface ProjectCardProps {
   tokenSymbol: string
   activeJobsCount: number
   totalJobsCompleted?: number
-  price?: number | null
   marketCap?: number | null
 }
 
@@ -22,7 +21,6 @@ export default function ProjectCard({
   tokenSymbol,
   activeJobsCount,
   totalJobsCompleted = 0,
-  price,
   marketCap,
 }: ProjectCardProps) {
   const [imageError, setImageError] = useState(false)
@@ -97,19 +95,12 @@ export default function ProjectCard({
         {/* Token Symbol */}
         <div className="token-symbol">${tokenSymbol}</div>
         
-        {/* Price and Market Cap */}
-        {(price || marketCap) && (
+        {/* Market Cap */}
+        {marketCap && (
           <div className="token-stats">
-            {price && (
-              <div className="stat-badge price-badge">
-                ${price.toFixed(8)}
-              </div>
-            )}
-            {marketCap && (
-              <div className="stat-badge mc-badge">
-                MC: {formatMarketCap(marketCap)}
-              </div>
-            )}
+            <div className="stat-badge mc-badge">
+              Market Cap: {formatMarketCap(marketCap)}
+            </div>
           </div>
         )}
         
@@ -258,11 +249,6 @@ export default function ProjectCard({
           padding: 4px 10px;
           border-radius: 12px;
           white-space: nowrap;
-        }
-
-        .price-badge {
-          background: rgba(34, 197, 94, 0.1);
-          color: #16a34a;
         }
 
         .mc-badge {
