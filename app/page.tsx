@@ -20,6 +20,7 @@ interface Project {
   total_jobs_completed: number
   activity_score: number
   marketCap: number | null
+  isVerified: boolean
 }
 
 export default function Home() {
@@ -30,10 +31,18 @@ export default function Home() {
   useEffect(() => {
     async function fetchProjects() {
       try {
-        // Start with basic query (just projects with live status)
+        // Start with basic query (just projects with live status and social_assets)
         const { data: baseData, error: baseError } = await supabase
           .from('projects')
-          .select('id, token_name, profile_image_url, token_symbol, token_mint, created_at')
+          .select(`
+            id, 
+            token_name, 
+            profile_image_url, 
+            token_symbol, 
+            token_mint, 
+            created_at,
+            social_assets!inner(verified)
+          `)
           .eq('status', 'live')
           .order('created_at', { ascending: false })
 
@@ -65,6 +74,9 @@ export default function Home() {
             const completed = completedCount || 0
             const score = active * 3 + completed
 
+            // Check if project has any verified social assets
+            const isVerified = (project as any).social_assets?.some((asset: any) => asset.verified) || false
+
             // Fetch market cap from DexScreener
             let marketCap = null
             
@@ -83,11 +95,17 @@ export default function Home() {
             }
 
             return {
-              ...project,
+              id: project.id,
+              token_name: project.token_name,
+              profile_image_url: project.profile_image_url,
+              token_symbol: project.token_symbol,
+              token_mint: project.token_mint,
+              created_at: project.created_at,
               active_jobs_count: active,
               total_jobs_completed: completed,
               activity_score: score,
-              marketCap
+              marketCap,
+              isVerified
             }
           })
         )
@@ -160,6 +178,7 @@ export default function Home() {
                     activeJobsCount={project.active_jobs_count || 0}
                     totalJobsCompleted={project.total_jobs_completed || 0}
                     marketCap={project.marketCap}
+                    isVerified={project.isVerified}
                   />
                 ))}
               </div>

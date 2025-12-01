@@ -1,16 +1,17 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import Link from 'next/link'
-import { Card } from '@/components/ui/Card'
 import { AppHeader } from '@/components/AppHeader'
+import ProjectCard from '@/components/ProjectCard'
 import { supabase } from '@/lib/supabase'
 import { Database } from '@/types/database'
-import VerifiedIcon from '@mui/icons-material/Verified'
 import SearchIcon from '@mui/icons-material/Search'
 
 type Project = Database['public']['Tables']['projects']['Row'] & {
   social_assets: Database['public']['Tables']['social_assets']['Row'][]
+  active_jobs_count: number
+  total_jobs_completed: number
+  marketCap: number | null
 }
 
 type FilterType = 'all' | 'verified' | 'unverified'
@@ -62,8 +63,8 @@ export default function ProjectsPage() {
 
   const fetchProjects = async () => {
     try {
-      // Add timestamp to force fresh data (bypass cache)
-      const { data, error } = await supabase
+      // Fetch base project data with social assets
+      const { data: baseData, error: baseError } = await supabase
         .from('projects')
         .select(`
           *,
@@ -72,10 +73,62 @@ export default function ProjectsPage() {
         .eq('status', 'live')
         .order('created_at', { ascending: false })
 
-      if (error) throw error
+      if (baseError) throw baseError
       
-      console.log('Fetched live projects:', data?.length || 0)
-      setProjects((data as Project[]) || [])
+      if (!baseData || baseData.length === 0) {
+        setProjects([])
+        setLoading(false)
+        return
+      }
+
+      // For each project, count jobs dynamically and fetch market cap
+      const projectsWithCounts = await Promise.all(
+        baseData.map(async (project) => {
+          // Count active jobs
+          const { count: activeCount } = await supabase
+            .from('jobs')
+            .select('*', { count: 'exact', head: true })
+            .eq('project_id', project.id)
+            .eq('status', 'open')
+
+          // Count completed jobs
+          const { count: completedCount } = await supabase
+            .from('jobs')
+            .select('*', { count: 'exact', head: true })
+            .eq('project_id', project.id)
+            .eq('status', 'completed')
+
+          const active = activeCount || 0
+          const completed = completedCount || 0
+
+          // Fetch market cap from DexScreener
+          let marketCap = null
+          
+          if (project.token_mint) {
+            try {
+              const dexRes = await fetch(`https://api.dexscreener.com/latest/dex/tokens/${project.token_mint}`)
+              const dexData = await dexRes.json()
+              
+              if (dexData.pairs && dexData.pairs.length > 0) {
+                const mainPair = dexData.pairs[0]
+                marketCap = parseFloat(mainPair.fdv) || parseFloat(mainPair.marketCap) || null
+              }
+            } catch (e) {
+              console.error(`Error fetching stats for ${project.token_name}:`, e)
+            }
+          }
+
+          return {
+            ...project,
+            active_jobs_count: active,
+            total_jobs_completed: completed,
+            marketCap
+          }
+        })
+      )
+      
+      console.log('Fetched live projects with job counts:', projectsWithCounts.length)
+      setProjects(projectsWithCounts as Project[])
     } catch (error) {
       console.error('Error fetching projects:', error)
     } finally {
@@ -194,57 +247,17 @@ export default function ProjectsPage() {
         {!loading && filteredProjects.length > 0 && (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
             {filteredProjects.map((project) => (
-              <Link key={project.id} href={`/project/${project.id}`}>
-                <Card 
-                  className="p-6 cursor-pointer transition-transform duration-200 hover:shadow-lg hover:-translate-y-1"
-                >
-                  <div className="flex flex-col items-center text-center">
-                    {/* Profile Image */}
-                    <div className="w-20 h-20 rounded-full bg-accent-primary-soft flex items-center justify-center mb-4 overflow-hidden">
-                      {project.profile_image_url ? (
-                        <img
-                          src={project.profile_image_url}
-                          alt={project.token_name}
-                          className="w-full h-full object-cover"
-                        />
-                      ) : (
-                        <span className="font-display text-2xl font-bold text-accent-primary">
-                          {project.token_symbol.charAt(0)}
-                        </span>
-                      )}
-                    </div>
-
-                    {/* Token Name */}
-                    <h3 className="font-display text-lg font-semibold text-text-primary mb-1">
-                      {project.token_name}
-                    </h3>
-
-                    {/* Token Symbol */}
-                    <p className="font-body text-sm text-text-secondary mb-3">
-                      ${project.token_symbol}
-                    </p>
-
-                    {/* Verification Badge */}
-                    {hasVerifiedSocial(project) && (
-                      <div className="flex items-center gap-1 mb-3">
-                        <VerifiedIcon 
-                          className="text-accent-success" 
-                          sx={{ fontSize: 20 }}
-                        />
-                        <span className="font-body text-sm text-accent-success font-medium">
-                          Verified
-                        </span>
-                      </div>
-                    )}
-
-                    {/* Verified Socials Count */}
-                    <p className="font-body text-sm text-text-muted">
-                      {getVerifiedCount(project)} verified account
-                      {getVerifiedCount(project) !== 1 ? 's' : ''}
-                    </p>
-                  </div>
-                </Card>
-              </Link>
+              <ProjectCard
+                key={project.id}
+                id={project.id}
+                name={project.token_name}
+                logo={project.profile_image_url}
+                tokenSymbol={project.token_symbol}
+                activeJobsCount={project.active_jobs_count || 0}
+                totalJobsCompleted={project.total_jobs_completed || 0}
+                marketCap={project.marketCap}
+                isVerified={hasVerifiedSocial(project)}
+              />
             ))}
           </div>
         )}

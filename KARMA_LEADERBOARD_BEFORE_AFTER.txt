@@ -1,0 +1,239 @@
+╔══════════════════════════════════════════════════════════════════════════════╗
+║           🔧 KARMA LEADERBOARD - BEFORE & AFTER FIX                          ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+
+═══════════════════════════════════════════════════════════════════════════════
+❌ BEFORE - Showing Test Data
+═══════════════════════════════════════════════════════════════════════════════
+
+Homepage (http://localhost:3003):
+
+┌────────────────────────────────────────────────────────────────────────────┐
+│  🏆 Top Contributors                                          ↻            │
+├────────────────────────────────────────────────────────────────────────────┤
+│                                                                            │
+│  🥇  [A]  alice.sol                          2,450 karma                  │
+│  🥈  [B]  bob.sol                            2,100 karma                  │
+│  🥉  [C]  charlie.sol                        1,890 karma                  │
+│  4.  [D]  diana.sol                          1,654 karma                  │
+│  5.  [E]  eve.sol                            1,432 karma                  │
+│  6.  [F]  frank.sol                          1,289 karma                  │
+│  7.  [G]  grace.sol                          1,156 karma                  │
+│  8.  [H]  henry.sol                          1,023 karma                  │
+│  9.  [I]  iris.sol                             945 karma                  │
+│  10. [J]  jack.sol                             876 karma                  │
+│                                                                            │
+│  ❌ All test/seed accounts                                                 │
+│  ❌ No real users visible                                                  │
+│  ❌ Wallet addresses: AliceTop111..., BobSecond222..., etc.                │
+│                                                                            │
+└────────────────────────────────────────────────────────────────────────────┘
+
+Database Query:
+─────────────────────────────────────────────────────────────────────────────
+SELECT * FROM global_karma_leaderboard
+WHERE project_id IS NULL  ← Only showing global entries!
+                            ← Real users had project_id set!
+
+Problem:
+├─ View only showed entries where project_id IS NULL
+├─ Real user (GxPUe7pz...) had karma in project-specific entry
+└─ Test accounts were filling up the leaderboard
+
+
+═══════════════════════════════════════════════════════════════════════════════
+✅ AFTER - Showing Real Data
+═══════════════════════════════════════════════════════════════════════════════
+
+Homepage (http://localhost:3003):
+
+┌────────────────────────────────────────────────────────────────────────────┐
+│  🏆 Top Contributors                                          ↻            │
+├────────────────────────────────────────────────────────────────────────────┤
+│                                                                            │
+│  🥇  [G]  GxPUe7pziu2RxLmTniojH7XPVp8xy3hg9bwfb9knVx4S                    │
+│           236 karma                                                        │
+│                                                                            │
+│  ✅ Real wallet address                                                    │
+│  ✅ Actual karma from platform activity                                    │
+│  ✅ No test accounts                                                       │
+│                                                                            │
+│  [More users will appear here as they earn karma]                         │
+│                                                                            │
+└────────────────────────────────────────────────────────────────────────────┘
+
+Database Query:
+─────────────────────────────────────────────────────────────────────────────
+SELECT 
+  wallet_address,
+  SUM(total_karma_points) as total_karma  ← Aggregating ALL karma!
+FROM wallet_karma
+WHERE is_banned = false
+GROUP BY wallet_address                   ← Per user, all projects!
+
+Solution:
+├─ View now aggregates karma from ALL projects per user
+├─ Real users appear with total platform karma
+├─ Test accounts deleted from database
+└─ Homepage shows actual leaderboard
+
+
+═══════════════════════════════════════════════════════════════════════════════
+📊 DATA STRUCTURE COMPARISON
+═══════════════════════════════════════════════════════════════════════════════
+
+BEFORE (Old View):
+┌──────────────────────────────────────────────────────────────────────────┐
+│  wallet_karma table:                                                     │
+│                                                                          │
+│  AliceTop111...    | project_id: NULL      | karma: 2450  ← Shown      │
+│  BobSecond222...   | project_id: NULL      | karma: 2100  ← Shown      │
+│  CharlieThird33... | project_id: NULL      | karma: 1890  ← Shown      │
+│  ...                                                                     │
+│  GxPUe7pziu...     | project_id: f14b15... | karma: 236   ← NOT shown  │
+│                                                                          │
+│  ❌ Only NULL project_id shown on homepage                               │
+└──────────────────────────────────────────────────────────────────────────┘
+
+AFTER (New View):
+┌──────────────────────────────────────────────────────────────────────────┐
+│  wallet_karma table:                                                     │
+│                                                                          │
+│  GxPUe7pziu...     | project_id: f14b15... | karma: 236   ← Shown!     │
+│                                                                          │
+│  ✅ ALL entries aggregated per user                                      │
+│  ✅ Project-specific karma now counts toward global total                │
+└──────────────────────────────────────────────────────────────────────────┘
+
+
+═══════════════════════════════════════════════════════════════════════════════
+🎯 HOW IT WORKS NOW
+═══════════════════════════════════════════════════════════════════════════════
+
+Homepage (Global Leaderboard):
+┌────────────────────────────────────────────────────────────────────────────┐
+│  Shows: ALL users, ALL karma combined                                      │
+│  Query: global_karma_leaderboard (aggregates all projects)                │
+│                                                                            │
+│  Example User:                                                             │
+│  ├─ Project A: 100 karma                                                  │
+│  ├─ Project B: 50 karma                                                   │
+│  └─ Global Total: 150 karma  ← This shows on homepage                     │
+└────────────────────────────────────────────────────────────────────────────┘
+
+Project Page (Project-Specific Leaderboard):
+┌────────────────────────────────────────────────────────────────────────────┐
+│  Shows: Users in THIS project only                                         │
+│  Query: karma_leaderboard WHERE project_id = <specific-project>           │
+│                                                                            │
+│  Example User (same user as above):                                        │
+│  ├─ Project A page: 100 karma  ← Only Project A karma                     │
+│  └─ Project B page: 50 karma   ← Only Project B karma                     │
+└────────────────────────────────────────────────────────────────────────────┘
+
+
+═══════════════════════════════════════════════════════════════════════════════
+🔄 AUTO-UPDATES
+═══════════════════════════════════════════════════════════════════════════════
+
+User earns karma in Project A:
+─────────────────────────────────────────────────────────────────────────────
+1. Entry created in wallet_karma (project_id = Project A)
+2. Project A leaderboard updates instantly (shows user)
+3. Homepage leaderboard updates instantly (aggregates all karma)
+
+User earns more karma in Project B:
+─────────────────────────────────────────────────────────────────────────────
+1. New entry created in wallet_karma (project_id = Project B)
+2. Project B leaderboard shows user
+3. Homepage leaderboard shows: Project A karma + Project B karma
+
+No manual sync needed - views aggregate on-the-fly! ⚡
+
+
+═══════════════════════════════════════════════════════════════════════════════
+✅ WHAT WAS FIXED
+═══════════════════════════════════════════════════════════════════════════════
+
+[x] Updated global_karma_leaderboard view to aggregate ALL projects
+[x] Removed test/seed data from database (10 accounts)
+[x] Homepage now shows real users only
+[x] Karma aggregated across all projects per user
+[x] Created migration file (036_update_global_karma_leaderboard_aggregate.sql)
+[x] Documented changes thoroughly
+
+
+═══════════════════════════════════════════════════════════════════════════════
+🧪 TEST IT NOW
+═══════════════════════════════════════════════════════════════════════════════
+
+Step 1: Open homepage
+─────────────────────────────────────────────────────────────────────────────
+http://localhost:3003
+
+Expected:
+✅ See real wallet address (GxPUe7pziu...)
+✅ 236 karma displayed
+✅ No test accounts (alice.sol, etc.)
+
+Step 2: Check API
+─────────────────────────────────────────────────────────────────────────────
+curl http://localhost:3003/api/leaderboard?limit=10
+
+Expected:
+✅ JSON with real user data
+✅ wallet_address: "GxPUe7pziu2RxLmTniojH7XPVp8xy3hg9bwfb9knVx4S"
+✅ total_karma: 236
+
+Step 3: Test refresh button
+─────────────────────────────────────────────────────────────────────────────
+Click ↻ button in top-right of leaderboard widget
+
+Expected:
+✅ Button spins while loading
+✅ Data refreshes
+✅ Same real user shown
+
+
+═══════════════════════════════════════════════════════════════════════════════
+📚 DOCUMENTATION
+═══════════════════════════════════════════════════════════════════════════════
+
+Created Files:
+├─ KARMA_LEADERBOARD_DATA_EXPLANATION.md     (Problem analysis)
+├─ KARMA_LEADERBOARD_FIX_COMPLETE.md         (Technical changes)
+├─ KARMA_LEADERBOARD_FINAL_STATUS.md         (Summary & testing)
+├─ KARMA_LEADERBOARD_BEFORE_AFTER.txt        (This file)
+└─ supabase-migrations/036_update_global_karma_leaderboard_aggregate.sql
+
+
+═══════════════════════════════════════════════════════════════════════════════
+🎉 RESULT
+═══════════════════════════════════════════════════════════════════════════════
+
+Status: ✅ WORKING CORRECTLY
+
+Homepage Leaderboard:
+├─ Shows real users with aggregated karma from ALL projects
+├─ No more test/seed data
+├─ Automatically updates as users earn karma
+└─ Production ready!
+
+Project Leaderboards:
+├─ Show project-specific karma only
+├─ Same user can have different ranks per project
+└─ Correctly implemented!
+
+Next Step: Refresh your browser and see the real leaderboard! 🚀
+
+
+╔══════════════════════════════════════════════════════════════════════════════╗
+║                    ✅ KARMA LEADERBOARD FIXED! 🎉                            ║
+║                                                                              ║
+║  Problem: Test data showing on homepage                                      ║
+║  Solution: Aggregated view + removed test accounts                           ║
+║  Result: Real users with actual karma now visible                            ║
+║                                                                              ║
+║  Refresh your browser to see it in action!                                   ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+

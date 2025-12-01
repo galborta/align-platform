@@ -3,6 +3,7 @@
 import Image from 'next/image'
 import Link from 'next/link'
 import { useState } from 'react'
+import VerifiedIcon from '@mui/icons-material/Verified'
 
 interface ProjectCardProps {
   id: string
@@ -12,6 +13,7 @@ interface ProjectCardProps {
   activeJobsCount: number
   totalJobsCompleted?: number
   marketCap?: number | null
+  isVerified?: boolean
 }
 
 export default function ProjectCard({
@@ -22,6 +24,7 @@ export default function ProjectCard({
   activeJobsCount,
   totalJobsCompleted = 0,
   marketCap,
+  isVerified = false,
 }: ProjectCardProps) {
   const [imageError, setImageError] = useState(false)
   
@@ -92,8 +95,19 @@ export default function ProjectCard({
           <h3 className="project-name">{name}</h3>
         </div>
         
-        {/* Token Symbol */}
-        <div className="token-symbol">${tokenSymbol}</div>
+        {/* Token Symbol & Verified Badge */}
+        <div className="symbol-row">
+          <div className="token-symbol">${tokenSymbol}</div>
+          {isVerified && (
+            <div className="verified-badge">
+              <VerifiedIcon 
+                className="verified-icon"
+                sx={{ fontSize: 16 }}
+              />
+              <span className="verified-text">Verified</span>
+            </div>
+          )}
+        </div>
         
         {/* Market Cap */}
         {marketCap && (
@@ -223,6 +237,15 @@ export default function ProjectCard({
           margin: 0;
         }
 
+        /* Symbol Row */
+        .symbol-row {
+          display: flex;
+          align-items: center;
+          gap: var(--space-sm);
+          margin-bottom: var(--space-sm);
+          flex-wrap: wrap;
+        }
+
         /* Token Symbol */
         .token-symbol {
           font-family: var(--font-body);
@@ -231,7 +254,27 @@ export default function ProjectCard({
           color: var(--text-secondary);
           text-transform: uppercase;
           letter-spacing: 0.05em;
-          margin-bottom: var(--space-sm);
+        }
+
+        /* Verified Badge */
+        .verified-badge {
+          display: flex;
+          align-items: center;
+          gap: 4px;
+          padding: 2px 8px;
+          background: rgba(54, 193, 112, 0.1);
+          border-radius: 12px;
+        }
+
+        .verified-badge :global(.verified-icon) {
+          color: var(--accent-success);
+        }
+
+        .verified-text {
+          font-family: var(--font-body);
+          font-size: 11px;
+          font-weight: var(--weight-medium);
+          color: var(--accent-success);
         }
 
         /* Token Stats */
