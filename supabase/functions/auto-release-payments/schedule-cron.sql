@@ -40,3 +40,4 @@ SELECT * FROM cron.job WHERE jobname = 'auto-release-payments';
 -- ORDER BY start_time DESC
 -- LIMIT 10;
 
+

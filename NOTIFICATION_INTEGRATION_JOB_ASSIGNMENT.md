@@ -425,3 +425,4 @@ This completes the **job assignment notification** integration for both FCFS and
 
 Workers will now receive immediate notifications when assigned to jobs, whether through FCFS auto-assignment or manual selection by the job poster.
 
+

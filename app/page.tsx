@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import { AppHeader } from '@/components/AppHeader'
 import { Hero } from '@/components/Hero'
 import ProjectCard from '@/components/ProjectCard'
+import LeaderboardWidget from '@/components/LeaderboardWidget'
 import { supabase } from '@/lib/supabase'
 import ErrorOutlineIcon from '@mui/icons-material/ErrorOutline'
 import AccountBalanceWalletIcon from '@mui/icons-material/AccountBalanceWallet'
@@ -181,12 +182,7 @@ export default function Home() {
 
           {/* Karma Leaderboard - Right Column */}
           <aside className="karma-sidebar">
-            <div className="karma-card">
-              <h3 className="sidebar-heading">Karma Leaderboard</h3>
-              <div className="leaderboard-placeholder">
-                <p>Top 10 karma leaders will appear here in Sprint 4...</p>
-              </div>
-            </div>
+            <LeaderboardWidget />
           </aside>
         </div>
       </main>
@@ -392,37 +388,7 @@ export default function Home() {
 
         /* Karma Sidebar - Right Column */
         .karma-sidebar {
-          position: sticky;
-          top: 100px;
-          align-self: start;
-        }
-
-        .karma-card {
-          background: var(--card-background);
-          border-radius: var(--radius-card-lg);
-          padding: var(--space-lg);
-          box-shadow: var(--shadow-card);
-          min-height: 400px;
-        }
-
-        .sidebar-heading {
-          font-family: var(--font-heading);
-          font-size: var(--text-headline);
-          font-weight: var(--weight-semibold);
-          color: var(--text-primary);
-          margin-bottom: var(--space-md);
-        }
-
-        .leaderboard-placeholder {
-          padding: var(--space-xl) 0;
-          text-align: center;
-        }
-
-        .leaderboard-placeholder p {
-          color: var(--text-secondary);
-          font-family: var(--font-body);
-          font-size: var(--text-body-small);
-          font-style: italic;
+          align-self: start; /* Important for sticky child to work */
         }
 
         /* Tablet Breakpoint (768px - 1024px) */

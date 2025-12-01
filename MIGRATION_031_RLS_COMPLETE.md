@@ -537,3 +537,4 @@ WHERE proname IN ('is_authenticated_admin', 'is_authenticated_super_admin',
 **Next Phase**: Application layer integration with RLS-aware error handling
 
 
+

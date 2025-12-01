@@ -75,3 +75,4 @@ npx supabase functions logs auto-release-payments --tail
 - [Supabase Edge Functions Docs](https://supabase.com/docs/guides/functions)
 - [Deno Documentation](https://deno.land/manual)
 
+

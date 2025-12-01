@@ -239,3 +239,4 @@ export function canNavigate(notification: EnrichedNotification): boolean {
   return getNotificationPath(notification) !== null
 }
 
+

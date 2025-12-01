@@ -17,3 +17,4 @@ COMMENT ON COLUMN chat_tips.project_id IS 'Project context for tip (null for dir
 -- Add comment explaining the change
 COMMENT ON TABLE chat_tips IS 'Tips sent between users in chat conversations (project-specific or direct messages)';
 
+

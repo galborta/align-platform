@@ -132,3 +132,4 @@ Once the migration is run:
 **Estimated Time**: 5 minutes  
 **Difficulty**: Easy (copy & paste SQL)
 
+

@@ -483,3 +483,4 @@ import { WalletAddressWithMessage } from '@/components/WalletAddressWithMessage'
 **All participant addresses in batched activity modals are now rich, interactive components with inline [Message] and [Tip] actions!**
 
 
+

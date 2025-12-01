@@ -521,3 +521,4 @@ Both components now use the same icon pattern:
 **All wallet addresses now feature elegant icon buttons (💬 💰) matching your app's design language!**
 
 
+

@@ -244,3 +244,4 @@ async function getJobEscrowStatus(jobId: string): Promise<EscrowStatus | null> {
 For detailed documentation, see: [DATABASE_TYPES_COMPLETE.md](DATABASE_TYPES_COMPLETE.md)
 
 
+

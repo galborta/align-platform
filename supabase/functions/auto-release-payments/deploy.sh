@@ -39,3 +39,4 @@ echo "🔗 Function URL:"
 echo "   https://your-project-ref.supabase.co/functions/v1/auto-release-payments"
 echo ""
 
+

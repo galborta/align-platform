@@ -589,3 +589,4 @@ The Job Escrow & Payment System is built across three migrations:
 **Next Phase**: Job creation with escrow lock ⏳
 
 
+
