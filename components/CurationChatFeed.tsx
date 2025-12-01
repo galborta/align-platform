@@ -8,6 +8,7 @@ import { AssetVotingCard } from './AssetVotingCard'
 import { Database } from '@/types/database'
 import { Dialog, Box } from '@mui/material'
 import { UserProfileView } from '@/components/UserProfileView'
+import { WalletAddressWithButtons } from '@/components/WalletAddressWithButtons'
 
 const getPlatformUrl = (platform: string, handle: string): string => {
   const urls: Record<string, string> = {
@@ -223,18 +224,11 @@ function CurationChatMessage({
         <div className="flex flex-col sm:flex-row sm:items-start gap-2 sm:gap-3">
           <div className="flex-1">
             <p className="text-sm">
-              <span 
-                className="font-mono text-purple-600 font-medium cursor-pointer hover:text-purple-800 underline decoration-dotted transition-colors"
-                onClick={() => {
-                  if (message.wallet_address) {
-                    setSelectedProfileWallet(message.wallet_address)
-                    setShowProfileView(true)
-                  }
-                }}
-                title="View profile"
-              >
-                {message.wallet_address?.slice(0, 4)}...{message.wallet_address?.slice(-4)}
-              </span>
+              <WalletAddressWithButtons 
+                address={message.wallet_address || ''}
+                compact
+                projectId={projectId}
+              />
               <span className="text-gray-400 mx-2">•</span>
               <span className="text-gray-500">
                 {message.token_percentage?.toFixed(3)}%

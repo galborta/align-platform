@@ -9,6 +9,7 @@ import { useWallet } from '@solana/wallet-adapter-react'
 import { useMessaging } from '@/lib/MessagingContext'
 import { canMessageUser } from '@/lib/messaging'
 import { UserProfileView } from '@/components/UserProfileView'
+import { supabase } from '@/lib/supabase'
 import toast from 'react-hot-toast'
 
 // Lazy load modal for better performance
@@ -56,7 +57,7 @@ interface WalletAddressWithButtonsProps {
  */
 export const WalletAddressWithButtons = memo(function WalletAddressWithButtons({
   address,
-  displayName,
+  displayName: providedDisplayName,
   showMessage = false,
   showTip = false,
   tierBadge = false,
@@ -74,6 +75,7 @@ export const WalletAddressWithButtons = memo(function WalletAddressWithButtons({
   const [openingMessage, setOpeningMessage] = useState(false)
   const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null)
   const [isHovered, setIsHovered] = useState(false)
+  const [fetchedDisplayName, setFetchedDisplayName] = useState<string | null>(null)
   
   const currentWallet = publicKey?.toBase58()
   
@@ -87,6 +89,31 @@ export const WalletAddressWithButtons = memo(function WalletAddressWithButtons({
     if (!addr) return '...'
     return `${addr.slice(0, 4)}...${addr.slice(-4)}`
   }
+
+  // Fetch display name if not provided
+  useEffect(() => {
+    if (providedDisplayName || !address) return
+
+    const fetchDisplayName = async () => {
+      try {
+        const { data } = await supabase
+          .from('user_profiles')
+          .select('display_name')
+          .eq('wallet_address', address)
+          .maybeSingle()
+        
+        if (data?.display_name) {
+          setFetchedDisplayName(data.display_name)
+        }
+      } catch (error) {
+        console.error('Error fetching display name:', error)
+      }
+    }
+
+    fetchDisplayName()
+  }, [address, providedDisplayName])
+
+  const displayName = providedDisplayName || fetchedDisplayName
 
   // Check if current user can message this wallet
   useEffect(() => {

@@ -55,6 +55,7 @@ export function ProjectChat({ projectId, tokenMint }: ProjectChatProps) {
   const [hasMoreMessages, setHasMoreMessages] = useState(true)
   const [loadingMore, setLoadingMore] = useState(false)
   const [oldestMessageDate, setOldestMessageDate] = useState<string | null>(null)
+  const [displayNames, setDisplayNames] = useState<Map<string, string>>(new Map())
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const messagesContainerRef = useRef<HTMLDivElement>(null)
 
@@ -112,7 +113,10 @@ export function ProjectChat({ projectId, tokenMint }: ProjectChatProps) {
           filter: `project_id=eq.${projectId}`
         },
         (payload) => {
-          setMessages((prev) => [...prev, payload.new as Message])
+          const newMsg = payload.new as Message
+          setMessages((prev) => [...prev, newMsg])
+          // Fetch display name for new message sender
+          fetchDisplayNames([newMsg.wallet_address])
         }
       )
       .subscribe()
@@ -121,6 +125,32 @@ export function ProjectChat({ projectId, tokenMint }: ProjectChatProps) {
       supabase.removeChannel(channel)
     }
   }, [projectId])
+
+  // Fetch display names for wallet addresses
+  const fetchDisplayNames = async (walletAddresses: string[]) => {
+    if (walletAddresses.length === 0) return
+
+    try {
+      const { data } = await supabase
+        .from('user_profiles')
+        .select('wallet_address, display_name')
+        .in('wallet_address', walletAddresses)
+      
+      if (data) {
+        setDisplayNames(prev => {
+          const newMap = new Map(prev)
+          data.forEach(profile => {
+            if (profile.display_name) {
+              newMap.set(profile.wallet_address, profile.display_name)
+            }
+          })
+          return newMap
+        })
+      }
+    } catch (error) {
+      console.error('Error fetching display names:', error)
+    }
+  }
 
   async function loadMessages() {
     setIsLoadingMessages(true)
@@ -136,6 +166,12 @@ export function ProjectChat({ projectId, tokenMint }: ProjectChatProps) {
       if (error) {
         console.error('Failed to load messages:', error)
         return
+      }
+
+      // Fetch display names for all message senders
+      if (data) {
+        const uniqueWallets = [...new Set(data.map(msg => msg.wallet_address))]
+        await fetchDisplayNames(uniqueWallets)
       }
 
       const messages = (data || []).reverse() // Reverse to show oldest first
@@ -183,6 +219,10 @@ export function ProjectChat({ projectId, tokenMint }: ProjectChatProps) {
         const olderMessages = data.reverse()
         setMessages(prev => [...olderMessages, ...prev])
         setOldestMessageDate(olderMessages[0].created_at)
+        
+        // Fetch display names for newly loaded messages
+        const uniqueWallets = [...new Set(olderMessages.map(msg => msg.wallet_address))]
+        await fetchDisplayNames(uniqueWallets)
         
         // Check if there are even more messages
         const { count } = await supabase
@@ -266,6 +306,10 @@ export function ProjectChat({ projectId, tokenMint }: ProjectChatProps) {
 
   function formatAddress(address: string) {
     return `${address.slice(0, 4)}...${address.slice(-4)}`
+  }
+
+  function getDisplayName(address: string): string {
+    return displayNames.get(address) || formatAddress(address)
   }
 
   function formatTimestamp(timestamp: string) {
@@ -409,7 +453,7 @@ export function ProjectChat({ projectId, tokenMint }: ProjectChatProps) {
                         <div className="mb-1.5 pl-2 border-l-2 border-purple-400">
                           <div className="flex items-center gap-1 text-xs text-text-muted mb-0.5">
                             <ReplyIcon sx={{ fontSize: 10 }} />
-                            <span className="text-[10px]">Replying to {formatAddress(repliedToMsg.wallet_address)}</span>
+                            <span className="text-[10px]">Replying to {getDisplayName(repliedToMsg.wallet_address)}</span>
                           </div>
                           <p className="text-xs text-text-muted italic truncate">
                             {repliedToMsg.message_text}
@@ -431,8 +475,9 @@ export function ProjectChat({ projectId, tokenMint }: ProjectChatProps) {
                           setShowProfileView(true)
                         }}
                         title="View profile"
+                        style={{ fontFamily: displayNames.has(msg.wallet_address) ? 'inherit' : 'monospace' }}
                       >
-                        {formatAddress(msg.wallet_address)}
+                        {getDisplayName(msg.wallet_address)}
                       </span>
                       <span className="text-xs">•</span>
                       <span className="text-xs">{msg.token_percentage.toFixed(3)}%</span>

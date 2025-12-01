@@ -204,7 +204,7 @@ export default function ProfileSettingsPage() {
     return (
       <div className="max-w-4xl mx-auto p-6">
         <div className="flex items-center gap-4 mb-6">
-          <IconButton onClick={() => router.push('/')} size="small">
+          <IconButton onClick={() => router.push('/profile')} size="small">
             <ArrowBackIcon />
           </IconButton>
           <h1 className="text-3xl font-bold">Profile Settings</h1>
@@ -231,7 +231,7 @@ export default function ProfileSettingsPage() {
     return (
       <div className="max-w-4xl mx-auto p-6">
         <div className="flex items-center gap-4 mb-6">
-          <IconButton onClick={() => router.push('/')} size="small">
+          <IconButton onClick={() => router.push('/profile')} size="small">
             <ArrowBackIcon />
           </IconButton>
           <h1 className="text-3xl font-bold">Profile Settings</h1>
@@ -300,7 +300,7 @@ export default function ProfileSettingsPage() {
       {/* Header */}
       <div className="flex items-center justify-between mb-6">
         <div className="flex items-center gap-4">
-          <IconButton onClick={() => router.push('/')} size="small">
+          <IconButton onClick={() => router.push('/profile')} size="small">
             <ArrowBackIcon />
           </IconButton>
           <h1 className="text-3xl font-bold">Profile Settings</h1>

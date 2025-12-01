@@ -552,11 +552,11 @@ export function UserProfileView({
   // Restricted view for holder-only profiles when viewer can't access
   if (!privacyCheck.canView && privacyCheck.hiddenSections) {
     return (
-      <Card sx={{ maxWidth: 600, mx: 'auto', mt: 4 }}>
-        <CardContent className="p-6">
+      <Card sx={{ maxWidth: 600, mx: 'auto', mt: 4, borderRadius: 3, boxShadow: '0 20px 40px rgba(15, 23, 42, 0.06)' }}>
+        <CardContent sx={{ p: 3 }}>
           {/* Header with Close Button */}
-          <div className="flex justify-between items-start mb-6">
-            <div className="flex items-center gap-4 flex-1">
+          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 3 }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, flex: 1 }}>
               <Avatar
                 sx={{ 
                   width: 80, 
@@ -568,42 +568,42 @@ export function UserProfileView({
                 {displayName[0]?.toUpperCase()}
               </Avatar>
               
-              <div className="flex-1">
-                <h2 className="text-2xl font-bold text-gray-900">
+              <Box sx={{ flex: 1 }}>
+                <Typography variant="h5" sx={{ fontWeight: 700, color: '#1A1A1E', fontFamily: 'var(--font-heading)' }}>
                   {displayName}
-                </h2>
-                <p className="text-sm text-gray-500 font-mono mt-1">
+                </Typography>
+                <Typography variant="body2" sx={{ color: '#6F7280', fontFamily: 'monospace', mt: 0.5 }}>
                   {truncateWallet(walletAddress)}
-                </p>
+                </Typography>
                 <Chip 
                   label="Holder-Only Profile" 
                   size="small" 
                   icon={<span>{privacyInfo.icon}</span>}
-                  sx={{ mt: 1, bgcolor: '#FFC857', color: '#000' }}
+                  sx={{ mt: 1, bgcolor: '#FFC857', color: '#000', fontWeight: 600 }}
                 />
-              </div>
-            </div>
+              </Box>
+            </Box>
             
             <IconButton onClick={onClose} size="small">
               <CloseIcon />
             </IconButton>
-          </div>
+          </Box>
           
           {/* Restricted Message */}
-          <div className="text-center py-12">
-            <div className="text-6xl mb-4">{privacyInfo.icon}</div>
-            <Typography variant="h6" fontWeight={600} sx={{ mb: 2 }}>
+          <Box sx={{ textAlign: 'center', py: 8 }}>
+            <Box sx={{ fontSize: '4rem', mb: 2 }}>{privacyInfo.icon}</Box>
+            <Typography variant="h6" sx={{ fontWeight: 600, mb: 1, color: '#1A1A1E' }}>
               This is a Holder-Only Profile
             </Typography>
-            <Typography variant="body2" color="text.secondary" sx={{ mb: 3, maxWidth: 400, mx: 'auto' }}>
+            <Typography variant="body2" sx={{ color: '#6F7280', mb: 2, maxWidth: 400, mx: 'auto' }}>
               {privacyCheck.reason || 'Hold tokens in a common project to view full profile details.'}
             </Typography>
             {!currentUserWallet && (
-              <Typography variant="caption" color="text.secondary">
+              <Typography variant="caption" sx={{ color: '#A3A7B5' }}>
                 Connect your wallet to see if you have access
               </Typography>
             )}
-          </div>
+          </Box>
         </CardContent>
       </Card>
     )
@@ -612,41 +612,41 @@ export function UserProfileView({
   // Fully restricted view for private profiles
   if (!privacyCheck.canView && !privacyCheck.hiddenSections) {
     return (
-      <Card sx={{ maxWidth: 600, mx: 'auto', mt: 4 }}>
-        <CardContent className="p-6">
-          <div className="flex justify-between items-start mb-6">
-            <div className="flex-1">
-              <h2 className="text-2xl font-bold text-gray-900">
+      <Card sx={{ maxWidth: 600, mx: 'auto', mt: 4, borderRadius: 3, boxShadow: '0 20px 40px rgba(15, 23, 42, 0.06)' }}>
+        <CardContent sx={{ p: 3 }}>
+          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 3 }}>
+            <Box sx={{ flex: 1 }}>
+              <Typography variant="h5" sx={{ fontWeight: 700, color: '#1A1A1E', fontFamily: 'var(--font-heading)' }}>
                 Private Profile
-              </h2>
-            </div>
+              </Typography>
+            </Box>
             <IconButton onClick={onClose} size="small">
               <CloseIcon />
             </IconButton>
-          </div>
+          </Box>
           
-          <div className="text-center py-12">
-            <div className="text-6xl mb-4">🔐</div>
-            <Typography variant="h6" fontWeight={600} sx={{ mb: 2 }}>
+          <Box sx={{ textAlign: 'center', py: 8 }}>
+            <Box sx={{ fontSize: '4rem', mb: 2 }}>🔐</Box>
+            <Typography variant="h6" sx={{ fontWeight: 600, mb: 1, color: '#1A1A1E' }}>
               This Profile is Private
             </Typography>
-            <Typography variant="body2" color="text.secondary">
+            <Typography variant="body2" sx={{ color: '#6F7280' }}>
               {privacyCheck.reason || 'This user has set their profile to private.'}
             </Typography>
-          </div>
+          </Box>
         </CardContent>
       </Card>
     )
   }
   
   return (
-    <Card sx={{ maxWidth: 600, mx: 'auto', mt: 4 }}>
-      <CardContent className="p-6">
+    <Card sx={{ maxWidth: 600, mx: 'auto', mt: 4, borderRadius: 3, boxShadow: '0 20px 40px rgba(15, 23, 42, 0.06)' }}>
+      <CardContent sx={{ p: 3 }}>
         {/* Header with Close Button */}
-        <div className="flex justify-between items-start mb-6">
-          <div className="flex items-center gap-4 flex-1">
+        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 3 }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, flex: 1 }}>
             {/* Avatar with Online Indicator */}
-            <div className="relative">
+            <Box sx={{ position: 'relative' }}>
               <Avatar
                 src={profile?.avatar_url || undefined}
                 sx={{ 
@@ -662,38 +662,50 @@ export function UserProfileView({
               {/* Online Indicator - only show if allowed */}
               {canSeeStatus && (
                 <Tooltip title={online ? 'Online' : 'Offline'}>
-                  <div
-                    className={`absolute bottom-1 right-1 w-5 h-5 rounded-full border-4 border-white transition-colors duration-300 ${
-                      online ? 'bg-green-500' : 'bg-gray-400'
-                    }`}
-                    style={{
-                      boxShadow: online ? '0 0 8px rgba(34, 197, 94, 0.6)' : 'none'
+                  <Box
+                    sx={{
+                      position: 'absolute',
+                      bottom: 4,
+                      right: 4,
+                      width: 20,
+                      height: 20,
+                      borderRadius: '50%',
+                      border: '4px solid white',
+                      bgcolor: online ? '#36C170' : '#A3A7B5',
+                      transition: 'all 0.3s',
+                      boxShadow: online ? '0 0 8px rgba(54, 193, 112, 0.6)' : 'none',
+                      animation: online ? 'pulse 2s ease-in-out infinite' : 'none',
+                      '@keyframes pulse': {
+                        '0%, 100%': { opacity: 1 },
+                        '50%': { opacity: 0.5 }
+                      }
                     }}
                   />
                 </Tooltip>
               )}
-            </div>
+            </Box>
             
             {/* Name and Wallet */}
-            <div className="flex-1">
-              <h2 className="text-2xl font-bold text-gray-900">
+            <Box sx={{ flex: 1 }}>
+              <Typography variant="h5" sx={{ fontWeight: 700, color: '#1A1A1E', fontFamily: 'var(--font-heading)' }}>
                 {displayName}
-              </h2>
-              <p className="text-sm text-gray-500 font-mono mt-1">
+              </Typography>
+              <Typography variant="body2" sx={{ color: '#6F7280', fontFamily: 'monospace', mt: 0.5 }}>
                 {truncateWallet(walletAddress)}
-              </p>
-              <div className="flex gap-2 mt-1">
+              </Typography>
+              <Box sx={{ display: 'flex', gap: 1, mt: 1 }}>
                 {profile?.privacy_level === 'private' && (
                   <Chip 
                     label="Private Profile" 
                     size="small"
+                    sx={{ bgcolor: '#F7F8FB', color: '#6F7280' }}
                   />
                 )}
                 {youBlockedThem && (
                   <Chip 
                     label="Blocked" 
                     size="small"
-                    color="error"
+                    sx={{ bgcolor: '#FFEBEE', color: '#E74C3C' }}
                     icon={<BlockIcon />}
                   />
                 )}
@@ -705,62 +717,74 @@ export function UserProfileView({
                     icon={<BlockIcon sx={{ color: 'white !important' }} />}
                   />
                 )}
-              </div>
-            </div>
-          </div>
+              </Box>
+            </Box>
+          </Box>
           
           {/* Close Button */}
           <IconButton onClick={onClose} size="small">
             <CloseIcon />
           </IconButton>
-        </div>
+        </Box>
         
         {/* Stats Section */}
         {karma && (
-          <div className="mb-6 p-4 bg-purple-50 rounded-lg">
-            <div className="flex items-center justify-between mb-3">
-              <h3 className="text-lg font-semibold text-purple-900">
+          <Paper sx={{ mb: 3, p: 3, bgcolor: '#EEE7FF', borderRadius: 2 }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2 }}>
+              <Typography variant="h6" sx={{ fontWeight: 700, color: '#7C4DFF', fontFamily: 'var(--font-heading)' }}>
                 Project Stats
-              </h3>
+              </Typography>
               {karma.is_banned && (
                 <Chip 
                   label="BANNED" 
-                  color="error" 
+                  sx={{ bgcolor: '#FFEBEE', color: '#E74C3C', fontWeight: 600 }}
                   size="small"
                 />
               )}
-            </div>
+            </Box>
             
-            <div className="grid grid-cols-3 gap-4">
-              <div className="text-center">
-                <p className="text-2xl font-bold text-purple-600">
-                  {karma.total_karma_points.toFixed(0)}
-                </p>
-                <p className="text-xs text-gray-600 mt-1">Total Karma</p>
-              </div>
+            <Grid container spacing={3}>
+              <Grid item xs={4}>
+                <Box sx={{ textAlign: 'center' }}>
+                  <Typography variant="h4" sx={{ fontWeight: 700, color: '#7C4DFF' }}>
+                    {karma.total_karma_points.toFixed(0)}
+                  </Typography>
+                  <Typography variant="caption" sx={{ color: '#6F7280', mt: 0.5, display: 'block' }}>
+                    Total Karma
+                  </Typography>
+                </Box>
+              </Grid>
               
-              <div className="text-center">
-                <p className="text-2xl font-bold text-purple-600">
-                  {karma.assets_added_count}
-                </p>
-                <p className="text-xs text-gray-600 mt-1">Assets Added</p>
-              </div>
+              <Grid item xs={4}>
+                <Box sx={{ textAlign: 'center' }}>
+                  <Typography variant="h4" sx={{ fontWeight: 700, color: '#7C4DFF' }}>
+                    {karma.assets_added_count}
+                  </Typography>
+                  <Typography variant="caption" sx={{ color: '#6F7280', mt: 0.5, display: 'block' }}>
+                    Assets Added
+                  </Typography>
+                </Box>
+              </Grid>
               
-              <div className="text-center">
-                <p className="text-2xl font-bold text-purple-600">
-                  {karma.upvotes_given_count}
-                </p>
-                <p className="text-xs text-gray-600 mt-1">Votes Given</p>
-              </div>
-            </div>
+              <Grid item xs={4}>
+                <Box sx={{ textAlign: 'center' }}>
+                  <Typography variant="h4" sx={{ fontWeight: 700, color: '#7C4DFF' }}>
+                    {karma.upvotes_given_count}
+                  </Typography>
+                  <Typography variant="caption" sx={{ color: '#6F7280', mt: 0.5, display: 'block' }}>
+                    Votes Given
+                  </Typography>
+                </Box>
+              </Grid>
+            </Grid>
             
             {/* Holder Tier Badge */}
-            <div className="mt-4 flex justify-center">
+            <Box sx={{ mt: 3, display: 'flex', justifyContent: 'center' }}>
               {loadingTier ? (
                 <Chip
                   label="Loading tier..."
                   size="small"
-                  sx={{ fontSize: '0.75rem' }}
+                  sx={{ fontSize: '0.75rem', bgcolor: '#F7F8FB', color: '#6F7280' }}
                 />
               ) : (
                 <Chip
@@ -774,8 +798,8 @@ export function UserProfileView({
                   size="small"
                 />
               )}
-            </div>
-          </div>
+            </Box>
+          </Paper>
         )}
         
         {/* Job Stats Section */}
@@ -944,18 +968,20 @@ export function UserProfileView({
         
         {/* Bio Section */}
         {profile?.bio && (
-          <div className="mb-6">
-            <h3 className="text-sm font-semibold text-gray-700 mb-2">Bio</h3>
-            <p className="text-gray-900 whitespace-pre-wrap">
+          <Box sx={{ mb: 3 }}>
+            <Typography variant="body2" sx={{ fontWeight: 600, color: '#6F7280', mb: 1 }}>
+              Bio
+            </Typography>
+            <Typography variant="body1" sx={{ color: '#1A1A1E', whiteSpace: 'pre-wrap' }}>
               {profile.bio}
-            </p>
-          </div>
+            </Typography>
+          </Box>
         )}
         
         <Divider sx={{ my: 3 }} />
         
         {/* Action Buttons */}
-        <div className="mb-6">
+        <Box sx={{ mb: 3 }}>
           {/* Tip Button */}
           {currentUserWallet && currentUserWallet !== walletAddress && projectId && tokenMint && (
             <Button
@@ -995,7 +1021,7 @@ export function UserProfileView({
             arrow
             placement="top"
           >
-            <span className="block mb-3">
+            <Box sx={{ display: 'block', mb: 2 }}>
               <Button
                 variant="contained"
                 startIcon={openingMessage ? <CircularProgress size={20} sx={{ color: 'white' }} /> : <MessageIcon />}
@@ -1030,25 +1056,35 @@ export function UserProfileView({
                   'Start conversation'
                 )}
               </Button>
-            </span>
+            </Box>
           </Tooltip>
           
           {/* Conversation Preview */}
           {conversationExists && lastMessage && (
-            <div className="mb-3 p-3 bg-purple-50 rounded-lg border border-purple-200">
-              <div className="text-xs font-semibold text-purple-900 mb-1">
+            <Paper sx={{ mb: 2, p: 2, bgcolor: '#EEE7FF', borderRadius: 2, border: '1px solid #D4C5F9' }}>
+              <Typography variant="caption" sx={{ fontWeight: 600, color: '#7C4DFF', display: 'block', mb: 0.5 }}>
                 Last message • {formatTimeAgo(lastMessage.timestamp)}
-              </div>
-              <div className="text-sm text-gray-700 line-clamp-2">
+              </Typography>
+              <Typography 
+                variant="body2" 
+                sx={{ 
+                  color: '#1A1A1E',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  display: '-webkit-box',
+                  WebkitLineClamp: 2,
+                  WebkitBoxOrient: 'vertical'
+                }}
+              >
                 {lastMessage.content.length > 80 
                   ? lastMessage.content.substring(0, 80) + '...' 
                   : lastMessage.content}
-              </div>
-            </div>
+              </Typography>
+            </Paper>
           )}
           
           {/* Secondary Actions */}
-          <div className="flex gap-2">
+          <Box sx={{ display: 'flex', gap: 1 }}>
             {youBlockedThem ? (
               <Button
                 variant="contained"
@@ -1084,43 +1120,58 @@ export function UserProfileView({
                 Block
               </Button>
             ) : null}
-          </div>
-        </div>
+          </Box>
+        </Box>
         
         {/* Reputation - Top Projects */}
         {topProjects.length > 0 && (
-          <div>
-            <h3 className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
-              <StarIcon sx={{ fontSize: 18, color: '#F59E0B' }} />
-              Top Projects by Karma
-            </h3>
-            <div className="space-y-2">
+          <Box>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
+              <StarIcon sx={{ fontSize: 20, color: '#F59E0B' }} />
+              <Typography variant="body2" sx={{ fontWeight: 600, color: '#6F7280' }}>
+                Top Projects by Karma
+              </Typography>
+            </Box>
+            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
               {topProjects.map((proj, index) => (
-                <div
+                <Paper
                   key={proj.project_id}
-                  className="flex items-center justify-between p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors"
+                  sx={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    p: 2,
+                    bgcolor: index === 0 ? '#FFF8E6' : '#F7F8FB',
+                    borderRadius: 2,
+                    border: index === 0 ? '1px solid #F59E0B' : '1px solid #E5E7F0',
+                    transition: 'all 0.2s',
+                    '&:hover': {
+                      bgcolor: index === 0 ? '#FFF4D6' : '#EEEFF5',
+                      transform: 'translateX(4px)'
+                    }
+                  }}
                 >
-                  <div className="flex items-center gap-3">
-                    <span className="text-lg font-bold text-gray-400">
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                    <Typography variant="h6" sx={{ fontWeight: 700, color: '#A3A7B5', minWidth: '32px' }}>
                       #{index + 1}
-                    </span>
-                    <div>
-                      <p className="font-medium text-gray-900">
+                    </Typography>
+                    <Box>
+                      <Typography variant="body2" sx={{ fontWeight: 600, color: '#1A1A1E' }}>
                         {proj.project_name}
-                      </p>
-                      <p className="text-xs text-gray-500">
+                      </Typography>
+                      <Typography variant="caption" sx={{ color: '#6F7280' }}>
                         {proj.total_karma_points.toFixed(0)} karma
-                      </p>
-                    </div>
-                  </div>
+                      </Typography>
+                    </Box>
+                  </Box>
                   
                   {index === 0 && (
                     <StarIcon sx={{ color: '#F59E0B', fontSize: 24 }} />
                   )}
-                </div>
+                </Paper>
               ))}
-            </div>
-          </div>
+            </Box>
+          </Box>
         )}
         
         {/* No Activity Message */}
