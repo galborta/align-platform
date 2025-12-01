@@ -8,17 +8,18 @@ VALUES (
   'job-attachments',
   'job-attachments',
   true,  -- Public read access
-  5242880,  -- 5MB limit
+  10485760,  -- 10MB limit (for work deliverables)
   ARRAY['image/jpeg', 'image/jpg', 'image/png', 'image/webp']
 )
 ON CONFLICT (id) DO NOTHING;
 
 -- Storage policies
+-- Note: Using 'public' role since app uses Solana wallet auth, not Supabase auth
 
--- 1. Allow authenticated users to upload files
+-- 1. Allow public users to upload files (wallet-connected users)
 CREATE POLICY "Users can upload job attachments"
 ON storage.objects FOR INSERT
-TO authenticated
+TO public
 WITH CHECK (bucket_id = 'job-attachments');
 
 -- 2. Allow public read access to all attachments
@@ -27,24 +28,18 @@ ON storage.objects FOR SELECT
 TO public
 USING (bucket_id = 'job-attachments');
 
--- 3. Allow users to delete their own attachments (by wallet folder)
+-- 3. Allow users to delete their own attachments
 CREATE POLICY "Users can delete own attachments"
 ON storage.objects FOR DELETE
-TO authenticated
-USING (
-  bucket_id = 'job-attachments'
-);
+TO public
+USING (bucket_id = 'job-attachments');
 
 -- 4. Allow users to update their own attachments
 CREATE POLICY "Users can update own attachments"
 ON storage.objects FOR UPDATE
-TO authenticated
-USING (
-  bucket_id = 'job-attachments'
-)
-WITH CHECK (
-  bucket_id = 'job-attachments'
-);
+TO public
+USING (bucket_id = 'job-attachments')
+WITH CHECK (bucket_id = 'job-attachments');
 
 -- Add comment
 COMMENT ON TABLE storage.buckets IS 'Storage buckets for user-uploaded files';

@@ -12,7 +12,7 @@ import KeyboardIcon from '@mui/icons-material/Keyboard'
 import { useMessaging } from '@/lib/MessagingContext'
 import { supabase } from '@/lib/supabase'
 import { formatDistanceToNow } from 'date-fns'
-import { NotificationBell } from '@/components/NotificationBell'
+import { NotificationBell } from '@/components/notifications'
 
 export function AppHeader() {
   const wallet = useWallet()

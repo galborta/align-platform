@@ -2151,17 +2151,41 @@ export default function JobDetailPage() {
                   {/* Worker View */}
                   {job.status === 'submitted' && isAssignedWorker && (
                     <div 
-                      className="p-4 rounded-lg text-center"
+                      className="p-4 rounded-lg"
                       style={{ backgroundColor: '#F8F5FF' }}
                     >
-                      <p 
-                        className="text-base font-semibold mb-2"
-                        style={{ color: '#7C4DFF' }}
+                      <div className="text-center mb-4">
+                        <p 
+                          className="text-base font-semibold mb-2"
+                          style={{ color: '#7C4DFF' }}
+                        >
+                          ✅ Work Submitted - Under Review
+                        </p>
+                        <p className="text-sm" style={{ color: '#6F7280' }}>
+                          Auto-releases in: {getTimeUntilAutoRelease(job.submitted_at || '')}
+                        </p>
+                      </div>
+                      
+                      {/* Add More Information Button */}
+                      <Button
+                        variant="outlined"
+                        size="medium"
+                        onClick={handleSubmitWork}
+                        sx={{
+                          width: '100%',
+                          textTransform: 'none',
+                          color: '#7C4DFF',
+                          borderColor: '#7C4DFF',
+                          '&:hover': {
+                            borderColor: '#6B3FEE',
+                            backgroundColor: '#F8F5FF'
+                          }
+                        }}
                       >
-                        ⏳ Waiting for poster review...
-                      </p>
-                      <p className="text-sm" style={{ color: '#6F7280' }}>
-                        Auto-releases in: {getTimeUntilAutoRelease(job.submitted_at || '')}
+                        📎 Add More Information
+                      </Button>
+                      <p className="text-xs text-center mt-2" style={{ color: '#A3A7B5' }}>
+                        Update your submission with additional files or details
                       </p>
                     </div>
                   )}
@@ -2760,8 +2784,8 @@ export default function JobDetailPage() {
               </div>
             )}
 
-            {/* Waiting for Submission Section (if assigned) */}
-            {job.status === 'assigned' && job.assigned_to && isAssignedWorker && (
+            {/* Waiting for Submission Section (if assigned and NOT yet submitted) */}
+            {job.status === 'assigned' && job.assigned_to && isAssignedWorker && !submission && (
               <div 
                 className="mt-6 p-6 rounded-lg border-2"
                 style={{ borderColor: '#7C4DFF', backgroundColor: '#F8F5FF' }}
@@ -3114,11 +3138,18 @@ export default function JobDetailPage() {
           jobId={job.id}
           jobUsdValue={job.payment_amount_usd}
           workerWallet={publicKey.toString()}
-          onWorkSubmitted={() => {
-            fetchJobData() // Refresh to show submission
+          onWorkSubmitted={async () => {
+            // Refresh data to show submission and updated status
+            await fetchJobData()
+            // Modal will close itself after successful submission
           }}
           escrowAmountTokens={job.escrow_amount_tokens}
           tokenSymbol={job.token_symbol || 'SOL'}
+          existingSubmission={submission ? {
+            message: submission.message,
+            image_urls: submission.image_urls || [],
+            external_links: submission.external_links || []
+          } : undefined}
         />
       )}
 

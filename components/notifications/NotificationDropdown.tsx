@@ -48,25 +48,42 @@ export function NotificationDropdown({ anchorEl, open, onClose }: NotificationDr
 
   // Auto-mark as read after 10 seconds
   useEffect(() => {
-    if (open && recentNotifications.length > 0) {
-      autoReadTimerRef.current = setTimeout(() => {
-        console.log('⏰ 10 seconds elapsed - marking unread notifications as read')
-        
-        // Mark unread notifications as read
-        recentNotifications.forEach(notification => {
-          if (!notification.is_read) {
-            markAsRead(notification.id)
-          }
-        })
-      }, 10000) // 10 seconds
+    // Only start timer when dropdown opens
+    if (!open) {
+      return
     }
+
+    // Get unread notification IDs at the time dropdown opens
+    const unreadIds = recentNotifications
+      .filter(n => !n.is_read)
+      .map(n => n.id)
+    
+    if (unreadIds.length === 0) {
+      console.log('⏰ No unread notifications to mark as read')
+      return
+    }
+    
+    console.log(`⏰ Starting 10-second timer for ${unreadIds.length} unread notifications:`, unreadIds)
+    
+    autoReadTimerRef.current = setTimeout(async () => {
+      console.log('⏰ 10 seconds elapsed! Marking notifications as read...')
+      
+      // Mark the notifications that were unread when timer started
+      for (const id of unreadIds) {
+        console.log(`  ✓ Marking ${id} as read`)
+        await markAsRead(id)
+      }
+      
+      console.log('✅ All notifications marked as read')
+    }, 10000) // 10 seconds
 
     return () => {
       if (autoReadTimerRef.current) {
+        console.log('⏰ Clearing auto-read timer (dropdown closed before 10s)')
         clearTimeout(autoReadTimerRef.current)
       }
     }
-  }, [open, recentNotifications, markAsRead])
+  }, [open, markAsRead]) // Only depend on 'open' changing - captures recentNotifications when dropdown opens
 
   const handleNotificationClick = (notification: EnrichedNotification) => {
     // Navigate to the appropriate page
@@ -92,11 +109,11 @@ export function NotificationDropdown({ anchorEl, open, onClose }: NotificationDr
       onClose={onClose}
       anchorOrigin={{
         vertical: 'bottom',
-        horizontal: 'right',
+        horizontal: 'center',
       }}
       transformOrigin={{
         vertical: 'top',
-        horizontal: 'right',
+        horizontal: 'center',
       }}
       sx={{
         mt: 1,
@@ -106,9 +123,7 @@ export function NotificationDropdown({ anchorEl, open, onClose }: NotificationDr
           maxHeight: { xs: '70vh', sm: 500 },
           borderRadius: { xs: 0, sm: 2 },
           boxShadow: '0 4px 20px rgba(0,0,0,0.15)',
-          bgcolor: '#ffffff',
-          left: { xs: '0 !important', sm: 'auto' },
-          right: { xs: '0 !important', sm: 'auto' }
+          bgcolor: '#ffffff'
         }
       }}
     >

@@ -372,10 +372,15 @@ class NotificationService {
         .update({ is_read: true })
         .eq('id', notificationId)
         .select()
-        .single();
+        .maybeSingle();
 
       if (error) {
         console.error('[NotificationService] Error marking notification as read:', error);
+        return null;
+      }
+
+      if (!data) {
+        console.log(`[NotificationService] ℹ️ Notification ${notificationId} was already read or not found`);
         return null;
       }
 

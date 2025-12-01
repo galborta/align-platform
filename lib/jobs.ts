@@ -77,7 +77,7 @@ export async function applyToJob(applicationData: {
   try {
     const { data: job } = await supabase
       .from('jobs')
-      .select('poster_wallet, title')
+      .select('poster_wallet, title, project_id')
       .eq('id', applicationData.job_id)
       .single()
 
@@ -89,7 +89,8 @@ export async function applyToJob(applicationData: {
         referenceId: applicationData.job_id,
         referenceType: 'job',
         metadata: {
-          job_title: job.title
+          job_title: job.title,
+          project_id: job.project_id
         }
       })
     }
@@ -480,7 +481,7 @@ export async function submitWork(
     try {
       const { data: job } = await supabase
         .from('jobs')
-        .select('poster_wallet, title')
+        .select('poster_wallet, title, project_id')
         .eq('id', jobId)
         .single()
 
@@ -492,7 +493,8 @@ export async function submitWork(
           referenceId: jobId,
           referenceType: 'job',
           metadata: {
-            job_title: job.title
+            job_title: job.title,
+            project_id: job.project_id
           }
         })
       }

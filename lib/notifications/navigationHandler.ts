@@ -59,28 +59,47 @@ export function handleNotificationNavigation(
     // ==================== JOB NOTIFICATIONS ====================
     
     case 'job_application_received':
-      if (reference_id) navigate(`/jobs/${reference_id}?tab=applications`)
+      if (reference_id && metadata?.project_id) {
+        navigate(`/project/${metadata.project_id}/jobs/${reference_id}?tab=applications`)
+      } else if (reference_id) {
+        navigate(`/jobs/${reference_id}?tab=applications`)
+      }
       break
 
     case 'job_assigned':
     case 'job_completed':
     case 'payment_released':
     case 'payment_refunded':
-      if (reference_id) navigate(`/jobs/${reference_id}`)
+      if (reference_id && metadata?.project_id) {
+        navigate(`/project/${metadata.project_id}/jobs/${reference_id}`)
+      } else if (reference_id) {
+        navigate(`/jobs/${reference_id}`)
+      }
       break
 
     case 'job_submitted':
-      if (reference_id) navigate(`/jobs/${reference_id}?tab=submissions`)
+      if (reference_id && metadata?.project_id) {
+        navigate(`/project/${metadata.project_id}/jobs/${reference_id}`)
+      } else if (reference_id) {
+        navigate(`/jobs/${reference_id}?tab=submissions`)
+      }
       break
 
     case 'job_dispute_created':
     case 'job_dispute_vote':
-      if (reference_id) navigate(`/jobs/${reference_id}?tab=disputes`)
+      if (reference_id && metadata?.project_id) {
+        navigate(`/project/${metadata.project_id}/jobs/${reference_id}?tab=disputes`)
+      } else if (reference_id) {
+        navigate(`/jobs/${reference_id}?tab=disputes`)
+      }
       break
 
     case 'job_comment':
       if (reference_id) {
-        const url = `/jobs/${reference_id}?tab=comments`
+        const baseUrl = metadata?.project_id 
+          ? `/project/${metadata.project_id}/jobs/${reference_id}`
+          : `/jobs/${reference_id}`
+        const url = `${baseUrl}?tab=comments`
         // TODO: Scroll to specific comment if comment_id is available in metadata
         if (metadata?.comment_id) {
           navigate(`${url}#comment-${metadata.comment_id}`)
@@ -178,24 +197,39 @@ export function getNotificationPath(notification: EnrichedNotification): string 
 
   switch (type) {
     case 'job_application_received':
-      return reference_id ? `/jobs/${reference_id}?tab=applications` : null
+      if (!reference_id) return null
+      return metadata?.project_id 
+        ? `/project/${metadata.project_id}/jobs/${reference_id}?tab=applications`
+        : `/jobs/${reference_id}?tab=applications`
 
     case 'job_assigned':
     case 'job_completed':
     case 'payment_released':
     case 'payment_refunded':
-      return reference_id ? `/jobs/${reference_id}` : null
+      if (!reference_id) return null
+      return metadata?.project_id 
+        ? `/project/${metadata.project_id}/jobs/${reference_id}`
+        : `/jobs/${reference_id}`
 
     case 'job_submitted':
-      return reference_id ? `/jobs/${reference_id}?tab=submissions` : null
+      if (!reference_id) return null
+      return metadata?.project_id 
+        ? `/project/${metadata.project_id}/jobs/${reference_id}`
+        : `/jobs/${reference_id}?tab=submissions`
 
     case 'job_dispute_created':
     case 'job_dispute_vote':
-      return reference_id ? `/jobs/${reference_id}?tab=disputes` : null
+      if (!reference_id) return null
+      return metadata?.project_id 
+        ? `/project/${metadata.project_id}/jobs/${reference_id}?tab=disputes`
+        : `/jobs/${reference_id}?tab=disputes`
 
     case 'job_comment':
       if (!reference_id) return null
-      const url = `/jobs/${reference_id}?tab=comments`
+      const baseUrl = metadata?.project_id 
+        ? `/project/${metadata.project_id}/jobs/${reference_id}`
+        : `/jobs/${reference_id}`
+      const url = `${baseUrl}?tab=comments`
       return metadata?.comment_id ? `${url}#comment-${metadata.comment_id}` : url
 
     case 'asset_upvote':

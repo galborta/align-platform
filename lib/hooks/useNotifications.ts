@@ -219,11 +219,14 @@ export function useNotifications(): UseNotificationsReturn {
             if (status === 'SUBSCRIBED') {
               console.log('✅ Real-time notification subscription active')
             } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
-              console.error('❌ Subscription error, retrying in 5s...')
+              console.warn(`⚠️ Real-time subscription ${status}, retrying in 5s...`)
               // Retry connection after 5 seconds
               reconnectTimer = setTimeout(() => {
                 setupRealtimeSubscription()
               }, 5000)
+            } else if (status !== 'CLOSED') {
+              // Log other statuses for debugging (but not CLOSED which is expected on cleanup)
+              console.log(`🔔 Notification subscription status: ${status}`)
             }
           })
       } catch (err) {

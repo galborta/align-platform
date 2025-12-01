@@ -71,7 +71,8 @@ export async function POST(
         referenceType: 'job',
         metadata: {
           job_title: job.title,
-          job_type: job.category
+          job_type: job.category,
+          project_id: job.project_id
         }
       })
     } catch (notificationError) {

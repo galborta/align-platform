@@ -38,6 +38,11 @@ interface WorkSubmissionModalProps {
   onWorkSubmitted?: () => void
   escrowAmountTokens?: number
   tokenSymbol?: string
+  existingSubmission?: {
+    message: string
+    image_urls: string[]
+    external_links: string[]
+  }
 }
 
 interface ImagePreview {
@@ -56,8 +61,10 @@ export function WorkSubmissionModal({
   workerWallet,
   onWorkSubmitted,
   escrowAmountTokens,
-  tokenSymbol = 'SOL'
+  tokenSymbol = 'SOL',
+  existingSubmission
 }: WorkSubmissionModalProps) {
+  const isUpdate = !!existingSubmission
   const [loading, setLoading] = useState(false)
   const [deliveryMessage, setDeliveryMessage] = useState('')
   const [images, setImages] = useState<ImagePreview[]>([])
@@ -65,12 +72,19 @@ export function WorkSubmissionModal({
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [completionKarma, setCompletionKarma] = useState<number>(0)
 
-  // Reset form when modal closes
+  // Reset form when modal closes, or load existing data when opening in update mode
   useEffect(() => {
     if (!isOpen) {
       resetForm()
+    } else if (isOpen && existingSubmission) {
+      // Load existing submission data for updating
+      setDeliveryMessage(existingSubmission.message || '')
+      setExternalLinks(existingSubmission.external_links && existingSubmission.external_links.length > 0 
+        ? existingSubmission.external_links 
+        : [''])
+      // Note: existing images are just URLs, can't re-upload them but user can add more
     }
-  }, [isOpen])
+  }, [isOpen, existingSubmission])
 
   // Calculate completion karma
   useEffect(() => {
@@ -279,19 +293,29 @@ export function WorkSubmissionModal({
       // TODO: Send notification to poster
       // await notifyPoster(jobId, workerWallet)
 
-      toast.success('Work submitted! Waiting for poster review 📬', {
-        duration: 4000,
-        style: {
-          background: '#7C4DFF',
-          color: '#fff',
+      toast.success(
+        isUpdate 
+          ? 'Submission updated! Additional information added 📝'
+          : 'Work submitted! Waiting for poster review 📬', 
+        {
+          duration: 4000,
+          style: {
+            background: '#7C4DFF',
+            color: '#fff',
+          }
         }
-      })
+      )
 
-      // Close modal and refresh
-      onClose()
+      // Wait for database to fully update before closing/refreshing
+      await new Promise(resolve => setTimeout(resolve, 1000))
+      
+      // Close modal and trigger refresh
       if (onWorkSubmitted) {
         onWorkSubmitted()
       }
+      
+      // Close modal after refresh is triggered
+      onClose()
     } catch (error) {
       console.error('Error submitting work:', error)
       toast.error('Failed to submit work. Please try again.')
@@ -323,7 +347,7 @@ export function WorkSubmissionModal({
         alignItems: 'center',
         justifyContent: 'space-between'
       }}>
-        Submit Completed Work
+        {isUpdate ? 'Update Submission' : 'Submit Completed Work'}
         <IconButton 
           onClick={onClose}
           disabled={loading}
@@ -623,7 +647,7 @@ export function WorkSubmissionModal({
               {isUploading ? 'Uploading...' : 'Submitting...'}
             </>
           ) : (
-            'Submit Work'
+            isUpdate ? 'Update Submission' : 'Submit Work'
           )}
         </Button>
       </DialogActions>

@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { IconButton, Badge } from '@mui/material'
-import { Bell } from 'lucide-react'
+import NotificationsIcon from '@mui/icons-material/Notifications'
 import { useNotifications } from '@/lib/hooks/useNotifications'
 import { NotificationDropdown } from './NotificationDropdown'
 
@@ -55,7 +55,7 @@ export function NotificationBell() {
           }}
           sx={{
             '& .MuiBadge-badge': {
-              bgcolor: '#EF4444', // Red color - matches message badge
+              bgcolor: '#EF4444', // Red color
               color: 'white',
               fontWeight: 700,
               fontSize: '10px',
@@ -80,7 +80,7 @@ export function NotificationBell() {
             }
           }}
         >
-          <Bell size={24} />
+          <NotificationsIcon sx={{ fontSize: 24 }} />
         </Badge>
       </IconButton>
       
