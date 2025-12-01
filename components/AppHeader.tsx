@@ -151,6 +151,9 @@ export function AppHeader() {
                   >
                     <Badge
                       badgeContent={unreadCount}
+                      invisible={unreadCount === 0}
+                      showZero={false}
+                      max={99}
                       anchorOrigin={{
                         vertical: 'top',
                         horizontal: 'right',
@@ -166,16 +169,16 @@ export function AppHeader() {
                           borderRadius: '8px',
                           border: '2px solid white', // White border for contrast
                           boxShadow: '0 2px 4px rgba(0, 0, 0, 0.2)',
-                          top: '-8px',
-                          right: '-9px',
+                          transform: 'scale(1) translate(50%, -50%)',
+                          transformOrigin: '100% 0%',
                           animation: unreadCount > 0 ? 'pulse 2s infinite' : 'none',
                           '@keyframes pulse': {
                             '0%, 100%': {
-                              transform: 'scale(1)',
+                              transform: 'scale(1) translate(50%, -50%)',
                               opacity: 1
                             },
                             '50%': {
-                              transform: 'scale(1.1)',
+                              transform: 'scale(1.1) translate(50%, -50%)',
                               opacity: 0.9
                             }
                           }

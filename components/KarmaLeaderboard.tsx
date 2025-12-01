@@ -3,12 +3,13 @@
 import { useEffect, useState } from 'react'
 import { useWallet } from '@solana/wallet-adapter-react'
 import { supabase } from '@/lib/supabase'
-import { IconButton, Tooltip, CircularProgress, Chip } from '@mui/material'
+import { IconButton, Tooltip, CircularProgress, Chip, Dialog } from '@mui/material'
 import MessageIcon from '@mui/icons-material/Message'
 import BlockIcon from '@mui/icons-material/Block'
 import { useMessaging } from '@/lib/MessagingContext'
 import { canMessageUser } from '@/lib/messaging'
 import { toast } from 'react-hot-toast'
+import { UserProfileView } from '@/components/UserProfileView'
 
 interface WalletKarma {
   wallet_address: string
@@ -29,6 +30,8 @@ export function KarmaLeaderboard({ projectId }: { projectId: string }) {
   const [leaders, setLeaders] = useState<WalletKarma[]>([])
   const [loading, setLoading] = useState(true)
   const [messageStatuses, setMessageStatuses] = useState<Record<string, MessageStatus>>({})
+  const [showProfileView, setShowProfileView] = useState(false)
+  const [selectedProfileWallet, setSelectedProfileWallet] = useState<string | null>(null)
   const currentWallet = useWallet().publicKey?.toString()
   const { openMessages } = useMessaging()
   
@@ -237,8 +240,12 @@ export function KarmaLeaderboard({ projectId }: { projectId: string }) {
                     flex items-center justify-between p-3 rounded-lg transition-all
                     ${index < 3 ? 'bg-gradient-to-r from-yellow-50 to-orange-50' : 'bg-gray-50'}
                     ${isOwn ? 'ring-2 ring-purple-500' : ''}
-                    hover:shadow-md
+                    hover:shadow-md cursor-pointer
                   `}
+                  onClick={() => {
+                    setSelectedProfileWallet(leader.wallet_address)
+                    setShowProfileView(true)
+                  }}
                 >
                   <div className="flex items-center gap-3">
                     <div className="text-lg font-bold text-gray-400 min-w-[2rem]">
@@ -276,7 +283,7 @@ export function KarmaLeaderboard({ projectId }: { projectId: string }) {
                     
                     {/* Message Button/Status (don't show for own wallet) */}
                     {!isOwn && currentWallet && (
-                      <div className="w-8 flex justify-center">
+                      <div className="w-8 flex justify-center" onClick={(e) => e.stopPropagation()}>
                         {status?.checking ? (
                           <CircularProgress size={18} sx={{ color: '#7C4DFF' }} />
                         ) : !status?.canMessage ? (
@@ -324,6 +331,27 @@ export function KarmaLeaderboard({ projectId }: { projectId: string }) {
           </div>
         </div>
       )}
+
+      {/* Profile View Modal */}
+      <Dialog
+        open={showProfileView}
+        onClose={() => setShowProfileView(false)}
+        maxWidth="md"
+        fullWidth
+        PaperProps={{
+          sx: {
+            borderRadius: '24px',
+            maxHeight: '90vh'
+          }
+        }}
+      >
+        {selectedProfileWallet && (
+          <UserProfileView
+            walletAddress={selectedProfileWallet}
+            onClose={() => setShowProfileView(false)}
+          />
+        )}
+      </Dialog>
     </div>
   )
 }

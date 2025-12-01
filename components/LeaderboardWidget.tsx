@@ -3,6 +3,8 @@
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import Image from 'next/image'
+import { Dialog } from '@mui/material'
+import { UserProfileView } from '@/components/UserProfileView'
 import styles from './LeaderboardWidget.module.css'
 
 interface LeaderboardEntry {
@@ -18,6 +20,7 @@ interface LeaderboardRowProps {
   rank: number
   entry: LeaderboardEntry
   animationDelay?: number
+  onProfileClick: (walletAddress: string) => void
 }
 
 interface AvatarFallbackProps {
@@ -62,7 +65,7 @@ function AvatarFallback({ address }: AvatarFallbackProps) {
   )
 }
 
-function LeaderboardRow({ rank, entry, animationDelay = 0 }: LeaderboardRowProps) {
+function LeaderboardRow({ rank, entry, animationDelay = 0, onProfileClick }: LeaderboardRowProps) {
   const rankDisplay = getRankDisplay(rank)
   const displayName = entry.username || formatWalletAddress(entry.wallet_address)
   const fullDisplayName = entry.username || entry.wallet_address
@@ -72,9 +75,10 @@ function LeaderboardRow({ rank, entry, animationDelay = 0 }: LeaderboardRowProps
       className={styles['leaderboard-row']}
       style={{ animationDelay: `${animationDelay}s` }}
     >
-      <Link 
-        href={`/profile/${entry.wallet_address}`} 
+      <div 
         className={styles['row-link']}
+        onClick={() => onProfileClick(entry.wallet_address)}
+        style={{ cursor: 'pointer' }}
       >
         {/* Rank */}
         <span className={styles.rank}>{rankDisplay}</span>
@@ -101,7 +105,7 @@ function LeaderboardRow({ rank, entry, animationDelay = 0 }: LeaderboardRowProps
           </div>
           <div className={styles.karma}>{formatKarma(entry.total_karma)} karma</div>
         </div>
-      </Link>
+      </div>
     </li>
   )
 }
@@ -159,6 +163,8 @@ export default function LeaderboardWidget() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [refreshing, setRefreshing] = useState(false)
+  const [showProfileView, setShowProfileView] = useState(false)
+  const [selectedProfileWallet, setSelectedProfileWallet] = useState<string | null>(null)
 
   async function fetchLeaderboard() {
     try {
@@ -179,6 +185,11 @@ export default function LeaderboardWidget() {
   useEffect(() => {
     fetchLeaderboard()
   }, [])
+
+  const handleProfileClick = (walletAddress: string) => {
+    setSelectedProfileWallet(walletAddress)
+    setShowProfileView(true)
+  }
 
   if (loading) return <LeaderboardSkeleton />
   if (error) return <LeaderboardError />
@@ -208,6 +219,7 @@ export default function LeaderboardWidget() {
             rank={index + 1}
             entry={entry}
             animationDelay={index * 0.05}
+            onProfileClick={handleProfileClick}
           />
         ))}
       </ul>
@@ -218,6 +230,27 @@ export default function LeaderboardWidget() {
           View Full Leaderboard →
         </Link>
       </footer>
+
+      {/* Profile View Modal */}
+      <Dialog
+        open={showProfileView}
+        onClose={() => setShowProfileView(false)}
+        maxWidth="md"
+        fullWidth
+        PaperProps={{
+          sx: {
+            borderRadius: '24px',
+            maxHeight: '90vh'
+          }
+        }}
+      >
+        {selectedProfileWallet && (
+          <UserProfileView
+            walletAddress={selectedProfileWallet}
+            onClose={() => setShowProfileView(false)}
+          />
+        )}
+      </Dialog>
     </aside>
   )
 }

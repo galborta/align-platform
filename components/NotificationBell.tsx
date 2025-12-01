@@ -240,18 +240,25 @@ export function NotificationBell() {
           onClick={handleClick}
           sx={{
             color: '#7C4DFF',
-            '&:hover': { bgcolor: 'rgba(124, 77, 255, 0.08)' }
+            '&:hover': { 
+              bgcolor: 'rgba(124, 77, 255, 0.08)',
+              boxShadow: '0 0 8px rgba(124, 77, 255, 0.3)'
+            },
+            transition: 'all 0.2s ease-in-out'
           }}
         >
           <Badge
             badgeContent={unreadCount}
+            invisible={unreadCount === 0}
+            showZero={false}
+            max={99}
             anchorOrigin={{
               vertical: 'top',
               horizontal: 'right',
             }}
             sx={{
               '& .MuiBadge-badge': {
-                bgcolor: '#7C4DFF',
+                bgcolor: '#EF4444', // Red color - matches message badge
                 color: 'white',
                 fontSize: '10px',
                 fontWeight: 700,
@@ -260,8 +267,19 @@ export function NotificationBell() {
                 borderRadius: '8px',
                 border: '2px solid white',
                 boxShadow: '0 2px 4px rgba(0, 0, 0, 0.2)',
-                top: '-8px',
-                right: '-8px',
+                transform: 'scale(1) translate(50%, -50%)',
+                transformOrigin: '100% 0%',
+                animation: unreadCount > 0 ? 'pulse 2s infinite' : 'none',
+                '@keyframes pulse': {
+                  '0%, 100%': {
+                    transform: 'scale(1) translate(50%, -50%)',
+                    opacity: 1
+                  },
+                  '50%': {
+                    transform: 'scale(1.1) translate(50%, -50%)',
+                    opacity: 0.9
+                  }
+                }
               }
             }}
           >

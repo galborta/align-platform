@@ -112,6 +112,7 @@ export function UserProfileView({
   } | null>(null)
   const [completedJobs, setCompletedJobs] = useState<any[]>([])
   const [showAllJobs, setShowAllJobs] = useState(false)
+  const [scrollIndicatorVisible, setScrollIndicatorVisible] = useState(false)
   const router = useRouter()
   
   // Truncate wallet address
@@ -179,6 +180,27 @@ export function UserProfileView({
       )
     }
   }
+  
+  // Check if content is scrollable and show indicator
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      const cardContent = document.querySelector('.user-profile-content')
+      if (cardContent) {
+        const isScrollable = cardContent.scrollHeight > cardContent.clientHeight
+        setScrollIndicatorVisible(isScrollable)
+        if (isScrollable) {
+          cardContent.classList.add('show-scroll-indicator')
+          // Hide indicator after 3 seconds
+          setTimeout(() => {
+            cardContent.classList.remove('show-scroll-indicator')
+            setScrollIndicatorVisible(false)
+          }, 3000)
+        }
+      }
+    }, 100)
+    
+    return () => clearTimeout(timer)
+  }, [loading, profile, jobStats])
   
   // Load job statistics
   const loadJobStats = async () => {
@@ -553,7 +575,27 @@ export function UserProfileView({
   if (!privacyCheck.canView && privacyCheck.hiddenSections) {
     return (
       <Card sx={{ maxWidth: 600, mx: 'auto', mt: 4, borderRadius: 3, boxShadow: '0 20px 40px rgba(15, 23, 42, 0.06)' }}>
-        <CardContent sx={{ p: 3 }}>
+        <CardContent 
+          sx={{ 
+            p: 3,
+            maxHeight: '85vh',
+            overflowY: 'auto',
+            '&::-webkit-scrollbar': {
+              width: '8px',
+            },
+            '&::-webkit-scrollbar-track': {
+              background: '#F3F4F6',
+              borderRadius: '4px',
+            },
+            '&::-webkit-scrollbar-thumb': {
+              background: '#7C4DFF',
+              borderRadius: '4px',
+              '&:hover': {
+                background: '#6A3FE8',
+              }
+            }
+          }}
+        >
           {/* Header with Close Button */}
           <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 3 }}>
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, flex: 1 }}>
@@ -613,7 +655,27 @@ export function UserProfileView({
   if (!privacyCheck.canView && !privacyCheck.hiddenSections) {
     return (
       <Card sx={{ maxWidth: 600, mx: 'auto', mt: 4, borderRadius: 3, boxShadow: '0 20px 40px rgba(15, 23, 42, 0.06)' }}>
-        <CardContent sx={{ p: 3 }}>
+        <CardContent 
+          sx={{ 
+            p: 3,
+            maxHeight: '85vh',
+            overflowY: 'auto',
+            '&::-webkit-scrollbar': {
+              width: '8px',
+            },
+            '&::-webkit-scrollbar-track': {
+              background: '#F3F4F6',
+              borderRadius: '4px',
+            },
+            '&::-webkit-scrollbar-thumb': {
+              background: '#7C4DFF',
+              borderRadius: '4px',
+              '&:hover': {
+                background: '#6A3FE8',
+              }
+            }
+          }}
+        >
           <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 3 }}>
             <Box sx={{ flex: 1 }}>
               <Typography variant="h5" sx={{ fontWeight: 700, color: '#1A1A1E', fontFamily: 'var(--font-heading)' }}>
@@ -641,7 +703,56 @@ export function UserProfileView({
   
   return (
     <Card sx={{ maxWidth: 600, mx: 'auto', mt: 4, borderRadius: 3, boxShadow: '0 20px 40px rgba(15, 23, 42, 0.06)' }}>
-      <CardContent sx={{ p: 3 }}>
+      <CardContent 
+        className="user-profile-content"
+        sx={{ 
+          p: 3,
+          maxHeight: '85vh',
+          overflowY: 'auto',
+          position: 'relative',
+          '&::-webkit-scrollbar': {
+            width: '8px',
+          },
+          '&::-webkit-scrollbar-track': {
+            background: '#F3F4F6',
+            borderRadius: '4px',
+          },
+          '&::-webkit-scrollbar-thumb': {
+            background: '#7C4DFF',
+            borderRadius: '4px',
+            '&:hover': {
+              background: '#6A3FE8',
+            }
+          },
+          // Scroll indicator shadow at bottom
+          '&::after': {
+            content: '""',
+            position: 'sticky',
+            bottom: 0,
+            left: 0,
+            right: 0,
+            height: '40px',
+            background: 'linear-gradient(to top, rgba(255, 255, 255, 0.95) 0%, transparent 100%)',
+            pointerEvents: 'none',
+            opacity: 0,
+            transition: 'opacity 0.3s',
+          },
+          '&.show-scroll-indicator::after': {
+            opacity: 1,
+          }
+        }}
+        onScroll={(e: any) => {
+          const element = e.currentTarget
+          const isScrollable = element.scrollHeight > element.clientHeight
+          const isNearBottom = element.scrollHeight - element.scrollTop - element.clientHeight < 20
+          
+          if (isScrollable && !isNearBottom) {
+            element.classList.add('show-scroll-indicator')
+          } else {
+            element.classList.remove('show-scroll-indicator')
+          }
+        }}
+      >
         {/* Header with Close Button */}
         <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 3 }}>
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, flex: 1 }}>
