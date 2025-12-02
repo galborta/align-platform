@@ -376,36 +376,134 @@ export function CreateJobModal({
 
     try {
       if (mode === 'edit' && existingJob) {
-        // Update existing job
-        const { error: updateError } = await supabase
-          .from('jobs')
-          .update({
-            title: title.trim(),
-            description: description.trim(),
-            kpis: kpis.trim(),
-            category,
-            assignment_mode: assignmentMode,
-            poster_desired_completion: getDesiredCompletionDate(),
-            updated_at: new Date().toISOString()
-          })
-          .eq('id', existingJob.id)
+        // Update existing job via API (uses service role to bypass RLS)
+        const updatePayload: any = {
+          poster_wallet: walletAddress,
+          title: title.trim(),
+          description: description.trim(),
+          kpis: kpis.trim(),
+          category,
+          assignment_mode: assignmentMode,
+          poster_desired_completion: getDesiredCompletionDate()
+        }
 
-        if (updateError) throw updateError
+        // Handle payment amount change and escrow adjustment
+        const newAmount = parseFloat(paymentAmount)
+        const oldAmount = existingJob.payment_amount_tokens
+        const paymentChanged = applicationCount === 0 && !isNaN(newAmount) && newAmount !== oldAmount
 
-        // Invalidate all existing applications if any
-        if (applicationCount > 0) {
-          const { error: invalidateError } = await supabase
-            .from('job_applications')
-            .update({
-              is_invalidated: true,
-              updated_at: new Date().toISOString()
-            })
-            .eq('job_id', existingJob.id)
-            .eq('is_invalidated', false)
+        if (paymentChanged) {
+          // Calculate FULL escrow amounts (payment + platform fee)
+          // Note: Fee is only taken on completion, so on cancel/reduction we refund EVERYTHING
+          const oldEscrowAmount = existingJob.escrow_amount_tokens || calculateEscrowAmount(oldAmount, feePercentage)
+          const newEscrowAmount = calculateEscrowAmount(newAmount, feePercentage)
+          const escrowDifference = newEscrowAmount - oldEscrowAmount
 
-          if (invalidateError) throw invalidateError
+          console.log(`💰 Payment change: ${oldAmount} → ${newAmount}`)
+          console.log(`💰 Old escrow (with fee): ${oldEscrowAmount}`)
+          console.log(`💰 New escrow (with fee): ${newEscrowAmount}`)
+          console.log(`💰 Difference: ${escrowDifference}`)
 
-          toast.success(`Job updated. ${applicationCount} application${applicationCount > 1 ? 's' : ''} invalidated.`, {
+          // If escrow is locked, handle the token difference
+          if (existingJob.escrow_locked && Math.abs(escrowDifference) > 0.001) {
+            if (!publicKey || !connection || !sendTransaction) {
+              setLockError('Wallet not connected')
+              setIsLocking(false)
+              return
+            }
+
+            if (escrowDifference > 0) {
+              // Need to lock MORE tokens (includes additional fee)
+              toast.loading(`Locking additional ${escrowDifference.toFixed(2)} ${tokenSymbol} (includes platform fee)...`, { id: 'escrow-adjust' })
+
+              // Validate the additional amount
+              const validation = await validateEscrowTransfer(
+                connection,
+                publicKey,
+                new PublicKey(tokenMint),
+                escrowDifference,
+                9 // Assuming 9 decimals
+              )
+
+              if (!validation.valid) {
+                throw new Error(validation.error || 'Insufficient balance for additional escrow')
+              }
+
+              // Transfer additional tokens to escrow (payment increase + fee increase)
+              const transferResult = await transferToEscrow(
+                {
+                  connection,
+                  senderWallet: publicKey,
+                  tokenMint: new PublicKey(tokenMint),
+                  amount: escrowDifference,
+                  decimals: 9,
+                  tokenSymbol,
+                  jobTitle: `${title} (Additional Lock)`,
+                  workerPayment: newAmount
+                },
+                sendTransaction
+              )
+
+              if (!transferResult.success) {
+                throw new Error(transferResult.error || 'Failed to lock additional tokens')
+              }
+
+              toast.success(`Locked additional ${escrowDifference.toFixed(2)} ${tokenSymbol} (including fee)`, { id: 'escrow-adjust' })
+
+              // Update escrow transaction signature
+              updatePayload.escrow_tx_signature = transferResult.signature
+              updatePayload.escrow_amount_tokens = newEscrowAmount
+
+            } else {
+              // Need to refund the FULL difference (payment reduction + fee reduction)
+              const refundAmount = Math.abs(escrowDifference)
+              toast.loading(`Refunding ${refundAmount.toFixed(2)} ${tokenSymbol} (full amount including fee)...`, { id: 'escrow-adjust' })
+
+              const refundResponse = await fetch(`/api/jobs/${existingJob.id}/adjust-escrow`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  poster_wallet: walletAddress,
+                  refund_amount: refundAmount
+                })
+              })
+
+              const refundData = await refundResponse.json()
+
+              if (!refundResponse.ok || !refundData.success) {
+                throw new Error(refundData.error || 'Failed to refund escrow difference')
+              }
+
+              toast.success(`Refunded ${refundAmount.toFixed(2)} ${tokenSymbol} (including fee)`, { id: 'escrow-adjust' })
+
+              // Update escrow amount
+              updatePayload.escrow_amount_tokens = newEscrowAmount
+            }
+          }
+
+          // Update payment amounts in the payload
+          updatePayload.payment_amount_tokens = newAmount
+          if (usdValue !== null) {
+            updatePayload.payment_amount_usd = usdValue
+          }
+        }
+
+        // Call backend API to update the job
+        const response = await fetch(`/api/jobs/${existingJob.id}/update`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(updatePayload)
+        })
+
+        const data = await response.json()
+        
+        if (!response.ok || !data.success) {
+          throw new Error(data.error || 'Failed to update job')
+        }
+
+        // Show appropriate success message
+        if (data.invalidated_applications > 0) {
+          toast.success(`Job updated. ${data.invalidated_applications} application${data.invalidated_applications > 1 ? 's' : ''} invalidated.`, {
             duration: 4000
           })
         } else {
@@ -1057,9 +1155,15 @@ export function CreateJobModal({
           fullWidth
           required
           type="text"
-          disabled={mode === 'edit'}
+          disabled={mode === 'edit' && applicationCount > 0}
           error={!!errors.paymentAmount}
-          helperText={mode === 'edit' ? 'Payment amount cannot be changed after posting' : errors.paymentAmount}
+          helperText={
+            mode === 'edit' && applicationCount > 0
+              ? 'Payment amount cannot be changed after applications'
+              : mode === 'edit' && applicationCount === 0
+              ? 'Payment can be edited (no applications yet)'
+              : errors.paymentAmount
+          }
           InputProps={{
             endAdornment: (
               <InputAdornment position="end">

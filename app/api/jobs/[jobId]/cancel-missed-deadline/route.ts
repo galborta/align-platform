@@ -26,9 +26,11 @@ import { cancelJobDueToMissedDeadline } from '@/lib/job-deadline-enforcement'
  */
 export async function POST(
   request: NextRequest,
-  { params }: { params: { jobId: string } }
+  { params }: { params: Promise<{ jobId: string }> }
 ) {
   try {
+    // Await params in Next.js 15+
+    const { jobId } = await params
     const { poster_wallet } = await request.json()
     
     // Validate required fields
@@ -40,7 +42,7 @@ export async function POST(
     }
 
     // Validate jobId is provided
-    if (!params.jobId) {
+    if (!jobId) {
       return NextResponse.json(
         { error: 'Job ID required' },
         { status: 400 }
@@ -49,7 +51,7 @@ export async function POST(
 
     // Cancel job due to missed deadline
     const result = await cancelJobDueToMissedDeadline(
-      params.jobId,
+      jobId,
       poster_wallet
     )
     

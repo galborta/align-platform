@@ -193,6 +193,12 @@ export default function JobDetailPage() {
         setLoading(false)
         return
       }
+      console.log('📊 Fetched job data:', {
+        id: jobData.id,
+        status: jobData.status,
+        escrow_locked: jobData.escrow_locked,
+        cancelled_at: jobData.cancelled_at
+      })
       setJob(jobData)
 
       // Fetch project
@@ -639,66 +645,92 @@ export default function JobDetailPage() {
 
     setCancelling(true)
     try {
-      // Check cancellation limit (max 10 per week)
-      const sevenDaysAgo = new Date()
-      sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7)
+      // If escrow is locked, refund tokens first
+      let refundSuccess = false
+      let refundAmount = 0
+      if (job.escrow_locked && job.escrow_amount_tokens && job.escrow_token_mint) {
+        toast.loading('Refunding tokens from escrow...', { id: 'refund' })
+        
+        try {
+          const response = await fetch(`/api/jobs/${job.id}/refund-escrow`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              poster_wallet: publicKey.toString()
+            })
+          })
 
-      const { count: cancellationCount, error: countError } = await supabase
-        .from('jobs')
-        .select('id', { count: 'exact', head: true })
-        .eq('poster_wallet', publicKey.toString())
-        .eq('status', 'cancelled')
-        .gte('cancelled_at', sevenDaysAgo.toISOString())
+          const data = await response.json()
+          
+          if (!response.ok || !data.success) {
+            throw new Error(data.error || 'Refund failed')
+          }
 
-      if (countError) throw countError
-
-      if (cancellationCount && cancellationCount >= 10) {
-        toast.error("You've cancelled 10 jobs this week. Try again next week.")
-        setShowCancelConfirm(false)
-        setCancelling(false)
-        return
+          refundAmount = data.amountRefunded
+          toast.success(`Refunded ${refundAmount.toFixed(2)} tokens`, { id: 'refund' })
+          refundSuccess = true
+          console.log('✅ Refund successful, proceeding to cancel job status...')
+        } catch (refundError) {
+          console.error('Refund error:', refundError)
+          toast.error(
+            refundError instanceof Error 
+              ? refundError.message 
+              : 'Failed to refund escrow. Please contact support.', 
+            { id: 'refund' }
+          )
+          setCancelling(false)
+          setShowCancelConfirm(false)
+          return // Don't proceed with cancellation if refund fails
+        }
       }
 
-      // Cancel the job
-      const { error: updateError } = await supabase
-        .from('jobs')
-        .update({
-          status: 'cancelled',
-          cancelled_at: new Date().toISOString(),
-          updated_at: new Date().toISOString()
+      // Cancel the job via API (uses service role to bypass RLS)
+      console.log('📝 Calling cancel API...')
+      try {
+        const cancelResponse = await fetch(`/api/jobs/${job.id}/cancel`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            poster_wallet: publicKey.toString()
+          })
         })
-        .eq('id', job.id)
 
-      if (updateError) throw updateError
+        const cancelData = await cancelResponse.json()
+        
+        if (!cancelResponse.ok || !cancelData.success) {
+          throw new Error(cancelData.error || 'Failed to cancel job')
+        }
 
-      // Invalidate all applications
-      const { error: invalidateError } = await supabase
-        .from('job_applications')
-        .update({
-          is_invalidated: true,
-          updated_at: new Date().toISOString()
-        })
-        .eq('job_id', job.id)
-        .eq('is_invalidated', false)
+        console.log('✅ Job cancelled successfully via API')
+      } catch (cancelError) {
+        console.error('❌ Cancel API error:', cancelError)
+        throw cancelError
+      }
 
-      if (invalidateError) throw invalidateError
-
-      // TODO: Apply karma penalty (-50 × tier multiplier)
-      // TODO: Return tokens from escrow (Phase 2)
-      // TODO: Send notifications to applicants
-
-      toast.success('Job cancelled. -50 karma penalty applied', {
-        duration: 4000,
+      const refundText = refundSuccess 
+        ? ` ${refundAmount.toFixed(2)} tokens refunded.` 
+        : ''
+      toast.success(`Job cancelled. -50 karma penalty applied.${refundText}`, {
+        duration: 5000,
         icon: '🚫'
       })
 
       setShowCancelConfirm(false)
 
       // Refresh job data
+      console.log('🔄 Refreshing job data...')
       await fetchJobData()
+      console.log('✅ Job data refreshed')
+      
+      // Force Next.js to refresh the page with new data
+      router.refresh()
     } catch (err) {
       console.error('Error cancelling job:', err)
-      toast.error('Failed to cancel job')
+      toast.error(
+        err instanceof Error 
+          ? err.message 
+          : 'Failed to cancel job'
+      )
     } finally {
       setCancelling(false)
     }
@@ -726,23 +758,30 @@ export default function JobDetailPage() {
   }
 
   const handleConfirmAssignment = async () => {
-    if (!selectedApplication || !job) return
+    if (!selectedApplication || !job || !publicKey) return
 
     setAssigning(true)
     try {
-      // Update job with assignment and set hard deadline from worker's commitment
-      const { error: updateError } = await supabase
-        .from('jobs')
-        .update({
-          status: 'assigned',
+      console.log('🎯 Assigning job to:', selectedApplication.applicant_wallet)
+      
+      // Call backend API to assign the job (uses service role to bypass RLS)
+      const response = await fetch(`/api/jobs/${job.id}/assign`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          poster_wallet: publicKey.toString(),
           assigned_to: selectedApplication.applicant_wallet,
-          assigned_at: new Date().toISOString(),
-          hard_deadline: selectedApplication.committed_completion_date, // Set binding deadline
-          updated_at: new Date().toISOString()
+          hard_deadline: selectedApplication.committed_completion_date
         })
-        .eq('id', job.id)
+      })
 
-      if (updateError) throw updateError
+      const data = await response.json()
+
+      if (!response.ok || !data.success) {
+        throw new Error(data.error || 'Failed to assign job via API')
+      }
+      
+      console.log('✅ Job assignment successful via API')
 
       // Notify the assigned worker (non-blocking)
       try {
@@ -767,10 +806,19 @@ export default function JobDetailPage() {
       setSelectedApplication(null)
       
       // Refresh job data
+      console.log('🔄 Refreshing job data after assignment...')
       await fetchJobData()
+      console.log('📊 Job data after refresh - should be assigned now')
+      
+      // Force router refresh to ensure UI updates
+      router.refresh()
     } catch (err) {
       console.error('Error assigning job:', err)
-      toast.error('Failed to assign job')
+      toast.error(
+        err instanceof Error 
+          ? err.message 
+          : 'Failed to assign job'
+      )
     } finally {
       setAssigning(false)
     }
@@ -1029,8 +1077,15 @@ export default function JobDetailPage() {
 
   const isPoster = publicKey && publicKey.toString() === job.poster_wallet
   const isAssignedWorker = publicKey && job.assigned_to && publicKey.toString() === job.assigned_to
+  
+  // Check if user has already applied (and application is not invalidated)
+  const hasAlreadyApplied = publicKey && applications.some(
+    app => app.applicant_wallet === publicKey.toString() && !app.is_invalidated
+  )
+  
   // Allow applications to open OR assigned jobs (as backup applicants)
-  const canApply = (job.status === 'open' || job.status === 'assigned') && publicKey && !isPoster
+  // BUT not if user has already applied
+  const canApply = (job.status === 'open' || job.status === 'assigned') && publicKey && !isPoster && !hasAlreadyApplied
 
   return (
     <div className="min-h-screen" style={{ backgroundColor: '#FFFFFF' }}>
@@ -2279,7 +2334,22 @@ export default function JobDetailPage() {
                   Actions
                 </h3>
 
-                {/* If job is Open/Assigned and user is NOT poster */}
+                {/* If user has already applied */}
+                {hasAlreadyApplied && !isPoster && (
+                  <div 
+                    className="p-4 rounded-lg text-center"
+                    style={{ backgroundColor: '#F0F9FF', borderLeft: '4px solid #3B82F6' }}
+                  >
+                    <p className="text-sm font-medium" style={{ color: '#1E40AF' }}>
+                      ✓ You've already applied for this job
+                    </p>
+                    <p className="text-xs mt-2" style={{ color: '#6B7280' }}>
+                      The poster will review your application and may contact you.
+                    </p>
+                  </div>
+                )}
+
+                {/* If job is Open/Assigned and user is NOT poster and hasn't applied */}
                 {canApply && (
                   <div className="space-y-3">
                     {job.status === 'assigned' && (
@@ -2702,8 +2772,8 @@ export default function JobDetailPage() {
                               </span>
                             </Tooltip>
                           )}
-                          {/* Existing Pick Button */}
-                          {isPoster && job.status === 'open' && job.assignment_mode === 'review' && (
+                          {/* Pick Button - only show if job is open AND no one is assigned yet */}
+                          {isPoster && job.status === 'open' && job.assignment_mode === 'review' && !job.assigned_to && (
                             <Button
                               variant="primary"
                               onClick={() => handlePickApplicant(app)}

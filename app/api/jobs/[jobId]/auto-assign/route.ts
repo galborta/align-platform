@@ -4,16 +4,18 @@ import { notificationService } from '@/lib/services/notificationService'
 
 export async function POST(
   request: NextRequest,
-  { params }: { params: { jobId: string } }
+  { params }: { params: Promise<{ jobId: string }> }
 ) {
   try {
+    // Await params in Next.js 15+
+    const { jobId } = await params
     const { applicationId, applicantWallet } = await request.json()
 
     // 1. Check if job is still open and in first_come mode
     const { data: job, error: jobError } = await supabase
       .from('jobs')
       .select('*')
-      .eq('id', params.jobId)
+      .eq('id', jobId)
       .single()
 
     if (jobError || !job) {
@@ -50,7 +52,7 @@ export async function POST(
         hard_deadline: application.committed_completion_date, // Set binding deadline from worker's commitment
         updated_at: new Date().toISOString()
       })
-      .eq('id', params.jobId)
+      .eq('id', jobId)
       .eq('status', 'open') // Race condition protection
 
     if (updateError) {
@@ -67,7 +69,7 @@ export async function POST(
         userWallet: applicantWallet,
         type: 'job_assigned',
         actorWallet: job.poster_wallet,
-        referenceId: params.jobId,
+        referenceId: jobId,
         referenceType: 'job',
         metadata: {
           job_title: job.title,
@@ -80,7 +82,7 @@ export async function POST(
       // Continue - notification failure is non-critical
     }
 
-    console.log(`✅ Auto-assigned job ${params.jobId} to ${applicantWallet} with deadline ${application.committed_completion_date}`)
+    console.log(`✅ Auto-assigned job ${jobId} to ${applicantWallet} with deadline ${application.committed_completion_date}`)
 
     return NextResponse.json({
       success: true,

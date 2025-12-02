@@ -37,12 +37,14 @@ const supabaseAdmin = createClient<Database>(
  */
 export async function POST(
   request: Request,
-  { params }: { params: { jobId: string } }
+  { params }: { params: Promise<{ jobId: string }> }
 ) {
   const startTime = Date.now()
   
   try {
-    console.log(`[Release Payment] Starting for job ${params.jobId}`)
+    // Await params in Next.js 15+
+    const { jobId } = await params
+    console.log(`[Release Payment] Starting for job ${jobId}`)
     
     // Parse request body
     const { poster_wallet, auto_release } = await request.json()
@@ -63,7 +65,7 @@ export async function POST(
     const { data: job, error: jobError } = await supabaseAdmin
       .from('jobs')
       .select('*')
-      .eq('id', params.jobId)
+      .eq('id', jobId)
       .single()
     
     if (jobError || !job) {
