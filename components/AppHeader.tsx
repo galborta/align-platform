@@ -96,16 +96,27 @@ export function AppHeader() {
   }
 
   return (
-    <header className="sticky top-0 bg-page-bg/95 backdrop-blur-sm border-b border-border-subtle z-50">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
-        <div className="flex items-center justify-between">
+    <>
+      <style jsx global>{`
+        header .MuiBadge-root {
+          overflow: visible !important;
+        }
+        header .MuiBadge-badge {
+          position: absolute !important;
+          top: 0 !important;
+          right: 0 !important;
+        }
+      `}</style>
+      <header className="sticky top-0 bg-page-bg/95 backdrop-blur-sm border-b border-border-subtle z-50" style={{ overflow: 'visible', isolation: 'isolate', minHeight: '80px' }}>
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4" style={{ overflow: 'visible', minHeight: '64px' }}>
+          <div className="flex items-center justify-between" style={{ overflow: 'visible' }}>
           <Link href="/" className="no-underline">
             <h1 className="font-display text-2xl font-bold text-text-primary cursor-pointer hover:text-accent-primary transition-colors tracking-normal leading-normal border-b-2 border-accent-primary inline-block">
               Align
             </h1>
           </Link>
           
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2" style={{ overflow: 'visible', isolation: 'isolate' }}>
             {/* Profile Icon (only show if wallet connected) */}
             {wallet?.publicKey && (
               <IconButton
@@ -160,14 +171,14 @@ export function AppHeader() {
                       }}
                       sx={{
                         '& .MuiBadge-badge': {
-                          bgcolor: '#EF4444', // Red color
+                          bgcolor: '#EF4444',
                           color: 'white',
                           fontWeight: 700,
                           fontSize: '10px',
                           height: '16px',
                           minWidth: '16px',
                           borderRadius: '8px',
-                          border: '2px solid white', // White border for contrast
+                          border: '2px solid white',
                           boxShadow: '0 2px 4px rgba(0, 0, 0, 0.2)',
                           transform: 'scale(1) translate(50%, -50%)',
                           transformOrigin: '100% 0%',
@@ -185,7 +196,7 @@ export function AppHeader() {
                         }
                       }}
                     >
-                      <MailIcon />
+                      <MailIcon sx={{ fontSize: 24 }} />
                     </Badge>
                   </IconButton>
                 </Tooltip>
@@ -260,5 +271,6 @@ export function AppHeader() {
         </div>
       </div>
     </header>
+    </>
   )
 }

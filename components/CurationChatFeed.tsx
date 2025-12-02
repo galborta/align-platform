@@ -223,7 +223,7 @@ function CurationChatMessage({
       <div className="bg-white rounded-lg p-4 shadow-sm border border-gray-100">
         <div className="flex flex-col sm:flex-row sm:items-start gap-2 sm:gap-3">
           <div className="flex-1">
-            <p className="text-sm">
+            <div className="text-sm">
               <WalletAddressWithButtons 
                 address={message.wallet_address || ''}
                 compact
@@ -247,7 +247,7 @@ function CurationChatMessage({
                   <strong>{displayText}</strong>
                 )}
               </span>
-            </p>
+            </div>
             
             {asset && (
               <AssetVotingCard

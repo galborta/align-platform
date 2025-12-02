@@ -237,6 +237,17 @@ export default function Home() {
         </div>
       </footer>
 
+      <style jsx global>{`
+        /* Fix Messaging Badge Position on Homepage Only */
+        /* Target the 3rd button (messages) in the header buttons group */
+        .page-wrapper header .flex.items-center.gap-2 > .MuiIconButton-root:nth-of-type(3) .MuiBadge-badge {
+          position: absolute !important;
+          top: -8px !important;
+          right: -8px !important;
+          transform: scale(1) !important;
+        }
+      `}</style>
+      
       <style jsx>{`
         /* Page Wrapper with Pattern */
         .page-wrapper {
@@ -262,9 +273,14 @@ export default function Home() {
           z-index: 0;
         }
 
-        .page-wrapper > * {
+        .page-wrapper > *:not(header) {
           position: relative;
           z-index: 1;
+        }
+        
+        .page-wrapper > header {
+          position: sticky;
+          z-index: 50;
         }
 
         /* Main Content Grid Layout */
