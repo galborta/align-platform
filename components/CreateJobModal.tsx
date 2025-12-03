@@ -24,13 +24,17 @@ import {
   Typography,
   Chip,
   Paper,
-  Divider
+  Divider,
+  IconButton,
+  Switch
 } from '@mui/material'
 import InfoIcon from '@mui/icons-material/Info'
 import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown'
 import LockIcon from '@mui/icons-material/Lock'
 import ArrowBackIcon from '@mui/icons-material/ArrowBack'
 import CheckCircleIcon from '@mui/icons-material/CheckCircle'
+import AddIcon from '@mui/icons-material/Add'
+import RemoveIcon from '@mui/icons-material/Remove'
 import { createJob } from '@/lib/jobs'
 import { supabase } from '@/lib/supabase'
 import { getTokenPriceUsd, validateMinimumUsdValue } from '@/lib/helius'
@@ -104,6 +108,7 @@ export function CreateJobModal({
   const [tokenBalance, setTokenBalance] = useState<number>(0)
   
   // Form fields
+  const [jobType, setJobType] = useState<'regular' | 'contest'>('regular')
   const [title, setTitle] = useState('')
   const [category, setCategory] = useState('')
   const [description, setDescription] = useState('')
@@ -111,6 +116,21 @@ export function CreateJobModal({
   const [paymentAmount, setPaymentAmount] = useState('')
   const [assignmentMode, setAssignmentMode] = useState<'first_come' | 'review'>('review')
   const [desiredCompletionDays, setDesiredCompletionDays] = useState<string>('')
+  
+  // Contest-specific state
+  const [contestMaxWinners, setContestMaxWinners] = useState<number>(1)
+  const [contestPrizes, setContestPrizes] = useState<Array<{
+    position: number
+    amount_tokens: number
+    amount_usd: number
+  }>>([
+    { position: 1, amount_tokens: 0, amount_usd: 0 }
+  ])
+  const [contestSubmissionDeadline, setContestSubmissionDeadline] = useState<Date | null>(null)
+  const [contestSubmissionsVisible, setContestSubmissionsVisible] = useState<boolean>(true)
+  
+  // Helper state for prize input
+  const [prizeInputErrors, setPrizeInputErrors] = useState<Record<number, string>>({})
   
   // Validation states
   const [errors, setErrors] = useState<Record<string, string>>({})
@@ -195,6 +215,7 @@ export function CreateJobModal({
   }, [paymentAmount, tokenMint])
 
   const resetForm = () => {
+    setJobType('regular')
     setTitle('')
     setCategory('')
     setDescription('')
@@ -202,6 +223,13 @@ export function CreateJobModal({
     setPaymentAmount('')
     setAssignmentMode('review')
     setDesiredCompletionDays('')
+    // Reset contest-specific state
+    setContestMaxWinners(1)
+    setContestPrizes([{ position: 1, amount_tokens: 0, amount_usd: 0 }])
+    setContestSubmissionDeadline(null)
+    setContestSubmissionsVisible(true)
+    setPrizeInputErrors({})
+    // Reset validation and UI state
     setErrors({})
     setUsdValue(null)
     setTokenPrice(null)
@@ -237,6 +265,17 @@ export function CreateJobModal({
       workerReceives,
       feePercentage: fee
     }
+  }
+
+  // Calculate total prize pool for contests
+  const calculateTotalPrizePool = () => {
+    return contestPrizes.reduce((sum, prize) => sum + prize.amount_tokens, 0)
+  }
+
+  // Calculate total with platform fee for contests
+  const calculateTotalWithFee = () => {
+    const total = calculateTotalPrizePool()
+    return total * (1 + feePercentage / 100)
   }
 
   const checkUsdValue = async (amount: number) => {
@@ -307,10 +346,85 @@ export function CreateJobModal({
     return Object.keys(newErrors).length === 0
   }
 
+  // Contest-specific validation
+  const validateContestFields = (): { isValid: boolean; errors: string[] } => {
+    const errors: string[] = []
+
+    // Check max winners
+    if (contestMaxWinners < 1) {
+      errors.push('Contest must have at least 1 winner')
+    }
+    if (contestMaxWinners > 10) {
+      errors.push('Contest cannot have more than 10 winners')
+    }
+
+    // Check all prizes are set
+    const invalidPrizes = contestPrizes.filter(p => !p.amount_tokens || p.amount_tokens <= 0)
+    if (invalidPrizes.length > 0) {
+      errors.push(`All prize amounts must be greater than 0 (${invalidPrizes.length} prize${invalidPrizes.length > 1 ? 's' : ''} not set)`)
+    }
+
+    // Check total prize pool is reasonable
+    const totalPrizes = calculateTotalPrizePool()
+    if (totalPrizes <= 0) {
+      errors.push('Total prize pool must be greater than 0')
+    }
+
+    // Check submission deadline
+    if (!contestSubmissionDeadline) {
+      errors.push('Submission deadline is required for contests')
+    } else {
+      const minDeadline = new Date(Date.now() + 24 * 60 * 60 * 1000)
+      if (contestSubmissionDeadline < minDeadline) {
+        errors.push('Submission deadline must be at least 24 hours from now')
+      }
+      const maxDeadline = new Date(Date.now() + 90 * 24 * 60 * 60 * 1000)
+      if (contestSubmissionDeadline > maxDeadline) {
+        errors.push('Submission deadline cannot be more than 90 days from now')
+      }
+    }
+
+    // Check prizes array length matches max winners
+    if (contestPrizes.length !== contestMaxWinners) {
+      errors.push(`Prize array mismatch: expected ${contestMaxWinners}, got ${contestPrizes.length}`)
+    }
+
+    return {
+      isValid: errors.length === 0,
+      errors
+    }
+  }
+
   const handleReviewAndLock = async () => {
-    if (!validateForm()) {
-      toast.error('Please fix the errors before continuing')
-      return
+    // Validate common form fields (skip payment validation for contests)
+    if (jobType === 'regular') {
+      if (!validateForm()) {
+        toast.error('Please fix the errors before continuing')
+        return
+      }
+    } else {
+      // For contests, validate common fields without payment amount
+      const newErrors: Record<string, string> = {}
+      if (!title.trim()) newErrors.title = 'Title is required'
+      if (!category) newErrors.category = 'Category is required'
+      if (!description.trim()) newErrors.description = 'Description is required'
+      if (!kpis.trim()) newErrors.kpis = 'Success criteria are required'
+      setErrors(newErrors)
+      if (Object.keys(newErrors).length > 0) {
+        toast.error('Please fix the errors before continuing')
+        return
+      }
+    }
+
+    // Contest-specific validation
+    if (jobType === 'contest') {
+      const contestValidation = validateContestFields()
+      if (!contestValidation.isValid) {
+        toast.error(contestValidation.errors[0]) // Show first error
+        // Show all errors in console for debugging
+        console.log('Contest validation errors:', contestValidation.errors)
+        return
+      }
     }
 
     // Check invalidation checkbox if applications exist
@@ -327,8 +441,9 @@ export function CreateJobModal({
       }
 
       // Calculate total escrow amount (payment + fee)
-      const amount = parseFloat(paymentAmount)
-      const totalEscrowAmount = calculateEscrowAmount(amount, feePercentage)
+      // For contests, use the total prize pool; for regular jobs, use payment amount
+      const amount = jobType === 'contest' ? calculateTotalPrizePool() : parseFloat(paymentAmount)
+      const totalEscrowAmount = jobType === 'contest' ? calculateTotalWithFee() : calculateEscrowAmount(amount, feePercentage)
 
       // Validate wallet has sufficient balance
       setLoading(true)
@@ -523,15 +638,19 @@ export function CreateJobModal({
         }
       } else {
         // Create new job with escrow locking
-        const amount = parseFloat(paymentAmount)
+        // For contests, use prize pool; for regular jobs, use payment amount
+        const amount = jobType === 'contest' ? calculateTotalPrizePool() : parseFloat(paymentAmount)
+        const totalEscrowAmount = jobType === 'contest' ? calculateTotalWithFee() : calculateEscrowAmount(amount, feePercentage)
         
-        // Final USD validation
-        const validation = await validateMinimumUsdValue(tokenMint, amount, 5)
-        
-        if (!validation.valid) {
-          setLockError('Payment must be at least $5 USD')
-          setIsLocking(false)
-          return
+        // Final USD validation (skip for contests as prizes are validated separately)
+        if (jobType === 'regular') {
+          const validation = await validateMinimumUsdValue(tokenMint, amount, 5)
+          
+          if (!validation.valid) {
+            setLockError('Payment must be at least $5 USD')
+            setIsLocking(false)
+            return
+          }
         }
 
         if (!publicKey || !connection || !sendTransaction) {
@@ -539,9 +658,6 @@ export function CreateJobModal({
           setIsLocking(false)
           return
         }
-
-        // Calculate total escrow amount (payment + fee)
-        const totalEscrowAmount = calculateEscrowAmount(amount, feePercentage)
 
         // Step 1: Transfer tokens to escrow
         toast.loading('Locking tokens in escrow...', { id: 'escrow-lock' })
@@ -571,25 +687,69 @@ export function CreateJobModal({
         escrowTxSignature = transferResult.signature
 
         // Step 2: Create the job in database with escrow fields
-        toast.loading('Creating job...', { id: 'escrow-lock' })
+        toast.loading(jobType === 'contest' ? 'Creating contest...' : 'Creating job...', { id: 'escrow-lock' })
         
-        const jobData = await createJob({
+        // Prepare base job data
+        const baseJobData = {
           project_id: projectId,
           poster_wallet: walletAddress,
           title: title.trim(),
           description: description.trim(),
           kpis: kpis.trim(),
           category,
-          payment_amount_tokens: amount,
-          payment_amount_usd: validation.usdValue || 0,
-          assignment_mode: assignmentMode,
-          poster_desired_completion: getDesiredCompletionDate(),
           fee_percentage_at_creation: feePercentage,
           escrow_locked: true,
           escrow_tx_signature: transferResult.signature,
           escrow_amount_tokens: totalEscrowAmount,
           escrow_token_mint: tokenMint
-        })
+        }
+
+        let jobData
+        if (jobType === 'contest') {
+          // Contest-specific job data
+          // Calculate USD values for prizes
+          const prizesWithUsd = contestPrizes.map(prize => ({
+            ...prize,
+            amount_usd: prize.amount_tokens * (tokenPrice || 0)
+          }))
+          
+          jobData = await createJob({
+            ...baseJobData,
+            // Contest fields
+            is_contest: true,
+            contest_max_winners: contestMaxWinners,
+            contest_winner_prizes: prizesWithUsd,
+            contest_submission_deadline: contestSubmissionDeadline!.toISOString(),
+            contest_winner_selection_deadline: new Date(
+              contestSubmissionDeadline!.getTime() + 3 * 24 * 60 * 60 * 1000
+            ).toISOString(),
+            contest_submissions_visible: contestSubmissionsVisible,
+            // Regular job fields - set defaults for contests
+            payment_amount_tokens: 0, // Total is in escrow_amount_tokens
+            payment_amount_usd: 0,
+            assignment_mode: 'review' as const, // Contests always use review mode
+            poster_desired_completion: contestSubmissionDeadline!.toISOString(),
+          })
+        } else {
+          // Regular job data (existing logic)
+          const validation = await validateMinimumUsdValue(tokenMint, amount, 5)
+          
+          jobData = await createJob({
+            ...baseJobData,
+            // Regular job fields
+            payment_amount_tokens: amount,
+            payment_amount_usd: validation.usdValue || 0,
+            assignment_mode: assignmentMode,
+            poster_desired_completion: getDesiredCompletionDate(),
+            // Contest fields set to defaults
+            is_contest: false,
+            contest_max_winners: null,
+            contest_winner_prizes: null,
+            contest_submission_deadline: null,
+            contest_winner_selection_deadline: null,
+            contest_submissions_visible: true,
+          })
+        }
 
         // Step 3: Log transaction to escrow transactions table
         try {
@@ -611,14 +771,19 @@ export function CreateJobModal({
         }
 
         toast.dismiss('escrow-lock')
-        toast.success('Job posted! 🎉 Tokens locked in escrow', {
-          duration: 4000,
-          style: {
-            background: '#36C170',
-            color: '#fff',
-          },
-          icon: '🔒'
-        })
+        toast.success(
+          jobType === 'contest'
+            ? `🏆 Contest created! ${contestMaxWinners} prize${contestMaxWinners > 1 ? 's' : ''} locked in escrow`
+            : 'Job posted! 🎉 Tokens locked in escrow',
+          {
+            duration: 4000,
+            style: {
+              background: '#36C170',
+              color: '#fff',
+            },
+            icon: jobType === 'contest' ? '🏆' : '🔒'
+          }
+        )
 
         setIsLocking(false)
         onClose()
@@ -734,7 +899,7 @@ export function CreateJobModal({
           gap: 1
         }}>
           <LockIcon sx={{ color: '#7C4DFF' }} />
-          Review & Lock Tokens
+          {jobType === 'contest' ? 'Review & Lock Prize Pool' : 'Review & Lock Tokens'}
         </DialogTitle>
 
         <DialogContent sx={{ pt: 3 }}>
@@ -848,6 +1013,29 @@ export function CreateJobModal({
             )}
           </Box>
 
+          {/* Contest Summary */}
+          {jobType === 'contest' && (
+            <Alert severity="info" sx={{ mb: 2 }}>
+              <Typography variant="body2" sx={{ fontWeight: 600, mb: 1 }}>
+                🏆 Contest Summary:
+              </Typography>
+              <Typography variant="caption" component="div">
+                • {contestMaxWinners} winner{contestMaxWinners > 1 ? 's' : ''} will be selected
+              </Typography>
+              <Typography variant="caption" component="div">
+                • Total prize pool: {calculateTotalPrizePool().toFixed(2)} {tokenSymbol}
+              </Typography>
+              <Typography variant="caption" component="div">
+                • Submissions close: {contestSubmissionDeadline?.toLocaleDateString() || 'Not set'}
+              </Typography>
+              <Typography variant="caption" component="div">
+                • Winner selection by: {contestSubmissionDeadline ? 
+                  new Date(contestSubmissionDeadline.getTime() + 3 * 24 * 60 * 60 * 1000).toLocaleDateString() 
+                  : 'N/A'}
+              </Typography>
+            </Alert>
+          )}
+
           {/* Warning Box */}
           <Alert 
             severity="warning" 
@@ -861,9 +1049,11 @@ export function CreateJobModal({
               }
             }}
           >
-            <strong>Tokens will be locked until job completion.</strong>
+            <strong>{jobType === 'contest' ? 'Prize pool will be locked until contest completion.' : 'Tokens will be locked until job completion.'}</strong>
             <br />
-            Funds are held in escrow and released automatically to the worker 10 days after work submission, or when you manually approve.
+            {jobType === 'contest' 
+              ? 'Funds are held in escrow and distributed to winners after you select them, or auto-distributed based on community votes if you don\'t act within 3 days of the deadline.'
+              : 'Funds are held in escrow and released automatically to the worker 10 days after work submission, or when you manually approve.'}
           </Alert>
 
           {/* Error Display */}
@@ -916,7 +1106,11 @@ export function CreateJobModal({
                 }
               }}
             >
-              {isLocking ? 'Locking Tokens...' : 'Confirm & Lock Tokens'}
+              {isLocking 
+                ? (jobType === 'contest' ? 'Locking Prize Pool...' : 'Locking Tokens...') 
+                : jobType === 'contest'
+                  ? `🏆 Create Contest & Lock ${calculateTotalWithFee().toFixed(2)} ${tokenSymbol}`
+                  : 'Confirm & Lock Tokens'}
             </Button>
           </Box>
         </DialogActions>
@@ -945,13 +1139,294 @@ export function CreateJobModal({
         color: '#1A1A1E',
         pb: 1
       }}>
-        {mode === 'edit' ? 'Edit Job' : 'Post a Job'}
+        {mode === 'edit' 
+          ? 'Edit Job' 
+          : jobType === 'contest' 
+            ? '🏆 Create Contest Job' 
+            : 'Post a Job'}
       </DialogTitle>
 
       <DialogContent 
         sx={{ pt: 3 }}
         onScroll={handleScroll}
       >
+        {/* Job Type Toggle */}
+        <Box sx={{ mb: 3, display: 'flex', gap: 2, justifyContent: 'center' }}>
+          <Button
+            variant={jobType === 'regular' ? 'contained' : 'outlined'}
+            onClick={() => setJobType('regular')}
+            sx={{
+              bgcolor: jobType === 'regular' ? '#7C4DFF' : 'transparent',
+              color: jobType === 'regular' ? 'white' : '#7C4DFF',
+              borderColor: '#7C4DFF',
+              textTransform: 'none',
+              fontWeight: 600,
+              px: 3,
+              '&:hover': {
+                bgcolor: jobType === 'regular' ? '#6A3FDB' : 'rgba(124, 77, 255, 0.08)'
+              }
+            }}
+          >
+            Regular Job
+          </Button>
+          <Button
+            variant={jobType === 'contest' ? 'contained' : 'outlined'}
+            onClick={() => setJobType('contest')}
+            sx={{
+              bgcolor: jobType === 'contest' ? '#7C4DFF' : 'transparent',
+              color: jobType === 'contest' ? 'white' : '#7C4DFF',
+              borderColor: '#7C4DFF',
+              textTransform: 'none',
+              fontWeight: 600,
+              px: 3,
+              '&:hover': {
+                bgcolor: jobType === 'contest' ? '#6A3FDB' : 'rgba(124, 77, 255, 0.08)'
+              }
+            }}
+          >
+            🏆 Contest Job
+          </Button>
+        </Box>
+
+        {/* Contest Info Alert */}
+        {jobType === 'contest' && (
+          <Alert severity="info" sx={{ mb: 3 }}>
+            <strong>Contest Mode:</strong> Multiple workers can submit entries. You'll manually select winner(s) after the submission deadline.
+          </Alert>
+        )}
+
+        {/* Contest Settings */}
+        {jobType === 'contest' && (
+          <Box sx={{ 
+            border: '1px solid #7C4DFF', 
+            borderRadius: 2, 
+            p: 3, 
+            mb: 3,
+            bgcolor: 'rgba(124, 77, 255, 0.05)'
+          }}>
+            <Typography variant="h6" sx={{ mb: 2, color: '#7C4DFF' }}>
+              Contest Settings
+            </Typography>
+
+            {/* Number of Winners */}
+            <Box sx={{ mb: 3 }}>
+              <Typography variant="body2" sx={{ mb: 1, fontWeight: 600 }}>
+                Number of Winners *
+              </Typography>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                <IconButton 
+                  onClick={() => {
+                    const newCount = Math.max(1, contestMaxWinners - 1)
+                    setContestMaxWinners(newCount)
+                    // Remove last prize if reducing
+                    if (newCount < contestPrizes.length) {
+                      setContestPrizes(contestPrizes.slice(0, newCount))
+                    }
+                  }}
+                  disabled={contestMaxWinners <= 1}
+                  sx={{ border: '1px solid #E5E7F0' }}
+                >
+                  <RemoveIcon />
+                </IconButton>
+                <Typography variant="h6" sx={{ minWidth: 40, textAlign: 'center' }}>
+                  {contestMaxWinners}
+                </Typography>
+                <IconButton 
+                  onClick={() => {
+                    const newCount = Math.min(10, contestMaxWinners + 1)
+                    setContestMaxWinners(newCount)
+                    // Add new prize slot
+                    if (newCount > contestPrizes.length) {
+                      setContestPrizes([
+                        ...contestPrizes,
+                        { position: newCount, amount_tokens: 0, amount_usd: 0 }
+                      ])
+                    }
+                  }}
+                  disabled={contestMaxWinners >= 10}
+                  sx={{ border: '1px solid #E5E7F0' }}
+                >
+                  <AddIcon />
+                </IconButton>
+              </Box>
+              <Typography variant="caption" sx={{ color: 'text.secondary' }}>
+                Minimum: 1, Maximum: 10
+              </Typography>
+            </Box>
+
+            {/* Prize Distribution */}
+            <Typography variant="body2" sx={{ mb: 2, fontWeight: 600 }}>
+              Prize Distribution *
+            </Typography>
+            {contestPrizes.map((prize, index) => (
+              <Box key={prize.position} sx={{ mb: 2 }}>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 1 }}>
+                  <Typography variant="body2" sx={{ minWidth: 80 }}>
+                    {prize.position === 1 ? '🥇 1st Place' :
+                     prize.position === 2 ? '🥈 2nd Place' :
+                     prize.position === 3 ? '🥉 3rd Place' :
+                     `#${prize.position}`}
+                  </Typography>
+                  <TextField
+                    type="number"
+                    size="small"
+                    placeholder="Prize amount"
+                    value={prize.amount_tokens || ''}
+                    onChange={(e) => {
+                      const amount = parseFloat(e.target.value) || 0
+                      
+                      // Update prizes
+                      const newPrizes = [...contestPrizes]
+                      newPrizes[index] = {
+                        ...newPrizes[index],
+                        amount_tokens: amount,
+                        amount_usd: amount * (tokenPrice || 0)
+                      }
+                      setContestPrizes(newPrizes)
+                      
+                      // Validate this prize in real-time
+                      const newErrors = { ...prizeInputErrors }
+                      if (amount <= 0) {
+                        newErrors[prize.position] = 'Prize must be greater than 0'
+                      } else {
+                        delete newErrors[prize.position]
+                      }
+                      setPrizeInputErrors(newErrors)
+                    }}
+                    error={!!prizeInputErrors[prize.position]}
+                    helperText={prizeInputErrors[prize.position]}
+                    InputProps={{
+                      endAdornment: (
+                        <InputAdornment position="end">
+                          <span style={{ fontWeight: 600, color: '#7C4DFF' }}>
+                            {tokenSymbol}
+                          </span>
+                        </InputAdornment>
+                      )
+                    }}
+                    sx={{ flex: 1 }}
+                  />
+                  <Typography variant="body2" sx={{ color: 'text.secondary', minWidth: 100 }}>
+                    ≈ ${prize.amount_usd.toFixed(2)}
+                  </Typography>
+                </Box>
+              </Box>
+            ))}
+
+            {/* Submission Deadline */}
+            <Box sx={{ mb: 3, mt: 3 }}>
+              <Typography variant="body2" sx={{ mb: 1, fontWeight: 600 }}>
+                Submission Deadline *
+              </Typography>
+              <TextField
+                type="datetime-local"
+                fullWidth
+                value={contestSubmissionDeadline ? 
+                  new Date(contestSubmissionDeadline.getTime() - contestSubmissionDeadline.getTimezoneOffset() * 60000)
+                    .toISOString()
+                    .slice(0, 16) 
+                  : ''
+                }
+                onChange={(e) => {
+                  if (e.target.value) {
+                    setContestSubmissionDeadline(new Date(e.target.value))
+                  } else {
+                    setContestSubmissionDeadline(null)
+                  }
+                }}
+                inputProps={{
+                  min: new Date(Date.now() + 24 * 60 * 60 * 1000)
+                    .toISOString()
+                    .slice(0, 16)
+                }}
+                helperText="Workers can submit entries until this date/time. Minimum: 24 hours from now."
+              />
+            </Box>
+
+            {/* Winner Selection Deadline (auto-calculated) */}
+            <Box sx={{ mb: 3 }}>
+              <Typography variant="body2" sx={{ mb: 1, fontWeight: 600 }}>
+                Winner Selection Deadline
+              </Typography>
+              <TextField
+                fullWidth
+                disabled
+                value={contestSubmissionDeadline ? 
+                  new Date(contestSubmissionDeadline.getTime() + 3 * 24 * 60 * 60 * 1000)
+                    .toLocaleString()
+                  : 'Set submission deadline first'
+                }
+                helperText="Auto-set to 3 days after submission deadline. Winners auto-selected by community vote if you don't act."
+              />
+            </Box>
+
+            {/* Submission Visibility */}
+            <Box sx={{ mb: 2 }}>
+              <Typography variant="body2" sx={{ mb: 1, fontWeight: 600 }}>
+                Submission Visibility
+              </Typography>
+              <FormControlLabel
+                control={
+                  <Switch
+                    checked={contestSubmissionsVisible}
+                    onChange={(e) => setContestSubmissionsVisible(e.target.checked)}
+                    sx={{
+                      '& .MuiSwitch-switchBase.Mui-checked': {
+                        color: '#7C4DFF',
+                      },
+                      '& .MuiSwitch-switchBase.Mui-checked + .MuiSwitch-track': {
+                        backgroundColor: '#7C4DFF',
+                      },
+                    }}
+                  />
+                }
+                label={contestSubmissionsVisible ? 
+                  "Public - Submissions visible during contest" : 
+                  "Private - Submissions hidden until judging"
+                }
+              />
+              <Typography variant="caption" sx={{ display: 'block', color: 'text.secondary', ml: 6 }}>
+                {contestSubmissionsVisible ? 
+                  "Everyone can see submissions as they come in. Enables community voting." :
+                  "Submissions stay hidden until you begin judging. Prevents bias."
+                }
+              </Typography>
+            </Box>
+
+            {/* Total Prize Pool Summary */}
+            <Box sx={{ 
+              mt: 3, 
+              p: 2, 
+              bgcolor: 'background.paper', 
+              borderRadius: 1,
+              border: '1px solid',
+              borderColor: 'divider'
+            }}>
+              <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
+                <Typography variant="body2">Total Prize Pool:</Typography>
+                <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                  {calculateTotalPrizePool().toFixed(2)} {tokenSymbol}
+                </Typography>
+              </Box>
+              <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
+                <Typography variant="body2">Platform Fee ({feePercentage}%):</Typography>
+                <Typography variant="body2">
+                  {(calculateTotalPrizePool() * (feePercentage / 100)).toFixed(2)} {tokenSymbol}
+                </Typography>
+              </Box>
+              <Divider sx={{ my: 1 }} />
+              <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+                <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                  Total to Lock:
+                </Typography>
+                <Typography variant="body2" sx={{ fontWeight: 600, color: '#7C4DFF' }}>
+                  {calculateTotalWithFee().toFixed(2)} {tokenSymbol}
+                </Typography>
+              </Box>
+            </Box>
+          </Box>
+        )}
+
         {/* Field Counter and Scroll Hint */}
         <Box 
           sx={{ 
@@ -1140,125 +1615,131 @@ export function CreateJobModal({
           sx={{ mb: 3 }}
         />
 
-        {/* Payment Amount */}
-        <TextField
-          label="Payment Amount"
-          value={paymentAmount}
-          onChange={(e) => {
-            const value = e.target.value
-            // Only allow numbers and decimal point
-            if (value === '' || /^\d*\.?\d*$/.test(value)) {
-              setPaymentAmount(value)
-            }
-          }}
-          placeholder="500"
-          fullWidth
-          required
-          type="text"
-          disabled={mode === 'edit' && applicationCount > 0}
-          error={!!errors.paymentAmount}
-          helperText={
-            mode === 'edit' && applicationCount > 0
-              ? 'Payment amount cannot be changed after applications'
-              : mode === 'edit' && applicationCount === 0
-              ? 'Payment can be edited (no applications yet)'
-              : errors.paymentAmount
-          }
-          InputProps={{
-            endAdornment: (
-              <InputAdornment position="end">
-                <span style={{ fontWeight: 600, color: '#7C4DFF' }}>
-                  {tokenSymbol}
+        {/* Payment Amount - Only for regular jobs */}
+        {jobType === 'regular' && (
+          <>
+            <TextField
+              label="Payment Amount"
+              value={paymentAmount}
+              onChange={(e) => {
+                const value = e.target.value
+                // Only allow numbers and decimal point
+                if (value === '' || /^\d*\.?\d*$/.test(value)) {
+                  setPaymentAmount(value)
+                }
+              }}
+              placeholder="500"
+              fullWidth
+              required
+              type="text"
+              disabled={mode === 'edit' && applicationCount > 0}
+              error={!!errors.paymentAmount}
+              helperText={
+                mode === 'edit' && applicationCount > 0
+                  ? 'Payment amount cannot be changed after applications'
+                  : mode === 'edit' && applicationCount === 0
+                  ? 'Payment can be edited (no applications yet)'
+                  : errors.paymentAmount
+              }
+              InputProps={{
+                endAdornment: (
+                  <InputAdornment position="end">
+                    <span style={{ fontWeight: 600, color: '#7C4DFF' }}>
+                      {tokenSymbol}
+                    </span>
+                  </InputAdornment>
+                )
+              }}
+              sx={{ mb: 1 }}
+            />
+
+            {/* USD Conversion Display */}
+            {checkingPrice && (
+              <div className="flex items-center gap-2 mb-3" style={{ color: '#6F7280' }}>
+                <CircularProgress size={16} sx={{ color: '#7C4DFF' }} />
+                <span className="text-sm">Checking USD value...</span>
+              </div>
+            )}
+
+            {!checkingPrice && usdValue !== null && !belowMinimum && (
+              <div className="mb-3" style={{ color: '#36C170' }}>
+                <span className="text-sm font-medium">
+                  ≈ ${usdValue.toFixed(2)} USD
                 </span>
-              </InputAdornment>
-            )
-          }}
-          sx={{ mb: 1 }}
-        />
+              </div>
+            )}
 
-        {/* USD Conversion Display */}
-        {checkingPrice && (
-          <div className="flex items-center gap-2 mb-3" style={{ color: '#6F7280' }}>
-            <CircularProgress size={16} sx={{ color: '#7C4DFF' }} />
-            <span className="text-sm">Checking USD value...</span>
-          </div>
+            {!checkingPrice && belowMinimum && (
+              <Alert 
+                severity="warning" 
+                icon={<WarningIcon />}
+                sx={{ mb: 3 }}
+              >
+                <strong>Minimum $5 USD required</strong>
+                <br />
+                Current value: ${usdValue?.toFixed(2)} USD
+              </Alert>
+            )}
+
+            {!checkingPrice && priceError && paymentAmount && (
+              <Alert severity="error" sx={{ mb: 3 }}>
+                Unable to fetch token price. Please try again or contact support.
+              </Alert>
+            )}
+          </>
         )}
 
-        {!checkingPrice && usdValue !== null && !belowMinimum && (
-          <div className="mb-3" style={{ color: '#36C170' }}>
-            <span className="text-sm font-medium">
-              ≈ ${usdValue.toFixed(2)} USD
-            </span>
-          </div>
+        {/* Assignment Mode - Only for regular jobs */}
+        {jobType === 'regular' && (
+          <FormControl component="fieldset" sx={{ mb: 3 }}>
+            <FormLabel 
+              component="legend"
+              sx={{ 
+                color: '#1A1A1E',
+                fontWeight: 600,
+                mb: 1
+              }}
+            >
+              Assignment Mode
+            </FormLabel>
+            <RadioGroup
+              value={assignmentMode}
+              onChange={(e) => setAssignmentMode(e.target.value as 'first_come' | 'review')}
+            >
+              <FormControlLabel
+                value="review"
+                control={<Radio sx={{ color: '#7C4DFF', '&.Mui-checked': { color: '#7C4DFF' } }} />}
+                label={
+                  <div>
+                    <div style={{ fontWeight: 500, color: '#1A1A1E' }}>
+                      Review Applications (Recommended)
+                    </div>
+                    <div style={{ fontSize: '14px', color: '#6F7280' }}>
+                      Review all applications and choose the best candidate. Token holders can upvote applications.
+                    </div>
+                  </div>
+                }
+              />
+              <FormControlLabel
+                value="first_come"
+                control={<Radio sx={{ color: '#7C4DFF', '&.Mui-checked': { color: '#7C4DFF' } }} />}
+                label={
+                  <div>
+                    <div style={{ fontWeight: 500, color: '#1A1A1E' }}>
+                      First Come, First Served
+                    </div>
+                    <div style={{ fontSize: '14px', color: '#6F7280' }}>
+                      First person to apply gets the job immediately. Faster but less control.
+                    </div>
+                  </div>
+                }
+              />
+            </RadioGroup>
+          </FormControl>
         )}
 
-        {!checkingPrice && belowMinimum && (
-          <Alert 
-            severity="warning" 
-            icon={<WarningIcon />}
-            sx={{ mb: 3 }}
-          >
-            <strong>Minimum $5 USD required</strong>
-            <br />
-            Current value: ${usdValue?.toFixed(2)} USD
-          </Alert>
-        )}
-
-        {!checkingPrice && priceError && paymentAmount && (
-          <Alert severity="error" sx={{ mb: 3 }}>
-            Unable to fetch token price. Please try again or contact support.
-          </Alert>
-        )}
-
-        {/* Assignment Mode */}
-        <FormControl component="fieldset" sx={{ mb: 3 }}>
-          <FormLabel 
-            component="legend"
-            sx={{ 
-              color: '#1A1A1E',
-              fontWeight: 600,
-              mb: 1
-            }}
-          >
-            Assignment Mode
-          </FormLabel>
-          <RadioGroup
-            value={assignmentMode}
-            onChange={(e) => setAssignmentMode(e.target.value as 'first_come' | 'review')}
-          >
-            <FormControlLabel
-              value="review"
-              control={<Radio sx={{ color: '#7C4DFF', '&.Mui-checked': { color: '#7C4DFF' } }} />}
-              label={
-                <div>
-                  <div style={{ fontWeight: 500, color: '#1A1A1E' }}>
-                    Review Applications (Recommended)
-                  </div>
-                  <div style={{ fontSize: '14px', color: '#6F7280' }}>
-                    Review all applications and choose the best candidate. Token holders can upvote applications.
-                  </div>
-                </div>
-              }
-            />
-            <FormControlLabel
-              value="first_come"
-              control={<Radio sx={{ color: '#7C4DFF', '&.Mui-checked': { color: '#7C4DFF' } }} />}
-              label={
-                <div>
-                  <div style={{ fontWeight: 500, color: '#1A1A1E' }}>
-                    First Come, First Served
-                  </div>
-                  <div style={{ fontSize: '14px', color: '#6F7280' }}>
-                    First person to apply gets the job immediately. Faster but less control.
-                  </div>
-                </div>
-              }
-            />
-          </RadioGroup>
-        </FormControl>
-
-        {/* Desired Completion (Optional) */}
-        {mode === 'create' && (
+        {/* Desired Completion (Optional) - Only for regular jobs */}
+        {mode === 'create' && jobType === 'regular' && (
           <FormControl fullWidth sx={{ mb: 2 }}>
             <InputLabel>Desired Completion (Optional)</InputLabel>
             <Select
@@ -1323,7 +1804,7 @@ export function CreateJobModal({
             onClick={mode === 'edit' ? handleConfirmAndLock : handleReviewAndLock}
             disabled={
               loading || 
-              (mode === 'create' && (checkingPrice || belowMinimum || priceError)) ||
+              (mode === 'create' && jobType === 'regular' && (checkingPrice || belowMinimum || priceError)) ||
               (mode === 'edit' && applicationCount > 0 && !understoodInvalidation)
             }
             variant="contained"
@@ -1349,8 +1830,12 @@ export function CreateJobModal({
                 <CircularProgress size={20} sx={{ mr: 1, color: '#fff' }} />
                 {mode === 'edit' ? 'Updating...' : 'Processing...'}
               </>
+            ) : mode === 'edit' ? (
+              'Update Job'
+            ) : jobType === 'contest' ? (
+              `🏆 Review & Lock ${calculateTotalWithFee().toFixed(2)} ${tokenSymbol}`
             ) : (
-              mode === 'edit' ? 'Update Job' : 'Review & Lock Tokens'
+              'Review & Lock Tokens'
             )}
           </Button>
         </div>

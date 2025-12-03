@@ -26,6 +26,17 @@ export async function createJob(jobData: {
   escrow_tx_signature?: string | null
   escrow_amount_tokens?: number | null
   escrow_token_mint?: string | null
+  // Contest fields
+  is_contest?: boolean
+  contest_max_winners?: number | null
+  contest_winner_prizes?: Array<{
+    position: number
+    amount_tokens: number
+    amount_usd: number
+  }> | null
+  contest_submission_deadline?: string | null
+  contest_winner_selection_deadline?: string | null
+  contest_submissions_visible?: boolean
 }): Promise<Job> {
   const { data, error } = await supabase
     .from('jobs')
