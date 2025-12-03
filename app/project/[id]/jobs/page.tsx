@@ -6,7 +6,14 @@ import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { AppHeader } from '@/components/AppHeader'
 import { CreateJobModal } from '@/components/CreateJobModal'
+import CreateSocialMediaJobModal from '@/components/jobs/CreateSocialMediaJobModal'
 import JobCard from '@/components/JobCard'
+import Dialog from '@mui/material/Dialog'
+import DialogTitle from '@mui/material/DialogTitle'
+import DialogContent from '@mui/material/DialogContent'
+import WorkIcon from '@mui/icons-material/Work'
+import EmojiEventsIcon from '@mui/icons-material/EmojiEvents'
+import CampaignIcon from '@mui/icons-material/Campaign'
 import { supabase } from '@/lib/supabase'
 import { getProjectJobs, getJobsByApplicant } from '@/lib/jobs'
 import { Database } from '@/types/database'
@@ -21,6 +28,7 @@ import WorkOutlineIcon from '@mui/icons-material/WorkOutline'
 import IconButton from '@mui/material/IconButton'
 import Tooltip from '@mui/material/Tooltip'
 import Box from '@mui/material/Box'
+import Typography from '@mui/material/Typography'
 import FormControl from '@mui/material/FormControl'
 import InputLabel from '@mui/material/InputLabel'
 import Select from '@mui/material/Select'
@@ -67,6 +75,8 @@ export default function ProjectJobsPage() {
   const [copiedAddress, setCopiedAddress] = useState<string | null>(null)
   const [myApplicationJobs, setMyApplicationJobs] = useState<JobWithApplicationCount[]>([])
   const [showCreateModal, setShowCreateModal] = useState(false)
+  const [showJobTypeSelector, setShowJobTypeSelector] = useState(false)
+  const [showSocialMediaModal, setShowSocialMediaModal] = useState(false)
   
   // Advanced filter states
   const [statusFilter, setStatusFilter] = useState<string>('all')
@@ -385,7 +395,7 @@ export default function ProjectJobsPage() {
           <Button
             variant="primary"
             size="lg"
-            onClick={() => setShowCreateModal(true)}
+            onClick={() => setShowJobTypeSelector(true)}
             className="shadow-lg"
           >
             Post Work
@@ -572,7 +582,7 @@ export default function ProjectJobsPage() {
                   <Button
                     variant="primary"
                     size="lg"
-                    onClick={() => setShowCreateModal(true)}
+                    onClick={() => setShowJobTypeSelector(true)}
                   >
                     Post Work
                   </Button>
@@ -607,7 +617,194 @@ export default function ProjectJobsPage() {
         </Card>
       </main>
 
-      {/* Create Job Modal */}
+      {/* Job Type Selector Dialog */}
+      <Dialog
+        open={showJobTypeSelector}
+        onClose={() => setShowJobTypeSelector(false)}
+        maxWidth="sm"
+        fullWidth
+        PaperProps={{
+          sx: {
+            borderRadius: '16px',
+            bgcolor: '#FFFFFF'
+          }
+        }}
+      >
+        <DialogTitle 
+          sx={{ 
+            fontFamily: '"Space Grotesk", sans-serif',
+            fontWeight: 700,
+            fontSize: '20px',
+            color: '#1A1A1E',
+            textAlign: 'center',
+            pb: 1
+          }}
+        >
+          What type of work do you want to post?
+        </DialogTitle>
+        <DialogContent sx={{ pt: 2, pb: 3 }}>
+          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+            {/* Regular Job Option */}
+            <Box
+              onClick={() => {
+                setShowJobTypeSelector(false)
+                setShowCreateModal(true)
+              }}
+              sx={{
+                p: 3,
+                border: '1px solid #E5E7F0',
+                borderRadius: '12px',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: 2,
+                transition: 'all 0.2s ease',
+                '&:hover': {
+                  borderColor: '#7C4DFF',
+                  bgcolor: '#F8F5FF',
+                  transform: 'translateY(-2px)',
+                  boxShadow: '0 4px 12px rgba(124, 77, 255, 0.15)'
+                }
+              }}
+            >
+              <Box 
+                sx={{ 
+                  p: 1.5, 
+                  borderRadius: '12px', 
+                  bgcolor: '#EEE7FF',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center'
+                }}
+              >
+                <WorkIcon sx={{ color: '#7C4DFF', fontSize: 28 }} />
+              </Box>
+              <Box>
+                <Typography sx={{ fontWeight: 600, color: '#1A1A1E', fontSize: '16px' }}>
+                  Regular Job
+                </Typography>
+                <Typography variant="body2" sx={{ color: '#6F7280' }}>
+                  Assign to one worker, fixed payment upon completion
+                </Typography>
+              </Box>
+            </Box>
+
+            {/* Contest Job Option */}
+            <Box
+              onClick={() => {
+                setShowJobTypeSelector(false)
+                setShowCreateModal(true)
+              }}
+              sx={{
+                p: 3,
+                border: '1px solid #E5E7F0',
+                borderRadius: '12px',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: 2,
+                transition: 'all 0.2s ease',
+                '&:hover': {
+                  borderColor: '#FFC857',
+                  bgcolor: '#FFFBEB',
+                  transform: 'translateY(-2px)',
+                  boxShadow: '0 4px 12px rgba(255, 200, 87, 0.2)'
+                }
+              }}
+            >
+              <Box 
+                sx={{ 
+                  p: 1.5, 
+                  borderRadius: '12px', 
+                  bgcolor: '#FFF4E6',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center'
+                }}
+              >
+                <EmojiEventsIcon sx={{ color: '#FFC857', fontSize: 28 }} />
+              </Box>
+              <Box>
+                <Typography sx={{ fontWeight: 600, color: '#1A1A1E', fontSize: '16px' }}>
+                  🏆 Contest Job
+                </Typography>
+                <Typography variant="body2" sx={{ color: '#6F7280' }}>
+                  Multiple submissions, select winners with prizes
+                </Typography>
+              </Box>
+            </Box>
+
+            {/* Social Media Campaign Option */}
+            <Box
+              onClick={() => {
+                setShowJobTypeSelector(false)
+                setShowSocialMediaModal(true)
+              }}
+              sx={{
+                p: 3,
+                border: '2px solid #7C4DFF',
+                borderRadius: '12px',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: 2,
+                bgcolor: '#F8F5FF',
+                transition: 'all 0.2s ease',
+                position: 'relative',
+                overflow: 'hidden',
+                '&:hover': {
+                  transform: 'translateY(-2px)',
+                  boxShadow: '0 4px 12px rgba(124, 77, 255, 0.25)'
+                }
+              }}
+            >
+              {/* New badge */}
+              <Box
+                sx={{
+                  position: 'absolute',
+                  top: 8,
+                  right: 8,
+                  bgcolor: '#E3F06F',
+                  color: '#1A1A1E',
+                  fontSize: '10px',
+                  fontWeight: 700,
+                  px: 1,
+                  py: 0.5,
+                  borderRadius: '6px',
+                  textTransform: 'uppercase'
+                }}
+              >
+                New
+              </Box>
+              <Box 
+                sx={{ 
+                  p: 1.5, 
+                  borderRadius: '12px', 
+                  bgcolor: '#7C4DFF',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center'
+                }}
+              >
+                <CampaignIcon sx={{ color: '#FFFFFF', fontSize: 28 }} />
+              </Box>
+              <Box>
+                <Typography sx={{ fontWeight: 600, color: '#1A1A1E', fontSize: '16px' }}>
+                  📣 Social Media Campaign
+                </Typography>
+                <Typography variant="body2" sx={{ color: '#6F7280' }}>
+                  Pay users to retweet or create original content
+                </Typography>
+                <Typography variant="caption" sx={{ color: '#7C4DFF', fontWeight: 500 }}>
+                  Proportional payments based on follower count
+                </Typography>
+              </Box>
+            </Box>
+          </Box>
+        </DialogContent>
+      </Dialog>
+
+      {/* Create Job Modal (Regular & Contest) */}
       {project && publicKey && (
         <CreateJobModal
           isOpen={showCreateModal}
@@ -617,6 +814,23 @@ export default function ProjectJobsPage() {
           tokenSymbol={project.token_symbol}
           walletAddress={publicKey.toString()}
           onJobCreated={() => {
+            // Refresh jobs list
+            fetchData(params.id as string)
+          }}
+        />
+      )}
+
+      {/* Create Social Media Job Modal */}
+      {project && publicKey && (
+        <CreateSocialMediaJobModal
+          open={showSocialMediaModal}
+          onClose={() => setShowSocialMediaModal(false)}
+          projectId={project.id}
+          posterWallet={publicKey.toString()}
+          tokenMint={project.token_mint}
+          tokenSymbol={project.token_symbol}
+          onJobCreated={() => {
+            setShowSocialMediaModal(false)
             // Refresh jobs list
             fetchData(params.id as string)
           }}
