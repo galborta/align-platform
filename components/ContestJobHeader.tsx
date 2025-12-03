@@ -1,6 +1,6 @@
 'use client'
 
-import { Box, Typography, Grid, Paper, LinearProgress } from '@mui/material'
+import { Box, Typography, Grid, Paper, LinearProgress, Alert } from '@mui/material'
 import { Database } from '@/types/database'
 import EmojiEventsIcon from '@mui/icons-material/EmojiEvents'
 import AccessTimeIcon from '@mui/icons-material/AccessTime'
@@ -51,20 +51,75 @@ export default function ContestJobHeader({
   const totalPrizePool = prizeBreakdown.reduce((sum, p) => sum + (p.amount_tokens || 0), 0)
 
   // Contest status
-  const getContestStatus = (): { text: string; color: string } => {
-    if (job.contest_winners_selected_at) return { text: 'Winners Selected', color: 'var(--text-secondary, #6F7280)' }
-    if (timeInfo.expired) return { text: 'Judging', color: 'var(--accent-warning, #FFC857)' }
-    return { text: 'Accepting Submissions', color: 'var(--accent-success, #36C170)' }
+  const getContestStatus = (): { status: string; color: string } => {
+    // Fully completed - prizes distributed
+    if (job.contest_winners_selected_at && job.status === 'completed') {
+      return { status: 'Completed', color: '#9E9E9E' }
+    }
+    // Winners selected but prizes not yet distributed
+    if (job.contest_winners_selected_at) {
+      return { status: 'Winners Selected - Pending Payout', color: '#2196F3' }
+    }
+    // Past submission deadline - judging phase
+    if (timeInfo.expired) {
+      return { status: 'Judging', color: '#FF9800' }
+    }
+    // Still accepting submissions
+    return { status: 'Accepting Submissions', color: '#4CAF50' }
   }
 
-  const status = getContestStatus()
+  const { status, color } = getContestStatus()
 
   return (
     <Box>
+      {/* Winner Announcement Banner */}
+      {job.contest_winners_selected_at && (
+        <Alert 
+          severity="success" 
+          sx={{ 
+            mb: 3,
+            borderRadius: 'var(--radius-card, 16px)',
+            bgcolor: 'rgba(54, 193, 112, 0.08)',
+            '& .MuiAlert-icon': {
+              color: 'var(--accent-success, #36C170)'
+            },
+            '& .MuiAlert-message': {
+              width: '100%'
+            }
+          }}
+        >
+          <Typography 
+            variant="body1" 
+            sx={{ 
+              fontWeight: 600, 
+              mb: 1,
+              fontFamily: 'var(--font-body, Satoshi, sans-serif)',
+              color: 'var(--text-primary, #1A1A1E)'
+            }}
+          >
+            🎉 Winners Announced!
+          </Typography>
+          <Typography 
+            variant="caption"
+            sx={{
+              fontFamily: 'var(--font-body, Satoshi, sans-serif)',
+              color: 'var(--text-secondary, #6F7280)'
+            }}
+          >
+            Selected on {new Date(job.contest_winners_selected_at).toLocaleDateString()}
+            {job.status === 'completed' && job.escrow_tx_signature && (
+              <span style={{ fontFamily: 'var(--font-mono, JetBrains Mono, monospace)' }}>
+                {' '}• Prizes distributed via {job.escrow_tx_signature.slice(0, 20)}...
+              </span>
+            )}
+          </Typography>
+        </Alert>
+      )}
+
       {/* Status Banner */}
       <Box sx={{ 
-        bgcolor: status.color,
-        color: status.text === 'Judging' ? 'var(--text-primary, #1A1A1E)' : 'white',
+        bgcolor: color,
+        color: 'white',
         py: 2,
         px: 3,
         borderRadius: 'var(--radius-card, 16px)',
@@ -84,10 +139,10 @@ export default function ContestJobHeader({
               fontWeight: 600 
             }}
           >
-            {status.text}
+            {status}
           </Typography>
         </Box>
-        {!timeInfo.expired && (
+        {!timeInfo.expired && !job.contest_winners_selected_at && (
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
             <AccessTimeIcon />
             <Typography 

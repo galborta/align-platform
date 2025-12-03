@@ -88,7 +88,11 @@ export function transformToFeedItems(data: RawActivityData): FeedItem[] {
           data: {
             actorWallet: job.assigned_to || job.poster_wallet,
             jobId: job.id,
-            jobTitle: job.title
+            jobTitle: job.title,
+            // Contest-specific completion data
+            isContest: job.is_contest || false,
+            numWinners: job.contest_max_winners,
+            totalPayout: totalPrizePool
           }
         })
       }
@@ -552,6 +556,12 @@ export function transformSubscriptionEvent(event: {
 
       case 'job_completed': {
         const job = event.data
+        // Calculate total prize pool for contests
+        const contestPrizes = Array.isArray(job.contest_winner_prizes)
+          ? (job.contest_winner_prizes as Array<{ position: number; amount_tokens: number; amount_usd: number }>)
+          : []
+        const totalPrizePool = contestPrizes.reduce((sum: number, p: any) => sum + (p.amount_tokens || 0), 0)
+
         items.push({
           id: `job_completed_${job.id}`,
           type: 'job_completed',
@@ -559,7 +569,11 @@ export function transformSubscriptionEvent(event: {
           data: {
             actorWallet: job.assigned_to || job.poster_wallet,
             jobId: job.id,
-            jobTitle: job.title
+            jobTitle: job.title,
+            // Contest-specific completion data
+            isContest: job.is_contest || false,
+            numWinners: job.contest_max_winners,
+            totalPayout: totalPrizePool
           }
         })
         break

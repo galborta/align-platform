@@ -59,20 +59,17 @@ export default function ContestJobCard({
     : []
 
   // Get contest status
-  const getContestStatus = (): 'open' | 'judging' | 'completed' => {
+  const getContestStatus = (): 'open' | 'judging' | 'judging_complete' | 'completed' => {
+    // Check if contest is fully completed (winners selected + prizes distributed)
+    if (job.contest_winners_selected_at && job.status === 'completed') return 'completed'
+    
+    // Check if winners have been selected but prizes not yet distributed
+    if (job.contest_winners_selected_at) return 'judging_complete'
+    
     if (!job.contest_submission_deadline) return 'open'
     
     const now = new Date()
     const submissionDeadline = new Date(job.contest_submission_deadline)
-    const selectionDeadline = job.contest_winner_selection_deadline 
-      ? new Date(job.contest_winner_selection_deadline)
-      : null
-
-    // Check if winners have been selected (job completed)
-    if (job.status === 'completed') return 'completed'
-    
-    // If past selection deadline, still judging
-    if (selectionDeadline && now > selectionDeadline) return 'judging'
     
     // If past submission deadline, in judging phase
     if (now > submissionDeadline) return 'judging'
@@ -84,10 +81,11 @@ export default function ContestJobCard({
   const timeRemaining = getTimeRemaining()
 
   // Status colors following design system
-  const statusColors = {
-    open: { bg: '#36C170', text: '#FFFFFF' },      // accentSuccess
-    judging: { bg: '#FFC857', text: '#1A1A1E' },   // accentWarning
-    completed: { bg: '#6F7280', text: '#FFFFFF' }  // textSecondary (gray)
+  const statusColors: Record<string, { bg: string; text: string }> = {
+    open: { bg: '#4CAF50', text: '#FFFFFF' },           // Green - accepting submissions
+    judging: { bg: '#FF9800', text: '#FFFFFF' },        // Orange - submissions closed, judging
+    judging_complete: { bg: '#2196F3', text: '#FFFFFF' }, // Blue - winners selected, pending payout
+    completed: { bg: '#9E9E9E', text: '#FFFFFF' }       // Gray - fully completed
   }
 
   // Category colors (matching existing job system)
@@ -109,6 +107,8 @@ export default function ContestJobCard({
         border: '2px solid var(--accent-primary, #7C4DFF)',
         boxShadow: 'var(--shadow-card, 0 20px 40px 0 rgba(15, 23, 42, 0.06))',
         bgcolor: 'var(--card-background, #FFFFFF)',
+        position: 'relative',
+        overflow: 'hidden',
         '&:hover': {
           transform: 'translateY(-4px)',
           boxShadow: '0 24px 48px rgba(124, 77, 255, 0.2)',
@@ -116,6 +116,26 @@ export default function ContestJobCard({
       }}
       onClick={() => router.push(`/project/${job.project_id}/jobs/${job.id}`)}
     >
+      {/* Hot Contest Badge */}
+      {submissionCount >= 10 && (
+        <Chip
+          label="🔥 Hot Contest"
+          size="small"
+          sx={{
+            bgcolor: '#FF5722',
+            color: 'white',
+            fontFamily: 'var(--font-body, Satoshi, sans-serif)',
+            fontWeight: 600,
+            fontSize: '11px',
+            position: 'absolute',
+            top: 16,
+            left: 16,
+            zIndex: 1,
+            borderRadius: 'var(--radius-control, 999px)',
+          }}
+        />
+      )}
+
       <CardContent sx={{ p: 'var(--space-lg, 24px)' }}>
         {/* Contest Badge & Status */}
         <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 2 }}>
@@ -133,11 +153,11 @@ export default function ContestJobCard({
             }}
           />
           <Chip
-            label={contestStatus.toUpperCase()}
+            label={contestStatus.toUpperCase().replace('_', ' ')}
             size="small"
             sx={{
-              bgcolor: statusColors[contestStatus].bg,
-              color: statusColors[contestStatus].text,
+              bgcolor: statusColors[contestStatus]?.bg || '#9E9E9E',
+              color: statusColors[contestStatus]?.text || '#FFFFFF',
               fontFamily: 'var(--font-body, Satoshi, sans-serif)',
               fontWeight: 600,
               fontSize: '11px',
@@ -266,20 +286,39 @@ export default function ContestJobCard({
         </Box>
 
         {/* Stats Row */}
-        <Box sx={{ display: 'flex', gap: 3, mb: 2 }}>
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-            <PeopleIcon sx={{ fontSize: 18, color: 'var(--text-secondary, #6F7280)' }} />
+        <Box sx={{ display: 'flex', gap: 2, mb: 2, flexWrap: 'wrap', alignItems: 'center' }}>
+          {/* Submission Count - Enhanced */}
+          <Box sx={{ 
+            display: 'flex', 
+            alignItems: 'center', 
+            gap: 1,
+            bgcolor: submissionCount > 0 ? 'rgba(76, 175, 80, 0.1)' : 'transparent',
+            px: 1.5,
+            py: 0.5,
+            borderRadius: 1,
+            border: submissionCount > 0 ? '1px solid #4CAF50' : 'none'
+          }}>
+            <PeopleIcon sx={{ 
+              fontSize: 20, 
+              color: submissionCount > 0 ? '#4CAF50' : 'var(--text-secondary, #6F7280)' 
+            }} />
             <Typography 
               variant="body2" 
               sx={{ 
-                color: 'var(--text-secondary, #6F7280)',
+                fontWeight: submissionCount > 0 ? 600 : 400,
+                color: submissionCount > 0 ? '#4CAF50' : 'var(--text-secondary, #6F7280)',
                 fontFamily: 'var(--font-body, Satoshi, sans-serif)',
                 fontSize: '14px',
               }}
             >
-              {submissionCount} submission{submissionCount !== 1 ? 's' : ''}
+              {submissionCount === 0 
+                ? 'No submissions yet' 
+                : `${submissionCount} submission${submissionCount !== 1 ? 's' : ''}`
+              }
             </Typography>
           </Box>
+
+          {/* Winners Count */}
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
             <EmojiEventsIcon sx={{ fontSize: 18, color: 'var(--text-secondary, #6F7280)' }} />
             <Typography 
@@ -338,8 +377,8 @@ export default function ContestJobCard({
               mb: 2, 
               p: 1.5, 
               borderRadius: 1.5, 
-              bgcolor: 'rgba(255, 200, 87, 0.15)',
-              border: '1px solid rgba(255, 200, 87, 0.3)'
+              bgcolor: 'rgba(255, 152, 0, 0.15)',
+              border: '1px solid rgba(255, 152, 0, 0.3)'
             }}
           >
             <Typography 
@@ -347,12 +386,38 @@ export default function ContestJobCard({
               sx={{ 
                 fontFamily: 'var(--font-body, Satoshi, sans-serif)',
                 fontWeight: 500, 
-                color: '#B8860B',
+                color: '#E65100',
                 fontSize: '13px',
                 textAlign: 'center'
               }}
             >
               ⏳ Winner selection in progress
+            </Typography>
+          </Box>
+        )}
+
+        {/* Judging Complete Status Message */}
+        {contestStatus === 'judging_complete' && (
+          <Box 
+            sx={{ 
+              mb: 2, 
+              p: 1.5, 
+              borderRadius: 1.5, 
+              bgcolor: 'rgba(33, 150, 243, 0.15)',
+              border: '1px solid rgba(33, 150, 243, 0.3)'
+            }}
+          >
+            <Typography 
+              variant="body2" 
+              sx={{ 
+                fontFamily: 'var(--font-body, Satoshi, sans-serif)',
+                fontWeight: 500, 
+                color: '#1565C0',
+                fontSize: '13px',
+                textAlign: 'center'
+              }}
+            >
+              🏆 Winners selected - Awaiting payout
             </Typography>
           </Box>
         )}
@@ -364,8 +429,8 @@ export default function ContestJobCard({
               mb: 2, 
               p: 1.5, 
               borderRadius: 1.5, 
-              bgcolor: 'var(--accent-success-soft, #E3F8ED)',
-              border: '1px solid var(--accent-success, #36C170)'
+              bgcolor: 'rgba(158, 158, 158, 0.15)',
+              border: '1px solid rgba(158, 158, 158, 0.3)'
             }}
           >
             <Typography 
@@ -373,12 +438,12 @@ export default function ContestJobCard({
               sx={{ 
                 fontFamily: 'var(--font-body, Satoshi, sans-serif)',
                 fontWeight: 500, 
-                color: 'var(--accent-success, #36C170)',
+                color: '#616161',
                 fontSize: '13px',
                 textAlign: 'center'
               }}
             >
-              ✅ Winners selected
+              ✅ Contest complete - Prizes distributed
             </Typography>
           </Box>
         )}

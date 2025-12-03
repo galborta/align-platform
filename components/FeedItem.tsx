@@ -40,6 +40,10 @@ function getIcon(type: ActivityType, isContest?: boolean): React.ReactNode {
   if (type === 'job_posted' && isContest) {
     return <EmojiEventsIcon fontSize="small" />
   }
+  // Special case: contest completed uses trophy icon
+  if (type === 'job_completed' && isContest) {
+    return <EmojiEventsIcon fontSize="small" />
+  }
   
   const iconMap: Record<ActivityType, React.ReactNode> = {
     job_posted: <WorkIcon fontSize="small" />,
@@ -67,6 +71,7 @@ function getIcon(type: ActivityType, isContest?: boolean): React.ReactNode {
  */
 function getIconBgColor(type: ActivityType, isContest?: boolean): string {
   if (type === 'job_posted' && isContest) return '#EEE7FF' // contest purple
+  if (type === 'job_completed' && isContest) return '#FFF8E1' // contest gold/yellow
   if (type === 'submission_comment') return '#EEE7FF' // contest purple for submission comments
   if (type.startsWith('job_')) return '#F3E5F5' // purple tint
   if (type.startsWith('asset_')) return '#E3F2FD' // blue tint
@@ -78,7 +83,8 @@ function getIconBgColor(type: ActivityType, isContest?: boolean): string {
 /**
  * Get icon color based on activity category
  */
-function getIconColor(type: ActivityType): string {
+function getIconColor(type: ActivityType, isContest?: boolean): string {
+  if (type === 'job_completed' && isContest) return '#FFD700' // contest gold
   if (type === 'submission_comment') return '#7C4DFF' // contest purple for submission comments
   if (type.startsWith('job_')) return '#7C4DFF'
   if (type.startsWith('asset_')) return '#2196F3'
@@ -216,6 +222,18 @@ function getActivityContent(item: FeedItemType, projectId: string, tokenMint?: s
         </>
       )
     case 'job_completed':
+      // Contest completion has different display
+      if (data.isContest) {
+        return (
+          <>
+            {'🏆 Contest '}
+            <span className="feed-item-link">{data.jobTitle}</span>
+            {' winners announced'}
+            {data.numWinners && ` - ${data.numWinners} winner${data.numWinners !== 1 ? 's' : ''} selected`}
+          </>
+        )
+      }
+      // Regular job completion
       return (
         <>
           <span className="feed-item-link">{data.jobTitle}</span>
@@ -506,8 +524,8 @@ export const FeedItem = memo(function FeedItem({
   isMobile = false 
 }: FeedItemProps) {
   const router = useRouter()
-  const isContest = item.type === 'job_posted' && item.data?.isContest
-  const iconColor = getIconColor(item.type)
+  const isContest = (item.type === 'job_posted' || item.type === 'job_completed') && item.data?.isContest
+  const iconColor = getIconColor(item.type, isContest)
   const iconBgColor = getIconBgColor(item.type, isContest)
   
   // Context menu state for long-press
@@ -725,7 +743,7 @@ export const FeedItem = memo(function FeedItem({
           {formatRelativeTime(item.timestamp)}
         </Typography>
 
-        {/* Contest Info Box */}
+        {/* Contest Info Box - For new contests */}
         {item.type === 'job_posted' && item.data?.isContest && (
           <Box sx={{ 
             bgcolor: 'rgba(124, 77, 255, 0.1)', 
@@ -759,6 +777,42 @@ export const FeedItem = memo(function FeedItem({
                 <> • Deadline: {new Date(item.data.contestSubmissionDeadline).toLocaleDateString()}</>
               )}
             </Typography>
+          </Box>
+        )}
+
+        {/* Contest Completion Info Box - For completed contests */}
+        {item.type === 'job_completed' && item.data?.isContest && (
+          <Box sx={{ 
+            bgcolor: 'rgba(255, 215, 0, 0.1)', 
+            borderLeft: '3px solid #FFD700',
+            p: { xs: 1, md: 1.5 }, 
+            mt: 1,
+            borderRadius: 1 
+          }}>
+            <Typography 
+              variant="body2" 
+              sx={{ 
+                fontWeight: 600, 
+                color: '#B8860B', 
+                mb: 0.5,
+                fontSize: { xs: '0.75rem', md: '0.8125rem' },
+                fontFamily: 'var(--font-body)'
+              }}
+            >
+              🏆 {item.data.numWinners || 1} Winner{(item.data.numWinners || 1) !== 1 ? 's' : ''} Selected
+            </Typography>
+            {item.data.totalPayout && item.data.totalPayout > 0 && (
+              <Typography 
+                variant="caption" 
+                sx={{ 
+                  color: 'text.secondary',
+                  fontSize: { xs: 10, md: 11 },
+                  fontFamily: 'var(--font-body)'
+                }}
+              >
+                Total distributed: {item.data.totalPayout.toLocaleString()} tokens
+              </Typography>
+            )}
           </Box>
         )}
       </Box>

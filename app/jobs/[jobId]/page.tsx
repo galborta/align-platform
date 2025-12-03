@@ -18,11 +18,19 @@ import {
 import ArrowBackIcon from '@mui/icons-material/ArrowBack'
 import ContentCopyIcon from '@mui/icons-material/ContentCopy'
 import LockIcon from '@mui/icons-material/Lock'
+import EmojiEventsIcon from '@mui/icons-material/EmojiEvents'
+import CheckCircleIcon from '@mui/icons-material/CheckCircle'
 import { useWallet } from '@solana/wallet-adapter-react'
 import { fetchJobById, JobWithDetails } from '@/lib/jobs'
 import { supabase } from '@/lib/supabase'
+import { Database } from '@/types/database'
 import ContestJobHeader from '@/components/ContestJobHeader'
 import ContestSubmissionModal from '@/components/ContestSubmissionModal'
+import WinnerSelectionModal from '@/components/WinnerSelectionModal'
+import ContestPayoutModal from '@/components/ContestPayoutModal'
+import { toast } from 'react-hot-toast'
+
+type JobSubmission = Database['public']['Tables']['job_submissions']['Row']
 
 export default function JobDetailPage() {
   const params = useParams()
@@ -39,6 +47,14 @@ export default function JobDetailPage() {
   const [hasSubmitted, setHasSubmitted] = useState(false)
   const [checkingEligibility, setCheckingEligibility] = useState(true)
 
+  // Winner selection and payout state
+  const [winnerSelectionOpen, setWinnerSelectionOpen] = useState(false)
+  const [payoutModalOpen, setPayoutModalOpen] = useState(false)
+  const [selectedWinners, setSelectedWinners] = useState<JobSubmission[]>([])
+
+  // Check if user is the poster
+  const isPoster = publicKey?.toString() === job?.poster_wallet
+
   useEffect(() => {
     if (jobId) {
       loadJob()
@@ -51,6 +67,14 @@ export default function JobDetailPage() {
       checkSubmissionEligibility()
     }
   }, [job?.id, publicKey])
+
+  // Load winners if already selected
+  useEffect(() => {
+    if (job?.contest_winners_selected_at && job.job_submissions) {
+      const winners = job.job_submissions.filter(s => s.is_selected_winner)
+      setSelectedWinners(winners)
+    }
+  }, [job?.contest_winners_selected_at, job?.job_submissions])
 
   const loadJob = async () => {
     try {
@@ -89,6 +113,24 @@ export default function JobDetailPage() {
     } finally {
       setCheckingEligibility(false)
     }
+  }
+
+  // Check if contest can select winners
+  const canSelectWinners = (): boolean => {
+    if (!isPoster) return false
+    if (!job?.is_contest) return false
+    if (job.contest_winners_selected_at) return false // Already selected
+    if (!job.job_submissions || job.job_submissions.length === 0) return false
+    
+    // Optionally: require submission deadline to have passed
+    if (job.contest_submission_deadline) {
+      const deadline = new Date(job.contest_submission_deadline)
+      if (new Date() < deadline) {
+        return false // Still accepting submissions
+      }
+    }
+    
+    return true
   }
 
   // Determine if user can submit to contest
@@ -213,6 +255,118 @@ export default function JobDetailPage() {
           submissionCount={job.submissionCount || 0}
           tokenSymbol={tokenSymbol}
         />
+      )}
+
+      {/* Poster Contest Actions (Winner Selection & Payout) */}
+      {job.is_contest && isPoster && (
+        <Box sx={{ mb: 3 }}>
+          {!job.contest_winners_selected_at ? (
+            canSelectWinners() ? (
+              <Button
+                fullWidth
+                variant="contained"
+                size="large"
+                onClick={() => setWinnerSelectionOpen(true)}
+                sx={{
+                  bgcolor: 'var(--accent-gold, #FFD700)',
+                  color: 'var(--text-primary, #1A1A1E)',
+                  fontFamily: 'var(--font-body, Satoshi, sans-serif)',
+                  borderRadius: 'var(--radius-control, 999px)',
+                  boxShadow: 'var(--shadow-chip, 0 8px 20px 0 rgba(15, 23, 42, 0.08))',
+                  '&:hover': { 
+                    bgcolor: '#FFC700',
+                    boxShadow: 'var(--shadow-card, 0 20px 40px 0 rgba(15, 23, 42, 0.06))'
+                  },
+                  py: 1.5,
+                  fontSize: '1.1rem',
+                  fontWeight: 600,
+                  textTransform: 'none'
+                }}
+                startIcon={<EmojiEventsIcon />}
+              >
+                Select Contest Winners
+              </Button>
+            ) : (
+              <Alert 
+                severity="info"
+                sx={{
+                  borderRadius: 'var(--radius-card-lg, 24px)',
+                  '& .MuiAlert-message': {
+                    fontFamily: 'var(--font-body, Satoshi, sans-serif)'
+                  }
+                }}
+              >
+                {!job.job_submissions || job.job_submissions.length === 0 
+                  ? 'Waiting for submissions before selecting winners'
+                  : job.contest_submission_deadline && new Date() < new Date(job.contest_submission_deadline)
+                  ? 'Winner selection will be available after the submission deadline'
+                  : 'Not enough submissions to select winners'
+                }
+              </Alert>
+            )
+          ) : job.status !== 'completed' ? (
+            <Button
+              fullWidth
+              variant="contained"
+              size="large"
+              onClick={() => setPayoutModalOpen(true)}
+              sx={{
+                bgcolor: 'var(--accent-success, #36C170)',
+                fontFamily: 'var(--font-body, Satoshi, sans-serif)',
+                borderRadius: 'var(--radius-control, 999px)',
+                boxShadow: 'var(--shadow-chip, 0 8px 20px 0 rgba(15, 23, 42, 0.08))',
+                '&:hover': { 
+                  bgcolor: '#2EA85C',
+                  boxShadow: 'var(--shadow-card, 0 20px 40px 0 rgba(15, 23, 42, 0.06))'
+                },
+                py: 1.5,
+                fontSize: '1.1rem',
+                fontWeight: 600,
+                textTransform: 'none'
+              }}
+              startIcon={<CheckCircleIcon />}
+            >
+              💰 Distribute Prizes ({selectedWinners.length} winners)
+            </Button>
+          ) : (
+            <Alert 
+              severity="success" 
+              icon={<CheckCircleIcon />}
+              sx={{
+                borderRadius: 'var(--radius-card-lg, 24px)',
+                bgcolor: 'rgba(54, 193, 112, 0.08)',
+                '& .MuiAlert-message': {
+                  fontFamily: 'var(--font-body, Satoshi, sans-serif)'
+                },
+                '& .MuiAlert-icon': {
+                  color: 'var(--accent-success, #36C170)'
+                }
+              }}
+            >
+              <Typography 
+                variant="body2" 
+                sx={{ 
+                  fontWeight: 600,
+                  fontFamily: 'var(--font-body, Satoshi, sans-serif)'
+                }}
+              >
+                Contest Complete! Prizes have been distributed.
+              </Typography>
+              {job.escrow_tx_signature && (
+                <Typography 
+                  variant="caption"
+                  sx={{ 
+                    fontFamily: 'var(--font-mono, JetBrains Mono, monospace)',
+                    display: 'block',
+                    mt: 0.5
+                  }}
+                >
+                  Transaction: {job.escrow_tx_signature.slice(0, 20)}...
+                </Typography>
+              )}
+            </Alert>
+          )}
+        </Box>
       )}
 
       {/* Contest Submit Button */}
@@ -643,6 +797,37 @@ export default function JobDetailPage() {
             loadJob()
           }}
         />
+      )}
+
+      {/* Winner Selection and Payout Modals (Poster Only) */}
+      {job.is_contest && isPoster && job.job_submissions && (
+        <>
+          <WinnerSelectionModal
+            open={winnerSelectionOpen}
+            onClose={() => setWinnerSelectionOpen(false)}
+            job={job}
+            submissions={job.job_submissions}
+            onWinnersSelected={() => {
+              // Reload job and submissions to get updated winner data
+              loadJob()
+              setWinnerSelectionOpen(false)
+              // Show payout modal after brief delay for data refresh
+              setTimeout(() => setPayoutModalOpen(true), 500)
+            }}
+          />
+
+          <ContestPayoutModal
+            open={payoutModalOpen}
+            onClose={() => setPayoutModalOpen(false)}
+            job={job}
+            winners={selectedWinners}
+            onPayoutComplete={() => {
+              // Reload everything to show completed state
+              loadJob()
+              toast.success('Contest completed successfully! 🎉')
+            }}
+          />
+        </>
       )}
     </Container>
   )

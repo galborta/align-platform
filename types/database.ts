@@ -320,6 +320,8 @@ export interface Database {
           // Contest Voting Tracking
           contest_votes_cast_count: number
           contest_votes_won_count: number
+          /** Number of contest wins (any position 1st through 10th) */
+          contest_wins_count: number
           created_at: string
           updated_at: string
         }
@@ -350,6 +352,7 @@ export interface Database {
           // Contest Voting Tracking
           contest_votes_cast_count?: number
           contest_votes_won_count?: number
+          contest_wins_count?: number
           created_at?: string
           updated_at?: string
         }
@@ -380,6 +383,7 @@ export interface Database {
           // Contest Voting Tracking
           contest_votes_cast_count?: number
           contest_votes_won_count?: number
+          contest_wins_count?: number
           created_at?: string
           updated_at?: string
         }
