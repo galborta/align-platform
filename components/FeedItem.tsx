@@ -50,6 +50,7 @@ function getIcon(type: ActivityType, isContest?: boolean): React.ReactNode {
     job_completed: <CelebrationIcon fontSize="small" />,
     job_disputed: <GavelIcon fontSize="small" />,
     job_comment: <CommentIcon fontSize="small" />,
+    submission_comment: <CommentIcon fontSize="small" />,
     asset_submitted: <AddBoxIcon fontSize="small" />,
     asset_upvoted: <ThumbUpIcon fontSize="small" />,
     asset_backed: <StarIcon fontSize="small" />,
@@ -66,6 +67,7 @@ function getIcon(type: ActivityType, isContest?: boolean): React.ReactNode {
  */
 function getIconBgColor(type: ActivityType, isContest?: boolean): string {
   if (type === 'job_posted' && isContest) return '#EEE7FF' // contest purple
+  if (type === 'submission_comment') return '#EEE7FF' // contest purple for submission comments
   if (type.startsWith('job_')) return '#F3E5F5' // purple tint
   if (type.startsWith('asset_')) return '#E3F2FD' // blue tint
   if (type === 'tip_sent') return '#F9FBE7' // lime tint
@@ -77,6 +79,7 @@ function getIconBgColor(type: ActivityType, isContest?: boolean): string {
  * Get icon color based on activity category
  */
 function getIconColor(type: ActivityType): string {
+  if (type === 'submission_comment') return '#7C4DFF' // contest purple for submission comments
   if (type.startsWith('job_')) return '#7C4DFF'
   if (type.startsWith('asset_')) return '#2196F3'
   if (type === 'tip_sent') return '#CDDC39'
@@ -266,6 +269,40 @@ function getActivityContent(item: FeedItemType, projectId: string, tokenMint?: s
           />
           {' commented on '}
           <span className="feed-item-link">{data.jobTitle}</span>
+        </>
+      )
+    case 'submission_comment':
+      if (batchedCount && batchedCount > 1) {
+        return (
+          <>
+            <span 
+              className="batched-count" 
+              style={{ 
+                textDecoration: 'underline',
+                cursor: 'pointer',
+                fontWeight: 600,
+                color: '#7C4DFF'
+              }}
+            >
+              {batchedCount} comments
+            </span>
+            {' on a contest entry in '}
+            <span className="feed-item-link">{data.job_title || 'Contest'}</span>
+          </>
+        )
+      }
+      return (
+        <>
+          <WalletAddressWithButtons 
+            address={data.actorWallet}
+            showMessage
+            showTip
+            compact
+            projectId={projectId}
+            tokenMint={tokenMint}
+          />
+          {' commented on a contest entry in '}
+          <span className="feed-item-link">{data.job_title || 'Contest'}</span>
         </>
       )
     case 'asset_submitted':

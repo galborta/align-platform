@@ -12,28 +12,45 @@ import {
   CircularProgress,
   Divider,
   IconButton,
-  Tooltip
+  Tooltip,
+  Alert
 } from '@mui/material'
 import ArrowBackIcon from '@mui/icons-material/ArrowBack'
 import ContentCopyIcon from '@mui/icons-material/ContentCopy'
 import LockIcon from '@mui/icons-material/Lock'
+import { useWallet } from '@solana/wallet-adapter-react'
 import { fetchJobById, JobWithDetails } from '@/lib/jobs'
+import { supabase } from '@/lib/supabase'
 import ContestJobHeader from '@/components/ContestJobHeader'
+import ContestSubmissionModal from '@/components/ContestSubmissionModal'
 
 export default function JobDetailPage() {
   const params = useParams()
   const router = useRouter()
+  const { publicKey } = useWallet()
   const jobId = params.jobId as string
 
   const [job, setJob] = useState<JobWithDetails | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  
+  // Contest submission state
+  const [submissionModalOpen, setSubmissionModalOpen] = useState(false)
+  const [hasSubmitted, setHasSubmitted] = useState(false)
+  const [checkingEligibility, setCheckingEligibility] = useState(true)
 
   useEffect(() => {
     if (jobId) {
       loadJob()
     }
   }, [jobId])
+
+  // Check if user already submitted to this contest
+  useEffect(() => {
+    if (job) {
+      checkSubmissionEligibility()
+    }
+  }, [job?.id, publicKey])
 
   const loadJob = async () => {
     try {
@@ -51,6 +68,56 @@ export default function JobDetailPage() {
       setLoading(false)
     }
   }
+
+  const checkSubmissionEligibility = async () => {
+    if (!publicKey || !job?.is_contest) {
+      setCheckingEligibility(false)
+      return
+    }
+
+    try {
+      const { data } = await supabase
+        .from('job_submissions')
+        .select('id')
+        .eq('job_id', job.id)
+        .eq('worker_wallet', publicKey.toString())
+        .maybeSingle()
+
+      setHasSubmitted(!!data)
+    } catch (err) {
+      console.error('Error checking submission:', err)
+    } finally {
+      setCheckingEligibility(false)
+    }
+  }
+
+  // Determine if user can submit to contest
+  const canSubmit = (): { allowed: boolean; reason: string } => {
+    if (!publicKey) return { allowed: false, reason: 'Connect wallet to submit' }
+    if (!job?.is_contest) return { allowed: false, reason: 'Not a contest' }
+    if (hasSubmitted) return { allowed: false, reason: 'You have already submitted to this contest' }
+    
+    if (job.poster_wallet === publicKey.toString()) {
+      return { allowed: false, reason: 'You cannot submit to your own contest' }
+    }
+
+    if (!job.contest_submission_deadline) {
+      return { allowed: false, reason: 'No deadline set' }
+    }
+
+    const deadline = new Date(job.contest_submission_deadline)
+    if (new Date() > deadline) {
+      return { allowed: false, reason: 'Submission deadline has passed' }
+    }
+
+    if (job.status !== 'open') {
+      return { allowed: false, reason: 'This contest is no longer accepting submissions' }
+    }
+
+    return { allowed: true, reason: '' }
+  }
+
+  const eligibility = canSubmit()
 
   // Status colors following design system
   const statusColors: Record<string, { bg: string; text: string }> = {
@@ -146,6 +213,73 @@ export default function JobDetailPage() {
           submissionCount={job.submissionCount || 0}
           tokenSymbol={tokenSymbol}
         />
+      )}
+
+      {/* Contest Submit Button */}
+      {job.is_contest && (
+        <Box sx={{ mb: 3 }}>
+          {checkingEligibility ? (
+            <Button
+              fullWidth
+              variant="contained"
+              disabled
+              sx={{ 
+                bgcolor: 'var(--accent-primary, #7C4DFF)', 
+                py: 1.5,
+                borderRadius: 'var(--radius-control, 999px)'
+              }}
+            >
+              <CircularProgress size={24} sx={{ color: 'white' }} />
+            </Button>
+          ) : eligibility.allowed ? (
+            <Button
+              fullWidth
+              variant="contained"
+              size="large"
+              onClick={() => setSubmissionModalOpen(true)}
+              sx={{
+                bgcolor: 'var(--accent-primary, #7C4DFF)',
+                fontFamily: 'var(--font-body, Satoshi, sans-serif)',
+                borderRadius: 'var(--radius-control, 999px)',
+                boxShadow: 'var(--shadow-chip, 0 8px 20px 0 rgba(15, 23, 42, 0.08))',
+                '&:hover': { 
+                  bgcolor: '#6B3FEE',
+                  boxShadow: 'var(--shadow-card, 0 20px 40px 0 rgba(15, 23, 42, 0.06))'
+                },
+                py: 1.5,
+                fontSize: '1.1rem',
+                fontWeight: 600,
+                textTransform: 'none'
+              }}
+            >
+              🏆 Submit Your Entry
+            </Button>
+          ) : (
+            <Alert 
+              severity={hasSubmitted ? 'success' : 'warning'}
+              sx={{
+                borderRadius: 'var(--radius-card-lg, 24px)',
+                '& .MuiAlert-message': {
+                  fontFamily: 'var(--font-body, Satoshi, sans-serif)'
+                }
+              }}
+            >
+              {eligibility.reason}
+              {hasSubmitted && (
+                <Typography 
+                  variant="caption" 
+                  sx={{ 
+                    display: 'block', 
+                    mt: 1,
+                    fontFamily: 'var(--font-body, Satoshi, sans-serif)'
+                  }}
+                >
+                  You can view your submission in the gallery below
+                </Typography>
+              )}
+            </Alert>
+          )}
+        </Box>
       )}
 
       {/* Main Content */}
@@ -494,6 +628,21 @@ export default function JobDetailPage() {
             )}
           </Box>
         </Paper>
+      )}
+
+      {/* Contest Submission Modal */}
+      {job.is_contest && publicKey && (
+        <ContestSubmissionModal
+          open={submissionModalOpen}
+          onClose={() => setSubmissionModalOpen(false)}
+          job={job}
+          userWallet={publicKey.toString()}
+          onSubmissionSuccess={() => {
+            setHasSubmitted(true)
+            // Refresh job data to update submissions gallery
+            loadJob()
+          }}
+        />
       )}
     </Container>
   )

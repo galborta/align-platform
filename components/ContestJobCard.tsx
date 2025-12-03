@@ -161,21 +161,25 @@ export default function ContestJobCard({
           {job.title}
         </Typography>
 
-        {/* Project Name */}
-        {projectName && (
-          <Typography 
-            variant="caption" 
-            sx={{ 
-              color: 'var(--text-secondary, #6F7280)', 
-              mb: 2, 
-              display: 'block',
-              fontFamily: 'var(--font-body, Satoshi, sans-serif)',
-              fontSize: 'var(--text-caption, 12px)',
-            }}
-          >
-            by {projectName}
-          </Typography>
-        )}
+        {/* Posted By */}
+        <Typography 
+          variant="caption" 
+          sx={{ 
+            color: 'var(--text-secondary, #6F7280)', 
+            mb: 2, 
+            display: 'block',
+            fontFamily: 'var(--font-body, Satoshi, sans-serif)',
+            fontSize: 'var(--text-caption, 12px)',
+          }}
+        >
+          by{' '}
+          <span style={{ fontFamily: 'var(--font-mono, JetBrains Mono, monospace)' }}>
+            {job.poster_wallet.slice(0, 4)}...{job.poster_wallet.slice(-4)}
+          </span>
+          {projectName && (
+            <span style={{ color: 'var(--text-muted, #A3A7B5)' }}> • {projectName}</span>
+          )}
+        </Typography>
 
         {/* Description Preview */}
         <Typography 

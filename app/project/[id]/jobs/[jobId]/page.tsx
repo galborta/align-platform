@@ -13,6 +13,9 @@ import { SupporterBadge } from '@/components/SupporterBadge'
 import { SupporterBadgeFetcher } from '@/components/SupporterBadgeFetcher'
 import JobComments from '@/components/JobComments'
 import TipModal from '@/components/TipModal'
+import ContestJobHeader from '@/components/ContestJobHeader'
+import ContestSubmissionModal from '@/components/ContestSubmissionModal'
+import ContestSubmissionGallery from '@/components/ContestSubmissionGallery'
 import { supabase } from '@/lib/supabase'
 import { getJobById } from '@/lib/jobs'
 import { upvoteApplication, getApplicationVotes, hasUserVoted } from '@/lib/job-upvoting'
@@ -169,6 +172,12 @@ export default function JobDetailPage() {
   const [applicationVotes, setApplicationVotes] = useState<Record<string, { totalWeight: number; voterCount: number; hasVoted: boolean }>>({})
   const [upvoting, setUpvoting] = useState<string | null>(null)
   const [sortBy, setSortBy] = useState<'votes' | 'karma' | 'recent'>('votes')
+  
+  // Contest-specific state
+  const [contestSubmissionModalOpen, setContestSubmissionModalOpen] = useState(false)
+  const [hasSubmittedToContest, setHasSubmittedToContest] = useState(false)
+  const [contestSubmissionCount, setContestSubmissionCount] = useState(0)
+  const [checkingContestEligibility, setCheckingContestEligibility] = useState(true)
 
   useEffect(() => {
     if (params.jobId && params.id) {
@@ -181,6 +190,44 @@ export default function JobDetailPage() {
       fetchUserStats()
     }
   }, [publicKey, project])
+
+  // Check contest eligibility and fetch submission count
+  useEffect(() => {
+    const checkContestEligibility = async () => {
+      if (!job?.is_contest) {
+        setCheckingContestEligibility(false)
+        return
+      }
+
+      try {
+        // Get submission count
+        const { count: submissionCount } = await supabase
+          .from('job_submissions')
+          .select('*', { count: 'exact', head: true })
+          .eq('job_id', job.id)
+        
+        setContestSubmissionCount(submissionCount || 0)
+
+        // Check if user has already submitted
+        if (publicKey) {
+          const { data: existingSubmission } = await supabase
+            .from('job_submissions')
+            .select('id')
+            .eq('job_id', job.id)
+            .eq('worker_wallet', publicKey.toString())
+            .maybeSingle()
+
+          setHasSubmittedToContest(!!existingSubmission)
+        }
+      } catch (err) {
+        console.error('Error checking contest eligibility:', err)
+      } finally {
+        setCheckingContestEligibility(false)
+      }
+    }
+
+    checkContestEligibility()
+  }, [job?.id, job?.is_contest, publicKey])
 
   const fetchJobData = async () => {
     try {
@@ -1101,6 +1148,89 @@ export default function JobDetailPage() {
           <ArrowBackIcon sx={{ fontSize: 18, mr: 1 }} />
           Jobs
         </Button>
+
+        {/* Contest Header (if contest job) */}
+        {job.is_contest && (
+          <ContestJobHeader 
+            job={job} 
+            submissionCount={contestSubmissionCount}
+            tokenSymbol={project.token_symbol}
+          />
+        )}
+
+        {/* Contest Submit Button */}
+        {job.is_contest && (
+          <Box sx={{ mb: 3 }}>
+            {checkingContestEligibility ? (
+              <Button
+                variant="primary"
+                disabled
+                className="w-full py-3"
+              >
+                <CircularProgress size={24} sx={{ color: 'white' }} />
+              </Button>
+            ) : (() => {
+              // Check eligibility
+              const canSubmitToContest = publicKey && 
+                !hasSubmittedToContest && 
+                job.poster_wallet !== publicKey.toString() &&
+                job.contest_submission_deadline &&
+                new Date() < new Date(job.contest_submission_deadline) &&
+                job.status === 'open'
+              
+              if (canSubmitToContest) {
+                return (
+                  <Button
+                    variant="primary"
+                    onClick={() => setContestSubmissionModalOpen(true)}
+                    className="w-full py-3"
+                    style={{
+                      background: 'var(--accent-primary, #7C4DFF)',
+                      fontSize: '1.1rem',
+                      fontWeight: 600
+                    }}
+                  >
+                    🏆 Submit Your Entry
+                  </Button>
+                )
+              } else {
+                // Show reason why can't submit
+                let reason = ''
+                if (!publicKey) reason = 'Connect wallet to submit'
+                else if (hasSubmittedToContest) reason = 'You have already submitted to this contest'
+                else if (job.poster_wallet === publicKey.toString()) reason = 'You cannot submit to your own contest'
+                else if (!job.contest_submission_deadline || new Date() > new Date(job.contest_submission_deadline)) reason = 'Submission deadline has passed'
+                else if (job.status !== 'open') reason = 'This contest is no longer accepting submissions'
+
+                return (
+                  <Alert 
+                    severity={hasSubmittedToContest ? 'success' : 'warning'}
+                    sx={{
+                      borderRadius: '16px',
+                      '& .MuiAlert-message': {
+                        fontFamily: 'var(--font-body, Satoshi, sans-serif)'
+                      }
+                    }}
+                  >
+                    {reason}
+                    {hasSubmittedToContest && (
+                      <Typography 
+                        variant="caption" 
+                        sx={{ 
+                          display: 'block', 
+                          mt: 1,
+                          fontFamily: 'var(--font-body, Satoshi, sans-serif)'
+                        }}
+                      >
+                        You can view your submission in the gallery below
+                      </Typography>
+                    )}
+                  </Alert>
+                )
+              }
+            })()}
+          </Box>
+        )}
 
         {/* Completion Success UI */}
         {job.status === 'completed' && job.completed_at && (
@@ -2285,46 +2415,49 @@ export default function JobDetailPage() {
             )}
 
             {/* 2. Payment Card */}
-            <Card 
-              className="border-4"
-              style={{ borderColor: '#E3F06F' }}
-            >
-              <CardContent className="p-6">
-                <h3 
-                  className="text-sm font-semibold uppercase tracking-wide mb-4"
-                  style={{ color: '#6F7280' }}
-                >
-                  Payment
-                </h3>
-                
-                <div className="mb-2">
-                  <div 
-                    className="text-3xl font-bold mb-1"
-                    style={{ color: '#7C4DFF' }}
-                  >
-                    {job.payment_amount_tokens.toLocaleString()} {project.token_symbol}
-                  </div>
-                  <div 
-                    className="text-lg"
+            {!job.is_contest && (
+              <Card 
+                className="border-4"
+                style={{ borderColor: '#E3F06F' }}
+              >
+                <CardContent className="p-6">
+                  <h3 
+                    className="text-sm font-semibold uppercase tracking-wide mb-4"
                     style={{ color: '#6F7280' }}
                   >
-                    (${job.payment_amount_usd.toLocaleString()} USD at posting)
+                    Payment
+                  </h3>
+                  
+                  <div className="mb-2">
+                    <div 
+                      className="text-3xl font-bold mb-1"
+                      style={{ color: '#7C4DFF' }}
+                    >
+                      {job.payment_amount_tokens.toLocaleString()} {project.token_symbol}
+                    </div>
+                    <div 
+                      className="text-lg"
+                      style={{ color: '#6F7280' }}
+                    >
+                      (${job.payment_amount_usd.toLocaleString()} USD at posting)
+                    </div>
                   </div>
-                </div>
 
-                <div 
-                  className="flex items-start gap-2 mt-4 p-3 rounded-lg"
-                  style={{ backgroundColor: '#FFF4E6' }}
-                >
-                  <LockIcon sx={{ fontSize: 18, color: '#FB923C', mt: '2px' }} />
-                  <div className="text-sm" style={{ color: '#1A1A1E' }}>
-                    <strong>Note:</strong> Locked in escrow — released on completion
+                  <div 
+                    className="flex items-start gap-2 mt-4 p-3 rounded-lg"
+                    style={{ backgroundColor: '#FFF4E6' }}
+                  >
+                    <LockIcon sx={{ fontSize: 18, color: '#FB923C', mt: '2px' }} />
+                    <div className="text-sm" style={{ color: '#1A1A1E' }}>
+                      <strong>Note:</strong> Locked in escrow — released on completion
+                    </div>
                   </div>
-                </div>
-              </CardContent>
-            </Card>
+                </CardContent>
+              </Card>
+            )}
 
-            {/* 4. Actions Section */}
+            {/* 4. Actions Section - Hidden for contests */}
+            {!job.is_contest && (
             <Card>
               <CardContent className="p-6">
                 <h3 
@@ -2492,10 +2625,12 @@ export default function JobDetailPage() {
                 )}
               </CardContent>
             </Card>
+            )}
           </div>
         </div>
 
-        {/* 5. Applications Section */}
+        {/* 5. Applications Section (Regular Jobs Only) */}
+        {!job.is_contest && (
         <Card className="mt-6">
           <CardContent className="p-6">
             {/* Header - changes based on status */}
@@ -2893,6 +3028,22 @@ export default function JobDetailPage() {
             )}
           </CardContent>
         </Card>
+        )}
+
+        {/* 5b. Contest Entries Section (Contests Only) */}
+        {job.is_contest && (
+          <Card className="mt-6">
+            <CardContent className="p-6">
+              <ContestSubmissionGallery
+                jobId={job.id}
+                isVisible={job.contest_submissions_visible ?? true}
+                isPoster={isPoster}
+                userWallet={publicKey?.toString()}
+                tokenSymbol={project.token_symbol}
+              />
+            </CardContent>
+          </Card>
+        )}
 
         {/* Job Discussion Thread */}
         <Card className="mt-6">
@@ -2900,6 +3051,7 @@ export default function JobDetailPage() {
             <JobComments jobId={job.id} projectId={params.id as string} />
           </CardContent>
         </Card>
+
       </main>
 
       {/* Assignment Confirmation Dialog */}
@@ -3470,6 +3622,21 @@ export default function JobDetailPage() {
           recipientWallet={tipRecipient}
           projectId={project.id}
           tokenMint={project.token_mint}
+        />
+      )}
+
+      {/* Contest Submission Modal */}
+      {job.is_contest && publicKey && (
+        <ContestSubmissionModal
+          open={contestSubmissionModalOpen}
+          onClose={() => setContestSubmissionModalOpen(false)}
+          job={job}
+          userWallet={publicKey.toString()}
+          onSubmissionSuccess={() => {
+            setHasSubmittedToContest(true)
+            setContestSubmissionCount(prev => prev + 1)
+            fetchJobData()
+          }}
         />
       )}
     </div>

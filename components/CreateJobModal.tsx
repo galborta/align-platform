@@ -941,8 +941,8 @@ export function CreateJobModal({
             </Box>
           </Paper>
 
-          {/* Escrow Breakdown */}
-          {escrowBreakdown && (
+          {/* Escrow Breakdown - Regular Jobs Only */}
+          {escrowBreakdown && jobType === 'regular' && (
             <Paper 
               elevation={0}
               sx={{ 
@@ -995,6 +995,66 @@ export function CreateJobModal({
                 {usdValue && (
                   <Typography sx={{ textAlign: 'right', color: '#6F7280', fontSize: '12px', mt: 0.5 }}>
                     ≈ ${(usdValue * (1 + feePercentage / 100)).toFixed(2)} USD
+                  </Typography>
+                )}
+              </Box>
+            </Paper>
+          )}
+
+          {/* Escrow Breakdown - Contests */}
+          {jobType === 'contest' && (
+            <Paper 
+              elevation={0}
+              sx={{ 
+                p: 3, 
+                mb: 3, 
+                border: '2px solid #7C4DFF',
+                borderRadius: '12px'
+              }}
+            >
+              <Typography variant="overline" sx={{ color: '#7C4DFF', fontSize: '11px', fontWeight: 600 }}>
+                PRIZE POOL BREAKDOWN
+              </Typography>
+              
+              <Box sx={{ mt: 2 }}>
+                {/* Prize Pool */}
+                <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 2 }}>
+                  <Typography sx={{ color: '#6F7280', fontSize: '14px' }}>
+                    Total Prizes ({contestMaxWinners} winner{contestMaxWinners > 1 ? 's' : ''}):
+                  </Typography>
+                  <Typography sx={{ fontWeight: 600, color: '#1A1A1E', fontSize: '14px' }}>
+                    {calculateTotalPrizePool().toFixed(2)} {tokenSymbol}
+                  </Typography>
+                </Box>
+
+                {/* Platform Fee */}
+                <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 2 }}>
+                  <Typography sx={{ color: '#6F7280', fontSize: '14px' }}>
+                    Platform Fee ({feePercentage}%):
+                  </Typography>
+                  <Typography sx={{ fontWeight: 600, color: '#6F7280', fontSize: '14px' }}>
+                    + {(calculateTotalPrizePool() * (feePercentage / 100)).toFixed(2)} {tokenSymbol}
+                  </Typography>
+                </Box>
+
+                <Divider sx={{ my: 2 }} />
+
+                {/* Total Locked */}
+                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                    <LockIcon sx={{ fontSize: 18, color: '#7C4DFF' }} />
+                    <Typography sx={{ fontWeight: 600, color: '#1A1A1E', fontSize: '16px' }}>
+                      Total Locked:
+                    </Typography>
+                  </Box>
+                  <Typography sx={{ fontWeight: 700, color: '#7C4DFF', fontSize: '20px' }}>
+                    {calculateTotalWithFee().toFixed(2)} {tokenSymbol}
+                  </Typography>
+                </Box>
+
+                {tokenPrice && (
+                  <Typography sx={{ textAlign: 'right', color: '#6F7280', fontSize: '12px', mt: 0.5 }}>
+                    ≈ ${(calculateTotalWithFee() * tokenPrice).toFixed(2)} USD
                   </Typography>
                 )}
               </Box>
@@ -1843,4 +1903,3 @@ export function CreateJobModal({
     </Dialog>
   )
 }
-

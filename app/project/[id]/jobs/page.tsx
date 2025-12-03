@@ -6,6 +6,7 @@ import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { AppHeader } from '@/components/AppHeader'
 import { CreateJobModal } from '@/components/CreateJobModal'
+import JobCard from '@/components/JobCard'
 import { supabase } from '@/lib/supabase'
 import { getProjectJobs, getJobsByApplicant } from '@/lib/jobs'
 import { Database } from '@/types/database'
@@ -31,6 +32,7 @@ type Job = Database['public']['Tables']['jobs']['Row']
 
 interface JobWithApplicationCount extends Job {
   application_count: number
+  submission_count?: number // For contest jobs
   worker_completed_jobs?: number
   completion_days?: number
 }
@@ -175,17 +177,33 @@ export default function ProjectJobsPage() {
       const completedJobs = jobsData.filter(job => job.status === 'completed')
       const otherJobs = jobsData.filter(job => job.status !== 'completed')
       
-      // Get application counts for non-completed jobs
+      // Get application counts (regular jobs) or submission counts (contests) for non-completed jobs
       const otherJobsWithCounts = await Promise.all(
         otherJobs.map(async (job) => {
-          const { count } = await supabase
-            .from('job_applications')
-            .select('*', { count: 'exact', head: true })
-            .eq('job_id', job.id)
+          if (job.is_contest) {
+            // For contests, get submission count
+            const { count } = await supabase
+              .from('job_submissions')
+              .select('*', { count: 'exact', head: true })
+              .eq('job_id', job.id)
 
-          return {
-            ...job,
-            application_count: count || 0
+            return {
+              ...job,
+              application_count: 0,
+              submission_count: count || 0
+            }
+          } else {
+            // For regular jobs, get application count
+            const { count } = await supabase
+              .from('job_applications')
+              .select('*', { count: 'exact', head: true })
+              .eq('job_id', job.id)
+
+            return {
+              ...job,
+              application_count: count || 0,
+              submission_count: 0
+            }
           }
         })
       )
@@ -574,217 +592,14 @@ export default function ProjectJobsPage() {
             <CardContent className="p-6">
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                 {filteredJobs.map((job) => (
-                  <Card 
+                  <JobCard
                     key={job.id}
-                    className="cursor-pointer transition-all hover:shadow-lg hover:-translate-y-1"
-                    onClick={() => router.push(`/project/${params.id}/jobs/${job.id}`)}
-                  >
-                    <CardContent className="p-6 pt-8">
-                      {/* Status Indicator */}
-                      <div className="flex items-center justify-between mb-4">
-                        <div className="flex items-center gap-2">
-                          <span className="text-base">
-                            {getStatusIcon(job.status)}
-                          </span>
-                          <span 
-                            className="text-sm font-medium capitalize"
-                            style={{ color: '#6F7280' }}
-                          >
-                            {job.status}
-                          </span>
-                        </div>
-                        
-                        {/* Category Badge */}
-                        <Chip
-                          label={job.category}
-                          size="small"
-                          sx={{
-                            backgroundColor: categoryColors[job.category]?.bg || '#F3F4F6',
-                            color: categoryColors[job.category]?.text || '#6B7280',
-                            fontWeight: 500,
-                            fontSize: '12px',
-                            textTransform: 'capitalize'
-                          }}
-                        />
-                      </div>
-
-                      {/* Title */}
-                      <h3 
-                        className="font-bold text-lg mb-4 line-clamp-2"
-                        style={{ 
-                          color: '#1A1A1E',
-                          minHeight: '3.5rem'
-                        }}
-                      >
-                        {job.title}
-                      </h3>
-
-                      {/* Payment */}
-                      <div className="mb-4">
-                        <p 
-                          className="text-xl font-bold"
-                          style={{ color: '#7C4DFF' }}
-                        >
-                          {job.payment_amount_tokens.toLocaleString()} {project.token_symbol}
-                        </p>
-                        <p 
-                          className="text-sm"
-                          style={{ color: '#6F7280' }}
-                        >
-                          ${job.payment_amount_usd.toLocaleString()} USD
-                        </p>
-                      </div>
-
-                      {/* Application Count Chip */}
-                      {job.application_count > 0 && job.status !== 'completed' && (
-                        <div className="mb-3">
-                          <Chip 
-                            label={`${job.application_count} ${job.application_count === 1 ? 'application' : 'applications'}`}
-                            size="small"
-                            sx={{
-                              bgcolor: '#E8F4FF',
-                              color: '#2563EB',
-                              fontWeight: 500,
-                              fontSize: '12px'
-                            }}
-                          />
-                        </div>
-                      )}
-
-                      {/* Completed By (for completed jobs) OR Posted By */}
-                      {job.status === 'completed' && job.assigned_to ? (
-                        <>
-                          <div className="mb-3 flex items-center gap-2">
-                            <span 
-                              className="text-sm"
-                              style={{ color: '#6F7280' }}
-                            >
-                              Completed by:
-                            </span>
-                            <span 
-                              className="text-sm font-mono"
-                              style={{ color: '#1A1A1E' }}
-                            >
-                              {formatWalletAddress(job.assigned_to)}
-                            </span>
-                            {job.worker_completed_jobs && job.worker_completed_jobs > 0 && (
-                              <Chip
-                                label={`Builder - ${job.worker_completed_jobs} jobs`}
-                                size="small"
-                                sx={{
-                                  backgroundColor: '#E8F4FF',
-                                  color: '#2563EB',
-                                  fontWeight: 500,
-                                  fontSize: '11px',
-                                  height: '20px'
-                                }}
-                              />
-                            )}
-                            <Tooltip title={copiedAddress === job.assigned_to ? "Copied!" : "Copy address"}>
-                              <IconButton
-                                size="small"
-                                onClick={(e) => {
-                                  e.stopPropagation()
-                                  handleCopyAddress(job.assigned_to!)
-                                }}
-                                sx={{ 
-                                  padding: '2px',
-                                  color: '#6F7280',
-                                  '&:hover': { color: '#7C4DFF' }
-                                }}
-                              >
-                                <ContentCopyIcon sx={{ fontSize: 14 }} />
-                              </IconButton>
-                            </Tooltip>
-                          </div>
-                          <div className="mb-3 flex items-center gap-2">
-                            <span 
-                              className="text-sm"
-                              style={{ color: '#6F7280' }}
-                            >
-                              Poster:
-                            </span>
-                            <span 
-                              className="text-sm font-mono"
-                              style={{ color: '#1A1A1E' }}
-                            >
-                              {formatWalletAddress(job.poster_wallet)}
-                            </span>
-                          </div>
-                        </>
-                      ) : (
-                        <div className="mb-3 flex items-center gap-2">
-                          <span 
-                            className="text-sm"
-                            style={{ color: '#6F7280' }}
-                          >
-                            Posted by:
-                          </span>
-                          <span 
-                            className="text-sm font-mono"
-                            style={{ color: '#1A1A1E' }}
-                          >
-                            {formatWalletAddress(job.poster_wallet)}
-                          </span>
-                          <Tooltip title={copiedAddress === job.poster_wallet ? "Copied!" : "Copy address"}>
-                          <IconButton
-                            size="small"
-                            onClick={(e) => {
-                              e.stopPropagation()
-                              handleCopyAddress(job.poster_wallet)
-                            }}
-                            sx={{ 
-                              padding: '2px',
-                              color: '#6F7280',
-                              '&:hover': { color: '#7C4DFF' }
-                            }}
-                          >
-                            <ContentCopyIcon sx={{ fontSize: 14 }} />
-                          </IconButton>
-                        </Tooltip>
-                      </div>
-                      )}
-
-                      {/* Posted Time & Applications OR Completed Info */}
-                      <div className="flex items-center justify-between pt-3 border-t" style={{ borderColor: '#E5E7F0' }}>
-                        {job.status === 'completed' && job.completed_at ? (
-                          <>
-                            <div className="flex flex-col gap-1">
-                              <span 
-                                className="text-sm"
-                                style={{ color: '#A3A7B5' }}
-                              >
-                                Completed {formatDistanceToNow(new Date(job.completed_at), { addSuffix: true })}
-                              </span>
-                              {job.completion_days && (
-                                <span 
-                                  className="text-sm font-medium"
-                                  style={{ color: '#36C170' }}
-                                >
-                                  ✓ Completed in {job.completion_days} day{job.completion_days > 1 ? 's' : ''}
-                                </span>
-                              )}
-                            </div>
-                          </>
-                        ) : (
-                          <>
-                            <span 
-                              className="text-sm"
-                              style={{ color: '#A3A7B5' }}
-                            >
-                              {formatDistanceToNow(new Date(job.created_at), { addSuffix: true })}
-                            </span>
-                            <span 
-                              className="text-sm font-medium"
-                              style={{ color: '#7C4DFF' }}
-                            >
-                              {job.application_count} {job.application_count === 1 ? 'application' : 'applications'}
-                            </span>
-                          </>
-                        )}
-                      </div>
-                    </CardContent>
-                  </Card>
+                    job={job}
+                    projectName={project.token_name}
+                    tokenSymbol={project.token_symbol}
+                    applicationCount={job.application_count}
+                    submissionCount={job.submission_count}
+                  />
                 ))}
               </div>
             </CardContent>

@@ -28,7 +28,7 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en" suppressHydrationWarning>
-      <body className={`${spaceGrotesk.variable} font-body`}>
+      <body className={`${spaceGrotesk.variable} font-body`} suppressHydrationWarning>
         <QueryProvider>
           <ThemeProvider>
             <WalletConfigProvider>
