@@ -317,6 +317,9 @@ export interface Database {
           tips_received_count: number
           tip_karma_earned_today: number
           tip_karma_last_reset_date: string
+          // Contest Voting Tracking
+          contest_votes_cast_count: number
+          contest_votes_won_count: number
           created_at: string
           updated_at: string
         }
@@ -344,6 +347,9 @@ export interface Database {
           tips_received_count?: number
           tip_karma_earned_today?: number
           tip_karma_last_reset_date?: string
+          // Contest Voting Tracking
+          contest_votes_cast_count?: number
+          contest_votes_won_count?: number
           created_at?: string
           updated_at?: string
         }
@@ -371,6 +377,9 @@ export interface Database {
           tips_received_count?: number
           tip_karma_earned_today?: number
           tip_karma_last_reset_date?: string
+          // Contest Voting Tracking
+          contest_votes_cast_count?: number
+          contest_votes_won_count?: number
           created_at?: string
           updated_at?: string
         }
@@ -650,6 +659,21 @@ export interface Database {
           // ==================== FEE TRACKING ====================
           /** Platform fee percentage at time of job creation (locked in to prevent retroactive changes) */
           fee_percentage_at_creation: number
+          // ==================== CONTEST FIELDS ====================
+          /** Whether this job is a contest (multiple submissions, manual winner selection) */
+          is_contest: boolean
+          /** Maximum number of winners for this contest */
+          contest_max_winners: number | null
+          /** Array of {position: number, amount_tokens: number, amount_usd: number} for each winner */
+          contest_winner_prizes: Array<{ position: number; amount_tokens: number; amount_usd: number }> | null
+          /** Deadline for contest submissions */
+          contest_submission_deadline: string | null
+          /** Deadline for winner selection after submissions close */
+          contest_winner_selection_deadline: string | null
+          /** Whether submissions are visible to other contestants */
+          contest_submissions_visible: boolean
+          /** When the winners were selected */
+          contest_winners_selected_at: string | null
           created_at: string
           updated_at: string
         }
@@ -689,6 +713,14 @@ export interface Database {
           last_revision_requested_at?: string | null
           // Fee tracking
           fee_percentage_at_creation?: number
+          // Contest fields
+          is_contest?: boolean
+          contest_max_winners?: number | null
+          contest_winner_prizes?: Array<{ position: number; amount_tokens: number; amount_usd: number }> | null
+          contest_submission_deadline?: string | null
+          contest_winner_selection_deadline?: string | null
+          contest_submissions_visible?: boolean
+          contest_winners_selected_at?: string | null
           created_at?: string
           updated_at?: string
         }
@@ -728,6 +760,14 @@ export interface Database {
           last_revision_requested_at?: string | null
           // Fee tracking
           fee_percentage_at_creation?: number
+          // Contest fields
+          is_contest?: boolean
+          contest_max_winners?: number | null
+          contest_winner_prizes?: Array<{ position: number; amount_tokens: number; amount_usd: number }> | null
+          contest_submission_deadline?: string | null
+          contest_winner_selection_deadline?: string | null
+          contest_submissions_visible?: boolean
+          contest_winners_selected_at?: string | null
           created_at?: string
           updated_at?: string
         }
@@ -802,6 +842,15 @@ export interface Database {
           image_urls: string[]
           external_links: string[]
           submitted_at: string
+          // ==================== CONTEST WINNER FIELDS ====================
+          /** Whether this submission was selected as a contest winner */
+          is_selected_winner: boolean
+          /** Contest position (1=first, 2=second, 3=third, etc.) */
+          winner_position: number | null
+          /** Prize amount in tokens (NUMERIC(20,8) for precision) */
+          prize_amount_tokens: number | null
+          /** Prize amount in USD (NUMERIC(20,2) for precision) */
+          prize_amount_usd: number | null
         }
         Insert: {
           id?: string
@@ -811,6 +860,11 @@ export interface Database {
           image_urls?: string[]
           external_links?: string[]
           submitted_at?: string
+          // Contest winner fields
+          is_selected_winner?: boolean
+          winner_position?: number | null
+          prize_amount_tokens?: number | null
+          prize_amount_usd?: number | null
         }
         Update: {
           id?: string
@@ -820,6 +874,11 @@ export interface Database {
           image_urls?: string[]
           external_links?: string[]
           submitted_at?: string
+          // Contest winner fields
+          is_selected_winner?: boolean
+          winner_position?: number | null
+          prize_amount_tokens?: number | null
+          prize_amount_usd?: number | null
         }
       }
       job_disputes: {
