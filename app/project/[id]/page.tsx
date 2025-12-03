@@ -446,29 +446,22 @@ export default function ProjectDetailPage() {
                 <CardContent>
                   {project.creative_assets && project.creative_assets.length > 0 ? (
                     <div className="grid grid-cols-3 gap-2">
-                      {project.creative_assets.slice(0, 6).map((asset) => (
+                      {project.creative_assets.slice(0, 3).map((asset) => (
                         <div
                           key={asset.id}
-                          className="relative group cursor-pointer overflow-hidden rounded-lg"
+                          className="overflow-hidden rounded-lg"
                         >
                           {asset.media_url ? (
                             <div className="aspect-square bg-subtle-bg flex items-center justify-center">
                               <img
                                 src={asset.media_url}
                                 alt={asset.name || 'Creative asset'}
-                                className="w-full h-full object-cover group-hover:scale-110 transition-transform"
+                                className="w-full h-full object-cover"
                               />
                             </div>
                           ) : (
                             <div className="aspect-square bg-subtle-bg flex items-center justify-center">
                               <span className="text-3xl">🎨</span>
-                            </div>
-                          )}
-                          {asset.name && (
-                            <div className="absolute bottom-0 left-0 right-0 bg-black/70 p-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                              <p className="font-body text-xs text-white truncate">
-                                {asset.name}
-                              </p>
                             </div>
                           )}
                         </div>

@@ -303,3 +303,5 @@ This completes the **job application notification** integration.
 Job application notifications are now fully integrated and will appear in real-time when workers apply to jobs.
 
 
+
+

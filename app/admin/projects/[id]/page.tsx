@@ -132,6 +132,16 @@ export default function AdminProjectPage() {
   const [addingCreative, setAddingCreative] = useState(false)
   const [addingLegal, setAddingLegal] = useState(false)
   const [processingAsset, setProcessingAsset] = useState(false)
+  
+  // New creative asset state
+  const [newCreativeFile, setNewCreativeFile] = useState<File | null>(null)
+  const [newCreativePreview, setNewCreativePreview] = useState<string | null>(null)
+  const [newCreativeFormData, setNewCreativeFormData] = useState<{
+    assetType: string
+    name: string
+    description: string
+  }>({ assetType: 'artwork', name: '', description: '' })
+  const [uploadingCreative, setUploadingCreative] = useState(false)
 
   // Pending Assets tab state
   interface PendingAssetWithVotes extends PendingAsset {
@@ -1330,7 +1340,7 @@ export default function AdminProjectPage() {
     setEditingCreativeAsset(asset)
     setCreativeFormData({
       assetType: asset.asset_type,
-      name: asset.asset_name || '',
+      name: asset.name || '',
       description: asset.description || '',
       mediaUrl: asset.media_url || ''
     })
@@ -1348,7 +1358,7 @@ export default function AdminProjectPage() {
           ? {
               ...asset,
               asset_type: creativeFormData.assetType,
-              asset_name: creativeFormData.name,
+              name: creativeFormData.name,
               description: creativeFormData.description,
               media_url: creativeFormData.mediaUrl || null
             }
@@ -1359,7 +1369,7 @@ export default function AdminProjectPage() {
         .from('creative_assets')
         .update({
           asset_type: creativeFormData.assetType,
-          asset_name: creativeFormData.name,
+          name: creativeFormData.name,
           description: creativeFormData.description,
           media_url: creativeFormData.mediaUrl || null
         })
@@ -1422,12 +1432,156 @@ export default function AdminProjectPage() {
     }
   }
 
+  // Handle creative file selection
+  const handleCreativeFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]
+    if (!file) return
+
+    // Validate file type (images and gifs)
+    const validTypes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp']
+    if (!validTypes.includes(file.type)) {
+      toast.error('Please select a valid image file (JPG, PNG, GIF, or WebP)')
+      return
+    }
+
+    // Validate file size (max 10MB for gifs)
+    const maxSize = file.type === 'image/gif' ? 10 * 1024 * 1024 : 5 * 1024 * 1024
+    if (file.size > maxSize) {
+      toast.error(`File too large. Max size: ${file.type === 'image/gif' ? '10MB' : '5MB'}`)
+      return
+    }
+
+    setNewCreativeFile(file)
+    
+    // Create preview URL
+    const previewUrl = URL.createObjectURL(file)
+    setNewCreativePreview(previewUrl)
+    
+    // Auto-fill name from filename if empty
+    if (!newCreativeFormData.name) {
+      const nameWithoutExt = file.name.replace(/\.[^/.]+$/, '')
+      setNewCreativeFormData(prev => ({ ...prev, name: nameWithoutExt }))
+    }
+  }
+
+  // Upload creative asset file to storage
+  const uploadCreativeToStorage = async (file: File): Promise<string | null> => {
+    if (!project) return null
+
+    try {
+      const fileExt = file.name.split('.').pop()
+      const fileName = `${project.id}/${Date.now()}-${Math.random().toString(36).substring(7)}.${fileExt}`
+      const filePath = `creative-assets/${fileName}`
+
+      const { error: uploadError } = await supabase.storage
+        .from('project-assets')
+        .upload(filePath, file, {
+          upsert: true,
+          contentType: file.type
+        })
+
+      if (uploadError) throw uploadError
+
+      // Get public URL
+      const { data: { publicUrl } } = supabase.storage
+        .from('project-assets')
+        .getPublicUrl(filePath)
+
+      return publicUrl
+    } catch (error) {
+      console.error('Error uploading creative asset:', error)
+      toast.error('Failed to upload image')
+      return null
+    }
+  }
+
+  // Add new creative asset
+  const handleAddCreativeAsset = async () => {
+    if (!project) return
+    if (!newCreativeFile && !newCreativeFormData.name) {
+      toast.error('Please upload an image or provide a name')
+      return
+    }
+
+    try {
+      setUploadingCreative(true)
+
+      let mediaUrl: string | null = null
+
+      // Upload file if selected
+      if (newCreativeFile) {
+        mediaUrl = await uploadCreativeToStorage(newCreativeFile)
+        if (!mediaUrl) {
+          toast.error('Failed to upload image')
+          return
+        }
+      }
+
+      // Insert creative asset
+      const { data, error } = await supabase
+        .from('creative_assets')
+        .insert({
+          project_id: project.id,
+          asset_type: newCreativeFormData.assetType || 'artwork',
+          name: newCreativeFormData.name || 'Untitled',
+          description: newCreativeFormData.description || null,
+          media_url: mediaUrl
+        })
+        .select()
+        .single()
+
+      if (error) throw error
+
+      // Log admin action
+      await logAdminAction(
+        'asset_added',
+        'asset',
+        data.id,
+        {
+          assetType: 'creative',
+          assetData: {
+            asset_type: newCreativeFormData.assetType,
+            name: newCreativeFormData.name,
+            media_url: mediaUrl
+          }
+        }
+      )
+
+      toast.success('Creative asset added!')
+      
+      // Reset form
+      setAddingCreative(false)
+      setNewCreativeFile(null)
+      setNewCreativePreview(null)
+      setNewCreativeFormData({ assetType: 'artwork', name: '', description: '' })
+      
+      // Reload assets
+      await loadVerifiedAssets()
+    } catch (error) {
+      console.error('Error adding creative asset:', error)
+      toast.error('Failed to add creative asset')
+    } finally {
+      setUploadingCreative(false)
+    }
+  }
+
+  // Clean up preview URL when modal closes
+  const handleCloseAddCreative = () => {
+    if (newCreativePreview) {
+      URL.revokeObjectURL(newCreativePreview)
+    }
+    setAddingCreative(false)
+    setNewCreativeFile(null)
+    setNewCreativePreview(null)
+    setNewCreativeFormData({ assetType: 'artwork', name: '', description: '' })
+  }
+
   // Legal Asset Handlers
   const handleEditLegalAsset = (asset: LegalAsset) => {
     setEditingLegalAsset(asset)
     setLegalFormData({
       assetType: asset.asset_type,
-      name: asset.asset_name || '',
+      name: asset.name || '',
       status: asset.status || 'active',
       jurisdiction: asset.jurisdiction || '',
       registrationId: asset.registration_id || ''
@@ -4430,16 +4584,126 @@ export default function AdminProjectPage() {
                 {currentTab === 'pending-assets' && (
                   <div className="space-y-4">
                     <Alert severity="warning">
-                      Assets awaiting community verification. These are managed by the community curation system.
+                      <AlertTitle>Pending Assets Management</AlertTitle>
+                      Assets awaiting community verification. Use the buttons to approve, edit, or delete assets.
                     </Alert>
 
-                    {pendingAssets.length === 0 ? (
-                      <p className="text-text-muted text-center py-12">No pending assets</p>
+                    {/* Bulk Actions Bar */}
+                    {selectedPendingAssets.size > 0 && (
+                      <div className="p-3 bg-purple-50 border border-purple-200 rounded-lg flex items-center justify-between">
+                        <span className="text-sm font-medium">{selectedPendingAssets.size} asset(s) selected</span>
+                        <div className="flex gap-2">
+                          <MuiButton 
+                            size="small"
+                            variant="contained"
+                            color="success"
+                            onClick={handleBulkApprovePending}
+                            disabled={processingPendingAction}
+                          >
+                            ✅ Approve Selected
+                          </MuiButton>
+                          <MuiButton 
+                            size="small"
+                            variant="outlined"
+                            color="warning"
+                            onClick={handleBulkHidePending}
+                            disabled={processingPendingAction}
+                          >
+                            🙈 Hide Selected
+                          </MuiButton>
+                          <MuiButton 
+                            size="small"
+                            variant="outlined"
+                            color="error"
+                            onClick={handleBulkDeletePending}
+                            disabled={processingPendingAction}
+                          >
+                            🗑️ Delete Selected
+                          </MuiButton>
+                          <MuiButton 
+                            size="small"
+                            variant="text"
+                            onClick={() => setSelectedPendingAssets(new Set())}
+                          >
+                            Clear
+                          </MuiButton>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Filters */}
+                    <div className="flex flex-wrap gap-3 items-center p-3 bg-gray-50 rounded-lg">
+                      <FormControl size="small" sx={{ minWidth: 120 }}>
+                        <InputLabel>Status</InputLabel>
+                        <Select
+                          value={pendingStatusFilter}
+                          label="Status"
+                          onChange={(e) => setPendingStatusFilter(e.target.value)}
+                        >
+                          <MenuItem value="all">All Status</MenuItem>
+                          <MenuItem value="pending">Pending</MenuItem>
+                          <MenuItem value="backed">Backed</MenuItem>
+                          <MenuItem value="verified">Verified</MenuItem>
+                          <MenuItem value="hidden">Hidden</MenuItem>
+                        </Select>
+                      </FormControl>
+                      <FormControl size="small" sx={{ minWidth: 120 }}>
+                        <InputLabel>Type</InputLabel>
+                        <Select
+                          value={pendingTypeFilter}
+                          label="Type"
+                          onChange={(e) => setPendingTypeFilter(e.target.value)}
+                        >
+                          <MenuItem value="all">All Types</MenuItem>
+                          <MenuItem value="social">Social</MenuItem>
+                          <MenuItem value="creative">Creative</MenuItem>
+                          <MenuItem value="legal">Legal</MenuItem>
+                        </Select>
+                      </FormControl>
+                      <TextField
+                        size="small"
+                        placeholder="Search wallet..."
+                        value={pendingWalletSearch}
+                        onChange={(e) => setPendingWalletSearch(e.target.value)}
+                        sx={{ minWidth: 200 }}
+                      />
+                      <MuiButton
+                        size="small"
+                        variant="text"
+                        onClick={() => {
+                          // Select all visible
+                          const allIds = filteredPendingAssets.map(a => a.id)
+                          setSelectedPendingAssets(new Set(allIds))
+                        }}
+                      >
+                        Select All ({filteredPendingAssets.length})
+                      </MuiButton>
+                    </div>
+
+                    {filteredPendingAssets.length === 0 ? (
+                      <p className="text-text-muted text-center py-12">No pending assets match your filters</p>
                     ) : (
                       <div className="space-y-3">
-                        {pendingAssets.map((asset) => (
-                          <div key={asset.id} className="p-4 bg-white rounded-lg border border-border-subtle">
-                            <div className="flex items-start justify-between gap-4">
+                        {filteredPendingAssets.map((asset) => (
+                          <div key={asset.id} className="p-4 bg-white rounded-lg border border-border-subtle hover:border-accent-primary transition-colors">
+                            <div className="flex items-start gap-3">
+                              {/* Checkbox */}
+                              <input
+                                type="checkbox"
+                                checked={selectedPendingAssets.has(asset.id)}
+                                onChange={() => {
+                                  const newSet = new Set(selectedPendingAssets)
+                                  if (newSet.has(asset.id)) {
+                                    newSet.delete(asset.id)
+                                  } else {
+                                    newSet.add(asset.id)
+                                  }
+                                  setSelectedPendingAssets(newSet)
+                                }}
+                                className="mt-1 w-4 h-4"
+                              />
+
+                              {/* Asset Info */}
                               <div className="flex-1">
                                 <div className="flex items-center gap-2 mb-2">
                                   <Chip 
@@ -4457,24 +4721,305 @@ export default function AdminProjectPage() {
                                       'default'
                                     }
                                   />
+                                  {asset.votes && asset.votes.length > 0 && (
+                                    <Chip 
+                                      label={`${asset.votes.length} votes`}
+                                      size="small"
+                                      variant="outlined"
+                                    />
+                                  )}
                                 </div>
+
+                                {/* Asset Data Display */}
                                 <div className="text-sm space-y-1">
-                                  <p><strong>Submitter:</strong> <span className="font-mono">{shortenAddress(asset.submitter_wallet)}</span></p>
-                                  <p><strong>Supply Weight:</strong> {asset.total_upvote_weight.toFixed(2)}% ({asset.unique_upvoters_count} voters)</p>
-                                  <p><strong>Reports:</strong> {asset.total_report_weight.toFixed(2)}% ({asset.unique_reporters_count} reporters)</p>
                                   {asset.asset_type === 'social' && asset.asset_data && (
-                                    <p><strong>Data:</strong> {(asset.asset_data as any).platform} - @{(asset.asset_data as any).handle}</p>
+                                    <div className="flex items-center gap-2">
+                                      <span className="text-xl">{
+                                        (asset.asset_data as any).platform === 'twitter' ? '𝕏' :
+                                        (asset.asset_data as any).platform === 'instagram' ? '📸' :
+                                        (asset.asset_data as any).platform === 'youtube' ? '📺' :
+                                        (asset.asset_data as any).platform === 'tiktok' ? '🎵' : '🌐'
+                                      }</span>
+                                      <span className="font-bold">@{(asset.asset_data as any).handle}</span>
+                                      <span className="text-text-muted">({(asset.asset_data as any).platform})</span>
+                                      {(asset.asset_data as any).follower_tier && (
+                                        <Chip label={(asset.asset_data as any).follower_tier} size="small" variant="outlined" />
+                                      )}
+                                    </div>
+                                  )}
+                                  {asset.asset_type === 'creative' && asset.asset_data && (
+                                    <div>
+                                      <span className="font-bold">{(asset.asset_data as any).name || 'Unnamed'}</span>
+                                      {(asset.asset_data as any).asset_type && (
+                                        <span className="text-text-muted ml-2">({(asset.asset_data as any).asset_type})</span>
+                                      )}
+                                    </div>
+                                  )}
+                                  {asset.asset_type === 'legal' && asset.asset_data && (
+                                    <div>
+                                      <span className="font-bold">{(asset.asset_data as any).name || 'Unnamed'}</span>
+                                      {(asset.asset_data as any).jurisdiction && (
+                                        <span className="text-text-muted ml-2">({(asset.asset_data as any).jurisdiction})</span>
+                                      )}
+                                    </div>
+                                  )}
+                                  <p><strong>Submitter:</strong> <span className="font-mono text-xs">{asset.submitter_wallet}</span></p>
+                                  <p><strong>Supply Weight:</strong> {Number(asset.total_upvote_weight).toFixed(2)}% ({asset.unique_upvoters_count} voters)</p>
+                                  {Number(asset.total_report_weight) > 0 && (
+                                    <p className="text-red-600"><strong>⚠️ Reports:</strong> {Number(asset.total_report_weight).toFixed(2)}% ({asset.unique_reporters_count} reporters)</p>
                                   )}
                                 </div>
                               </div>
-                              <span className="text-xs text-text-muted whitespace-nowrap">
-                                {formatDistanceToNow(new Date(asset.created_at), { addSuffix: true })}
-                              </span>
+
+                              {/* Timestamp & Actions */}
+                              <div className="flex flex-col items-end gap-2">
+                                <span className="text-xs text-text-muted whitespace-nowrap">
+                                  {formatDistanceToNow(new Date(asset.created_at), { addSuffix: true })}
+                                </span>
+                                
+                                {/* Action Buttons */}
+                                <div className="flex gap-1">
+                                  {asset.verification_status !== 'verified' && (
+                                    <MuiButton
+                                      size="small"
+                                      variant="contained"
+                                      color="success"
+                                      onClick={() => handleQuickApprove(asset)}
+                                      disabled={processingPendingAction}
+                                      sx={{ minWidth: 'auto', px: 1 }}
+                                    >
+                                      ✅
+                                    </MuiButton>
+                                  )}
+                                  <MuiButton
+                                    size="small"
+                                    variant="outlined"
+                                    onClick={() => handleEditPendingAsset(asset)}
+                                    sx={{ minWidth: 'auto', px: 1 }}
+                                  >
+                                    <EditIcon sx={{ fontSize: 16 }} />
+                                  </MuiButton>
+                                  <MuiButton
+                                    size="small"
+                                    variant="outlined"
+                                    color="warning"
+                                    onClick={() => setViewingAsset(asset)}
+                                    sx={{ minWidth: 'auto', px: 1 }}
+                                  >
+                                    👁️
+                                  </MuiButton>
+                                  <MuiButton
+                                    size="small"
+                                    variant="outlined"
+                                    color="error"
+                                    onClick={() => setDeletingAsset(asset)}
+                                    sx={{ minWidth: 'auto', px: 1 }}
+                                  >
+                                    <DeleteIcon sx={{ fontSize: 16 }} />
+                                  </MuiButton>
+                                </div>
+                              </div>
                             </div>
                           </div>
                         ))}
                       </div>
                     )}
+
+                    {/* Edit Pending Asset Modal */}
+                    <Dialog 
+                      open={!!editingPendingAsset} 
+                      onClose={() => setEditingPendingAsset(null)}
+                      maxWidth="md"
+                      fullWidth
+                    >
+                      <DialogTitle>Edit Pending Asset</DialogTitle>
+                      <DialogContent>
+                        <div className="space-y-4 pt-2">
+                          <FormControl fullWidth>
+                            <InputLabel>Status</InputLabel>
+                            <Select
+                              value={pendingAssetFormData.status || 'pending'}
+                              label="Status"
+                              onChange={(e) => setPendingAssetFormData({ ...pendingAssetFormData, status: e.target.value })}
+                            >
+                              <MenuItem value="pending">Pending</MenuItem>
+                              <MenuItem value="backed">Backed</MenuItem>
+                              <MenuItem value="verified">Verified</MenuItem>
+                              <MenuItem value="hidden">Hidden</MenuItem>
+                            </Select>
+                          </FormControl>
+                          <TextField
+                            label="Asset Data (JSON)"
+                            fullWidth
+                            multiline
+                            rows={8}
+                            value={pendingAssetFormData.assetData || ''}
+                            onChange={(e) => setPendingAssetFormData({ ...pendingAssetFormData, assetData: e.target.value })}
+                            helperText="Edit the raw JSON data for this asset"
+                            InputProps={{ style: { fontFamily: 'monospace' } }}
+                          />
+                          <TextField
+                            label="Admin Note (optional)"
+                            fullWidth
+                            multiline
+                            rows={2}
+                            value={pendingAssetFormData.adminNote || ''}
+                            onChange={(e) => setPendingAssetFormData({ ...pendingAssetFormData, adminNote: e.target.value })}
+                            helperText="Add a note about this asset (stored in asset_data)"
+                          />
+                        </div>
+                      </DialogContent>
+                      <DialogActions>
+                        <MuiButton onClick={() => setEditingPendingAsset(null)}>Cancel</MuiButton>
+                        <MuiButton 
+                          variant="contained" 
+                          onClick={handleSavePendingAsset}
+                          disabled={processingPendingAction}
+                        >
+                          {processingPendingAction ? 'Saving...' : 'Save Changes'}
+                        </MuiButton>
+                      </DialogActions>
+                    </Dialog>
+
+                    {/* View Asset Details Modal */}
+                    <Dialog 
+                      open={!!viewingAsset} 
+                      onClose={() => setViewingAsset(null)}
+                      maxWidth="md"
+                      fullWidth
+                    >
+                      <DialogTitle>Asset Details</DialogTitle>
+                      <DialogContent>
+                        {viewingAsset && (
+                          <div className="space-y-4 pt-2">
+                            <div className="grid grid-cols-2 gap-4">
+                              <div>
+                                <p className="text-sm text-text-muted">Type</p>
+                                <p className="font-bold">{viewingAsset.asset_type}</p>
+                              </div>
+                              <div>
+                                <p className="text-sm text-text-muted">Status</p>
+                                <Chip 
+                                  label={viewingAsset.verification_status.toUpperCase()} 
+                                  size="small"
+                                  color={
+                                    viewingAsset.verification_status === 'verified' ? 'success' :
+                                    viewingAsset.verification_status === 'backed' ? 'info' :
+                                    viewingAsset.verification_status === 'hidden' ? 'error' :
+                                    'default'
+                                  }
+                                />
+                              </div>
+                              <div>
+                                <p className="text-sm text-text-muted">Submitter</p>
+                                <p className="font-mono text-xs">{viewingAsset.submitter_wallet}</p>
+                              </div>
+                              <div>
+                                <p className="text-sm text-text-muted">Created</p>
+                                <p>{new Date(viewingAsset.created_at).toLocaleString()}</p>
+                              </div>
+                            </div>
+                            <div>
+                              <p className="text-sm text-text-muted mb-2">Asset Data</p>
+                              <pre className="bg-gray-100 p-3 rounded text-xs overflow-auto max-h-64">
+                                {JSON.stringify(viewingAsset.asset_data, null, 2)}
+                              </pre>
+                            </div>
+                            {viewingAsset.votes && viewingAsset.votes.length > 0 && (
+                              <div>
+                                <p className="text-sm text-text-muted mb-2">Votes ({viewingAsset.votes.length})</p>
+                                <div className="max-h-40 overflow-auto space-y-1">
+                                  {viewingAsset.votes.map((vote, idx) => (
+                                    <div key={idx} className="text-xs p-2 bg-gray-50 rounded flex justify-between">
+                                      <span className="font-mono">{shortenAddress(vote.voter_wallet)}</span>
+                                      <span className={vote.vote_type === 'upvote' ? 'text-green-600' : 'text-red-600'}>
+                                        {vote.vote_type === 'upvote' ? '👍' : '🚩'} {Number(vote.token_percentage_snapshot).toFixed(4)}%
+                                      </span>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </DialogContent>
+                      <DialogActions>
+                        <MuiButton onClick={() => setViewingAsset(null)}>Close</MuiButton>
+                        <MuiButton 
+                          variant="outlined"
+                          onClick={() => {
+                            if (viewingAsset) {
+                              handleEditPendingAsset(viewingAsset)
+                              setViewingAsset(null)
+                            }
+                          }}
+                        >
+                          Edit
+                        </MuiButton>
+                        <MuiButton 
+                          variant="contained"
+                          color="error"
+                          onClick={() => {
+                            if (viewingAsset) {
+                              setDeletingAsset(viewingAsset)
+                              setViewingAsset(null)
+                            }
+                          }}
+                        >
+                          Delete
+                        </MuiButton>
+                      </DialogActions>
+                    </Dialog>
+
+                    {/* Delete Confirmation Modal */}
+                    <Dialog 
+                      open={!!deletingAsset} 
+                      onClose={() => {
+                        setDeletingAsset(null)
+                        setDeleteConfirmText('')
+                      }}
+                      maxWidth="sm"
+                      fullWidth
+                    >
+                      <DialogTitle sx={{ color: '#DC2626' }}>⚠️ Delete Pending Asset</DialogTitle>
+                      <DialogContent>
+                        {deletingAsset && (
+                          <div className="space-y-4 pt-2">
+                            <Alert severity="error">
+                              This will permanently delete this asset and all associated votes. This action cannot be undone.
+                            </Alert>
+                            <div className="p-3 bg-gray-100 rounded">
+                              <p className="text-sm"><strong>Type:</strong> {deletingAsset.asset_type}</p>
+                              <p className="text-sm"><strong>Data:</strong> {extractAssetSummary(deletingAsset.asset_type, deletingAsset.asset_data)}</p>
+                              <p className="text-sm"><strong>Votes:</strong> {deletingAsset.votes?.length || 0}</p>
+                            </div>
+                            <TextField
+                              label={`Type "${(deletingAsset.asset_data as any).handle || (deletingAsset.asset_data as any).name || 'DELETE'}" to confirm`}
+                              fullWidth
+                              value={deleteConfirmText}
+                              onChange={(e) => setDeleteConfirmText(e.target.value)}
+                              error={deleteConfirmText !== '' && deleteConfirmText !== ((deletingAsset.asset_data as any).handle || (deletingAsset.asset_data as any).name || 'DELETE')}
+                            />
+                          </div>
+                        )}
+                      </DialogContent>
+                      <DialogActions>
+                        <MuiButton onClick={() => {
+                          setDeletingAsset(null)
+                          setDeleteConfirmText('')
+                        }}>
+                          Cancel
+                        </MuiButton>
+                        <MuiButton 
+                          variant="contained"
+                          color="error"
+                          onClick={handleDeletePendingAsset}
+                          disabled={processingPendingAction || deleteConfirmText !== ((deletingAsset?.asset_data as any)?.handle || (deletingAsset?.asset_data as any)?.name || 'DELETE')}
+                        >
+                          {processingPendingAction ? 'Deleting...' : 'Delete Permanently'}
+                        </MuiButton>
+                      </DialogActions>
+                    </Dialog>
                   </div>
                 )}
 
@@ -4696,16 +5241,16 @@ export default function AdminProjectPage() {
                                     />
                                     <div className="flex-1">
                                       <div className="flex items-center gap-2 mb-2">
-                                        <Chip label={asset.asset_type.toUpperCase()} size="small" color="secondary" />
-                                        {asset.asset_name && (
-                                          <span className="font-semibold">{asset.asset_name}</span>
+                                        <Chip label={asset.asset_type?.toUpperCase() || 'ARTWORK'} size="small" color="secondary" />
+                                        {asset.name && (
+                                          <span className="font-semibold">{asset.name}</span>
                                         )}
                                       </div>
                                       {asset.media_url && (
                                         <div className="mb-2">
                                           <img 
                                             src={asset.media_url}
-                                            alt={asset.asset_name || 'Creative asset'}
+                                            alt={asset.name || 'Creative asset'}
                                             className="w-full h-32 object-cover rounded"
                                             onError={(e) => {
                                               (e.target as HTMLImageElement).style.display = 'none'
@@ -4825,9 +5370,9 @@ export default function AdminProjectPage() {
                                     />
                                     <div className="flex-1">
                                       <div className="flex items-center gap-2 mb-2">
-                                        <Chip label={asset.asset_type.toUpperCase()} size="small" color="success" />
-                                        {asset.asset_name && (
-                                          <span className="font-semibold">{asset.asset_name}</span>
+                                        <Chip label={asset.asset_type?.toUpperCase() || 'LEGAL'} size="small" color="success" />
+                                        {asset.name && (
+                                          <span className="font-semibold">{asset.name}</span>
                                         )}
                                         {asset.status && (
                                           <Chip 
@@ -4969,6 +5514,130 @@ export default function AdminProjectPage() {
                         <MuiButton onClick={() => setEditingCreativeAsset(null)}>Cancel</MuiButton>
                         <MuiButton variant="contained" onClick={handleSaveCreativeAsset} disabled={processingAsset}>
                           {processingAsset ? 'Saving...' : 'Save Changes'}
+                        </MuiButton>
+                      </DialogActions>
+                    </Dialog>
+
+                    {/* Add Creative Asset Modal */}
+                    <Dialog open={addingCreative} onClose={handleCloseAddCreative} maxWidth="md" fullWidth>
+                      <DialogTitle>
+                        <div className="flex items-center gap-2">
+                          🎨 Add Creative Asset
+                        </div>
+                      </DialogTitle>
+                      <DialogContent>
+                        <div className="space-y-4 mt-2">
+                          {/* Image Upload Section */}
+                          <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center">
+                            {newCreativePreview ? (
+                              <div className="space-y-4">
+                                <div className="relative inline-block">
+                                  <img 
+                                    src={newCreativePreview} 
+                                    alt="Preview" 
+                                    className="max-h-64 max-w-full rounded-lg shadow-lg mx-auto"
+                                  />
+                                  <button
+                                    onClick={() => {
+                                      if (newCreativePreview) URL.revokeObjectURL(newCreativePreview)
+                                      setNewCreativeFile(null)
+                                      setNewCreativePreview(null)
+                                    }}
+                                    className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full w-6 h-6 flex items-center justify-center hover:bg-red-600"
+                                  >
+                                    ×
+                                  </button>
+                                </div>
+                                <p className="text-sm text-green-600 font-medium">
+                                  ✓ {newCreativeFile?.name} ({(newCreativeFile?.size || 0 / 1024).toFixed(1)} KB)
+                                </p>
+                              </div>
+                            ) : (
+                              <div>
+                                <div className="text-4xl mb-3">📤</div>
+                                <p className="text-text-secondary mb-2">
+                                  Drop an image or GIF here, or click to browse
+                                </p>
+                                <p className="text-xs text-text-muted">
+                                  Supports: JPG, PNG, GIF, WebP • Max: 10MB for GIFs, 5MB for images
+                                </p>
+                              </div>
+                            )}
+                            <input
+                              type="file"
+                              accept="image/jpeg,image/png,image/gif,image/webp"
+                              onChange={handleCreativeFileSelect}
+                              className={newCreativePreview ? 'hidden' : 'absolute inset-0 w-full h-full opacity-0 cursor-pointer'}
+                              style={newCreativePreview ? {} : { position: 'absolute', inset: 0, width: '100%', height: '100%', opacity: 0, cursor: 'pointer' }}
+                            />
+                            {!newCreativePreview && (
+                              <label className="mt-3 inline-block">
+                                <input
+                                  type="file"
+                                  accept="image/jpeg,image/png,image/gif,image/webp"
+                                  onChange={handleCreativeFileSelect}
+                                  className="hidden"
+                                />
+                                <span className="px-4 py-2 bg-purple-600 text-white rounded-lg cursor-pointer hover:bg-purple-700 transition-colors">
+                                  Choose File
+                                </span>
+                              </label>
+                            )}
+                          </div>
+
+                          {/* Asset Details */}
+                          <FormControl fullWidth>
+                            <InputLabel>Asset Type</InputLabel>
+                            <Select
+                              value={newCreativeFormData.assetType}
+                              label="Asset Type"
+                              onChange={(e) => setNewCreativeFormData({ ...newCreativeFormData, assetType: e.target.value })}
+                            >
+                              <MenuItem value="logo">Logo</MenuItem>
+                              <MenuItem value="character">Character</MenuItem>
+                              <MenuItem value="artwork">Artwork</MenuItem>
+                              <MenuItem value="meme">Meme/GIF</MenuItem>
+                              <MenuItem value="banner">Banner</MenuItem>
+                              <MenuItem value="other">Other</MenuItem>
+                            </Select>
+                          </FormControl>
+
+                          <TextField
+                            label="Name"
+                            fullWidth
+                            value={newCreativeFormData.name}
+                            onChange={(e) => setNewCreativeFormData({ ...newCreativeFormData, name: e.target.value })}
+                            placeholder="e.g., Official Logo, Mascot Character"
+                            helperText="Give this asset a memorable name"
+                          />
+
+                          <TextField
+                            label="Description (optional)"
+                            fullWidth
+                            multiline
+                            rows={3}
+                            value={newCreativeFormData.description}
+                            onChange={(e) => setNewCreativeFormData({ ...newCreativeFormData, description: e.target.value })}
+                            placeholder="Describe this asset..."
+                          />
+                        </div>
+                      </DialogContent>
+                      <DialogActions>
+                        <MuiButton onClick={handleCloseAddCreative}>Cancel</MuiButton>
+                        <MuiButton 
+                          variant="contained" 
+                          onClick={handleAddCreativeAsset} 
+                          disabled={uploadingCreative || (!newCreativeFile && !newCreativeFormData.name)}
+                          sx={{ bgcolor: '#7C4DFF' }}
+                        >
+                          {uploadingCreative ? (
+                            <span className="flex items-center gap-2">
+                              <CircularProgress size={16} color="inherit" />
+                              Uploading...
+                            </span>
+                          ) : (
+                            '🎨 Add Creative Asset'
+                          )}
                         </MuiButton>
                       </DialogActions>
                     </Dialog>

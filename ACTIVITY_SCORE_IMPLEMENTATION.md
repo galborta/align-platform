@@ -704,3 +704,5 @@ WHERE active_jobs_count IS NULL OR total_jobs_completed IS NULL;
 **Sprint:** Sprint 2 - Project Sorting  
 **Next Step:** Apply migration to database
 
+
+

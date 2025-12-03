@@ -267,3 +267,5 @@ GRANT EXECUTE ON FUNCTION increment_batch_count(uuid) TO authenticated;
 -- SELECT * FROM pg_policies WHERE tablename = 'notifications';
 
 
+
+
