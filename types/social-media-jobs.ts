@@ -4,7 +4,7 @@
  * These types support the social media engagement job system where:
  * - Workers submit tweet links + follower counts
  * - Poster reviews and approves/denies submissions
- * - Payments are distributed proportionally based on follower counts
+ * - Payments are distributed proportionally based on reach potential (using follower count as a metric)
  */
 
 // ==================== BUDGET TIER ====================
@@ -119,7 +119,8 @@ export function calculateSocialJobDeadlines(createdAt: Date): {
 // ==================== PAYMENT CALCULATION ====================
 
 /**
- * Calculate proportional payment for a submission based on follower count
+ * Calculate proportional payment for a submission based on reach potential
+ * (Uses verified follower count as the metric for reach weighting)
  * 
  * @param followerCount - The verified follower count for this submission
  * @param totalFollowers - Sum of all approved submissions' follower counts

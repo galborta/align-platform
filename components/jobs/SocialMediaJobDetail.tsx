@@ -764,7 +764,7 @@ export default function SocialMediaJobDetail({
             { step: 2, text: `Submit your ${job.social_job_type === 'retweet' ? 'retweet' : 'tweet'} link + current follower count` },
             { step: 3, text: 'Wait 24 hours for engagement to accumulate' },
             { step: 4, text: 'Poster reviews submissions (48 hour window)' },
-            { step: 5, text: 'Payment distributed proportionally by follower count' }
+            { step: 5, text: 'Payment distributed proportionally by post reach & engagement' }
           ].map(({ step, text }) => (
             <Box key={step} sx={{ display: 'flex', alignItems: 'flex-start', gap: 2 }}>
               <Box
@@ -807,8 +807,8 @@ export default function SocialMediaJobDetail({
           }}
         >
           <Typography variant="body2" sx={{ fontWeight: 500 }}>
-            ⚠️ <strong>Important:</strong> Report accurate follower count (subject to verification).
-            False reporting may result in submission denial or account suspension.
+            ⚠️ <strong>Important:</strong> Report accurate follower count (used for eligibility verification).
+            Final payment is based on your post's reach and engagement metrics.
           </Typography>
         </Alert>
       </Paper>

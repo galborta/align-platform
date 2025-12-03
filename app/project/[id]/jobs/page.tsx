@@ -796,7 +796,7 @@ export default function ProjectJobsPage() {
                   Pay users to retweet or create original content
                 </Typography>
                 <Typography variant="caption" sx={{ color: '#7C4DFF', fontWeight: 500 }}>
-                  Proportional payments based on follower count
+                  Proportional payments based on post reach
                 </Typography>
               </Box>
             </Box>

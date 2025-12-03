@@ -370,8 +370,8 @@ export default function CreateSocialMediaJobModal({
           }}
         >
           <Typography variant="body2" sx={{ fontWeight: 500 }}>
-            Social media campaigns pay participants proportionally based on their follower count.
-            Budget is distributed when the review period ends.
+            Social media campaigns pay participants proportionally based on their post reach and engagement.
+            Budget is distributed after the review period ends.
           </Typography>
         </Alert>
 

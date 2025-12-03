@@ -523,8 +523,8 @@ export default function SubmitSocialParticipationModal({
               }}
             >
               <Typography variant="body2" sx={{ fontWeight: 500 }}>
-                ⚠️ <strong>Important:</strong> Report your accurate follower count at time of submission.
-                False reporting may result in submission denial or account suspension.
+                ⚠️ <strong>Important:</strong> Follower count is used for eligibility verification.
+                Your final payment will be based on your post's actual reach and engagement.
               </Typography>
             </Alert>
 

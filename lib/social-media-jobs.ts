@@ -5,7 +5,7 @@
  * - Timeline auto-calculation (48+24+48 hour periods)
  * - Tier validation (ensure tiers are continuous, no gaps)
  * - Active tier calculation (which tier applies based on participant count)
- * - Proportional payment calculation (distribute budget by follower weight)
+ * - Proportional payment calculation (distribute budget by reach potential, using follower count as weight)
  * 
  * @module lib/social-media-jobs
  */
@@ -333,7 +333,7 @@ export function calculateActiveTier(
 
 /**
  * Calculated payment information for a single submission
- * Used for distributing budget proportionally based on follower counts
+ * Used for distributing budget proportionally based on reach potential (follower count as metric)
  */
 export interface SubmissionPayment {
   /** UUID of the submission */
@@ -353,15 +353,15 @@ export interface SubmissionPayment {
 // ==================== PROPORTIONAL PAYMENT CALCULATION ====================
 
 /**
- * Calculates proportional payments based on verified follower counts
+ * Calculates proportional payments based on reach potential
  * 
  * Each worker's payment is calculated as:
  * ```
  * payment = (worker_followers / total_followers) × tier_budget
  * ```
  * 
- * This ensures fair distribution where workers with larger audiences
- * receive proportionally larger payments for their greater reach.
+ * Follower count is used as the metric for reach potential.
+ * Workers with larger audiences receive proportionally larger payments for their greater reach.
  * 
  * **Validation:**
  * - All follower counts must be >= 0

@@ -551,7 +551,7 @@ export default function SocialMediaJobCard({
               fontSize: '12px',
             }}
           >
-            💡 Payment based on follower count
+            💡 Payment based on post reach
           </Typography>
 
           {/* Call to action indicator */}
