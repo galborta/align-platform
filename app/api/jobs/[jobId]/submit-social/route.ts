@@ -3,7 +3,7 @@ import { supabase } from '@/lib/supabase'
 import { notificationService } from '@/lib/services/notificationService'
 
 /**
- * POST /api/jobs/[id]/submit-social
+ * POST /api/jobs/[jobId]/submit-social
  * 
  * Handles social media job submissions from workers.
  * 
@@ -22,10 +22,10 @@ import { notificationService } from '@/lib/services/notificationService'
  */
 export async function POST(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: { jobId: string } }
 ) {
   try {
-    const jobId = params.id
+    const jobId = params.jobId
 
     // Parse request body
     const body = await request.json()
@@ -230,17 +230,17 @@ export async function POST(
 }
 
 /**
- * GET /api/jobs/[id]/submit-social
+ * GET /api/jobs/[jobId]/submit-social
  * 
  * Check if a user has already submitted to this job.
  * Useful for pre-flight checks before showing submission modal.
  */
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: { jobId: string } }
 ) {
   try {
-    const jobId = params.id
+    const jobId = params.jobId
     const { searchParams } = new URL(request.url)
     const wallet = searchParams.get('wallet')
 
