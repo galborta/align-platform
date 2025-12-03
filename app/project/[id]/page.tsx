@@ -12,6 +12,7 @@ import { CurationChatFeed } from '@/components/CurationChatFeed'
 import { KarmaLeaderboard } from '@/components/KarmaLeaderboard'
 import { ActivityFeed } from '@/components/ActivityFeed'
 import { FeedErrorBoundary } from '@/components/FeedErrorBoundary'
+import { ProjectJobsWidget } from '@/components/ProjectJobsWidget'
 import { supabase } from '@/lib/supabase'
 import { Database } from '@/types/database'
 import { FeedItem } from '@/types/feed'
@@ -352,14 +353,21 @@ export default function ProjectDetailPage() {
           gap: { xs: 2, md: 3 },
           mt: 2
         }}>
-          {/* Left Column - Chat + IP Registry */}
+          {/* Left Column - Jobs + Chat + IP Registry */}
           <Box sx={{
             display: 'flex',
             flexDirection: 'column',
             gap: { xs: 2, md: 3 },
             minWidth: 0  // Prevent overflow
           }}>
-            {/* Chat Component - Appears first on mobile */}
+            {/* Jobs Widget - Above holder chat */}
+            {project.status === 'live' && (
+              <Box sx={{ order: { xs: 0, lg: 0 } }}>
+                <ProjectJobsWidget projectId={project.id} tokenSymbol={project.token_symbol} />
+              </Box>
+            )}
+
+            {/* Chat Component - Appears after jobs */}
             {project.status === 'live' && (
               <Box sx={{ order: { xs: 1, lg: 1 } }}>
                 <ProjectChat projectId={project.id} tokenMint={project.token_mint} />

@@ -59,7 +59,10 @@ export default function ContestJobCard({
     : []
 
   // Get contest status
-  const getContestStatus = (): 'open' | 'judging' | 'judging_complete' | 'completed' => {
+  const getContestStatus = (): 'open' | 'judging' | 'judging_complete' | 'completed' | 'cancelled' => {
+    // Check if job is cancelled
+    if (job.status === 'cancelled') return 'cancelled'
+    
     // Check if contest is fully completed (winners selected + prizes distributed)
     if (job.contest_winners_selected_at && job.status === 'completed') return 'completed'
     
@@ -85,7 +88,8 @@ export default function ContestJobCard({
     open: { bg: '#4CAF50', text: '#FFFFFF' },           // Green - accepting submissions
     judging: { bg: '#FF9800', text: '#FFFFFF' },        // Orange - submissions closed, judging
     judging_complete: { bg: '#2196F3', text: '#FFFFFF' }, // Blue - winners selected, pending payout
-    completed: { bg: '#9E9E9E', text: '#FFFFFF' }       // Gray - fully completed
+    completed: { bg: '#9E9E9E', text: '#FFFFFF' },      // Gray - fully completed
+    cancelled: { bg: '#EF4444', text: '#FFFFFF' }       // Red - cancelled
   }
 
   // Category colors (matching existing job system)
@@ -98,20 +102,28 @@ export default function ContestJobCard({
     other: { bg: '#F3F4F6', text: '#6B7280' }
   }
 
+  // Check if cancelled for styling
+  const isCancelled = contestStatus === 'cancelled'
+
   return (
     <Card 
       sx={{
         cursor: 'pointer',
         transition: 'all 0.2s ease-in-out',
         borderRadius: 'var(--radius-card-lg, 24px)',
-        border: '2px solid var(--accent-primary, #7C4DFF)',
+        border: isCancelled 
+          ? '2px solid var(--border-subtle, #E5E7F0)' 
+          : '2px solid var(--accent-primary, #7C4DFF)',
         boxShadow: 'var(--shadow-card, 0 20px 40px 0 rgba(15, 23, 42, 0.06))',
         bgcolor: 'var(--card-background, #FFFFFF)',
         position: 'relative',
         overflow: 'hidden',
+        opacity: isCancelled ? 0.7 : 1,
         '&:hover': {
           transform: 'translateY(-4px)',
-          boxShadow: '0 24px 48px rgba(124, 77, 255, 0.2)',
+          boxShadow: isCancelled 
+            ? '0 24px 48px rgba(0, 0, 0, 0.1)'
+            : '0 24px 48px rgba(124, 77, 255, 0.2)',
         }
       }}
       onClick={() => router.push(`/project/${job.project_id}/jobs/${job.id}`)}
@@ -444,6 +456,32 @@ export default function ContestJobCard({
               }}
             >
               ✅ Contest complete - Prizes distributed
+            </Typography>
+          </Box>
+        )}
+
+        {/* Cancelled Status Message */}
+        {contestStatus === 'cancelled' && (
+          <Box 
+            sx={{ 
+              mb: 2, 
+              p: 1.5, 
+              borderRadius: 1.5, 
+              bgcolor: 'rgba(239, 68, 68, 0.15)',
+              border: '1px solid rgba(239, 68, 68, 0.3)'
+            }}
+          >
+            <Typography 
+              variant="body2" 
+              sx={{ 
+                fontFamily: 'var(--font-body, Satoshi, sans-serif)',
+                fontWeight: 500, 
+                color: '#DC2626',
+                fontSize: '13px',
+                textAlign: 'center'
+              }}
+            >
+              ❌ Contest cancelled
             </Typography>
           </Box>
         )}
