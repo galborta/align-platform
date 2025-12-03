@@ -187,11 +187,11 @@ export default function ProjectJobsPage() {
       const completedJobs = jobsData.filter(job => job.status === 'completed')
       const otherJobs = jobsData.filter(job => job.status !== 'completed')
       
-      // Get application counts (regular jobs) or submission counts (contests) for non-completed jobs
+      // Get application counts (regular jobs) or submission counts (contests/social media) for non-completed jobs
       const otherJobsWithCounts = await Promise.all(
         otherJobs.map(async (job) => {
-          if (job.is_contest) {
-            // For contests, get submission count
+          // For contests and social media jobs, get submission count
+          if (job.is_contest || job.is_social_media_job) {
             const { count } = await supabase
               .from('job_submissions')
               .select('*', { count: 'exact', head: true })

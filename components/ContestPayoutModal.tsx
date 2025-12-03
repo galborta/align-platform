@@ -27,7 +27,7 @@ import { PublicKey } from '@solana/web3.js'
 import { executeContestPayout, verifyEscrowBalance } from '@/lib/escrow-payout'
 import { getEscrowWallet } from '@/lib/platform-settings'
 import { toast } from 'react-hot-toast'
-import WalletAddressWithButtons from './WalletAddressWithButtons'
+import { WalletAddressWithButtons } from './WalletAddressWithButtons'
 
 type Job = Database['public']['Tables']['jobs']['Row']
 type JobSubmission = Database['public']['Tables']['job_submissions']['Row']

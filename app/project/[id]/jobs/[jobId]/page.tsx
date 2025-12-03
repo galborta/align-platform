@@ -16,6 +16,7 @@ import TipModal from '@/components/TipModal'
 import ContestJobHeader from '@/components/ContestJobHeader'
 import ContestSubmissionModal from '@/components/ContestSubmissionModal'
 import ContestSubmissionGallery from '@/components/ContestSubmissionGallery'
+import { SocialMediaJobDetail } from '@/components/jobs'
 import { supabase } from '@/lib/supabase'
 import { getJobById } from '@/lib/jobs'
 import { upvoteApplication, getApplicationVotes, hasUserVoted } from '@/lib/job-upvoting'
@@ -1232,6 +1233,16 @@ export default function JobDetailPage() {
           </Box>
         )}
 
+        {/* Social Media Job Detail (if social media job) */}
+        {job.is_social_media_job && (
+          <SocialMediaJobDetail 
+            job={job}
+            projectName={project.name}
+            tokenSymbol={project.token_symbol || 'tokens'}
+            onSubmissionSuccess={() => fetchJobData()}
+          />
+        )}
+
         {/* Completion Success UI */}
         {job.status === 'completed' && job.completed_at && (
           <Paper sx={{ p: 3, mb: 3, bgcolor: '#0a3d0a', border: '1px solid #4caf50' }}>
@@ -2415,7 +2426,7 @@ export default function JobDetailPage() {
             )}
 
             {/* 2. Payment Card */}
-            {!job.is_contest && (
+            {!job.is_contest && !job.is_social_media_job && (
               <Card 
                 className="border-4"
                 style={{ borderColor: '#E3F06F' }}
@@ -2456,8 +2467,8 @@ export default function JobDetailPage() {
               </Card>
             )}
 
-            {/* 4. Actions Section - Hidden for contests */}
-            {!job.is_contest && (
+            {/* 4. Actions Section - Hidden for contests and social media jobs */}
+            {!job.is_contest && !job.is_social_media_job && (
             <Card>
               <CardContent className="p-6">
                 <h3 
@@ -2630,7 +2641,7 @@ export default function JobDetailPage() {
         </div>
 
         {/* 5. Applications Section (Regular Jobs Only) */}
-        {!job.is_contest && (
+        {!job.is_contest && !job.is_social_media_job && (
         <Card className="mt-6">
           <CardContent className="p-6">
             {/* Header - changes based on status */}

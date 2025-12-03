@@ -24,7 +24,7 @@ import EmojiEventsIcon from '@mui/icons-material/EmojiEvents'
 import CheckCircleIcon from '@mui/icons-material/CheckCircle'
 import { Database } from '@/types/database'
 import { supabase } from '@/lib/supabase'
-import WalletAddressWithButtons from './WalletAddressWithButtons'
+import { WalletAddressWithButtons } from './WalletAddressWithButtons'
 import { toast } from 'react-hot-toast'
 
 type Job = Database['public']['Tables']['jobs']['Row']
