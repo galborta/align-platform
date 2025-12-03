@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import {
   Dialog,
   DialogTitle,
@@ -27,6 +27,7 @@ import InfoIcon from '@mui/icons-material/Info'
 import ScheduleIcon from '@mui/icons-material/Schedule'
 import { BudgetTier, SocialJobType } from '@/types/social-media-jobs'
 import { calculateSocialJobTimeline, validateBudgetTiers } from '@/lib/social-media-jobs'
+import { getTokenPriceUsd } from '@/lib/helius'
 import TierBudgetConfig from './TierBudgetConfig'
 
 // ==================== TYPES ====================
@@ -73,11 +74,45 @@ export default function CreateSocialMediaJobModal({
     { min_participants: 6, max_participants: null, budget_tokens: 0, budget_usd: 0 }
   ])
   const [selectedToken, setSelectedToken] = useState<string>(tokenMint)
-  const [tokenPrice, setTokenPrice] = useState<number>(0.20) // Default $0.20, should fetch real price
+  const [tokenPrice, setTokenPrice] = useState<number | null>(null)
+  const [loadingPrice, setLoadingPrice] = useState(false)
   
   // UI state
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [loading, setLoading] = useState(false)
+
+  // ==================== EFFECTS ====================
+
+  // Fetch token price when modal opens or token changes
+  useEffect(() => {
+    const fetchTokenPrice = async () => {
+      if (!open || !tokenMint) return
+      
+      setLoadingPrice(true)
+      try {
+        const price = await getTokenPriceUsd(tokenMint)
+        if (price !== null) {
+          setTokenPrice(price)
+          // Update existing tier budgets with new price
+          setTiers(prevTiers => prevTiers.map(tier => ({
+            ...tier,
+            budget_usd: tier.budget_tokens * price
+          })))
+        } else {
+          // Fallback to a default if price fetch fails
+          console.warn('Could not fetch token price, using fallback')
+          setTokenPrice(0.01) // Fallback to $0.01
+        }
+      } catch (error) {
+        console.error('Error fetching token price:', error)
+        setTokenPrice(0.01) // Fallback to $0.01
+      } finally {
+        setLoadingPrice(false)
+      }
+    }
+
+    fetchTokenPrice()
+  }, [open, tokenMint])
 
   // ==================== VALIDATION ====================
 
@@ -256,6 +291,7 @@ export default function CreateSocialMediaJobModal({
     ])
     setErrors({})
     setLoading(false)
+    // Don't reset tokenPrice here - it will be refetched when modal opens again
   }
 
   // Check if form can be submitted (basic validation for button state)
@@ -268,8 +304,9 @@ export default function CreateSocialMediaJobModal({
     const hasBudget = maxBudget > 0
     const hasValidTiers = tiers.length > 0 && tiers.some(tier => tier.budget_tokens > 0)
     const hasToken = !!selectedToken
+    const hasPrice = tokenPrice !== null && tokenPrice > 0
     
-    return hasTitle && hasDescription && hasTypeSpecificContent && hasBudget && hasValidTiers && hasToken && Object.keys(errors).length === 0
+    return hasTitle && hasDescription && hasTypeSpecificContent && hasBudget && hasValidTiers && hasToken && hasPrice && Object.keys(errors).length === 0
   }
 
   // ==================== RENDER ====================
@@ -743,15 +780,36 @@ export default function CreateSocialMediaJobModal({
 
         {/* ==================== TIER BUDGET CONFIGURATION ==================== */}
         <Box sx={{ mb: 4 }}>
-          <TierBudgetConfig
-            tiers={tiers}
-            maxBudget={maxBudget}
-            maxBudgetUsd={maxBudget * tokenPrice}
-            onTiersChange={setTiers}
-            onMaxBudgetChange={(tokens, usd) => setMaxBudget(tokens)}
-            tokenSymbol={tokenSymbol}
-            tokenPrice={tokenPrice}
-          />
+          {loadingPrice ? (
+            <Box sx={{ textAlign: 'center', py: 4 }}>
+              <Typography variant="body2" sx={{ color: 'var(--text-secondary, #6F7280)' }}>
+                Fetching token price...
+              </Typography>
+            </Box>
+          ) : tokenPrice === null ? (
+            <Alert severity="warning" sx={{ mb: 2, borderRadius: '12px' }}>
+              Could not fetch token price. Please try again later.
+            </Alert>
+          ) : (
+            <>
+              {/* Token Price Display */}
+              <Box sx={{ mb: 2, display: 'flex', alignItems: 'center', gap: 1 }}>
+                <Typography variant="caption" sx={{ color: 'var(--text-secondary, #6F7280)' }}>
+                  Current {tokenSymbol} price: <strong>${tokenPrice.toFixed(6)}</strong> USD
+                </Typography>
+              </Box>
+              
+              <TierBudgetConfig
+                tiers={tiers}
+                maxBudget={maxBudget}
+                maxBudgetUsd={maxBudget * tokenPrice}
+                onTiersChange={setTiers}
+                onMaxBudgetChange={(tokens, usd) => setMaxBudget(tokens)}
+                tokenSymbol={tokenSymbol}
+                tokenPrice={tokenPrice}
+              />
+            </>
+          )}
         </Box>
 
         {/* Tier Validation Error */}
