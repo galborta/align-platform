@@ -7,6 +7,34 @@ type JobInsert = Database['public']['Tables']['jobs']['Insert']
 type JobApplication = Database['public']['Tables']['job_applications']['Row']
 type JobApplicationInsert = Database['public']['Tables']['job_applications']['Insert']
 
+// Filter types for job queries
+export interface JobFilters {
+  status?: 'open' | 'assigned' | 'submitted' | 'completed' | 'disputed' | 'cancelled'
+  category?: string
+  is_contest?: boolean
+}
+
+// Extended job type with project info and counts
+export interface JobWithDetails extends Job {
+  submissionCount?: number
+  applicationCount?: number
+  projects?: {
+    token_name: string
+    token_symbol: string
+    profile_image_url?: string
+  } | null
+  job_submissions?: Array<{
+    id: string
+    worker_wallet: string
+    message: string | null
+    image_urls: string[] | null
+    submitted_at: string
+    is_selected_winner: boolean | null
+    winner_position: number | null
+    prize_amount_tokens: number | null
+  }>
+}
+
 /**
  * Create a new job posting
  */
@@ -49,7 +77,7 @@ export async function createJob(jobData: {
 }
 
 /**
- * Get jobs for a project
+ * Get jobs for a project (simple version)
  */
 export async function getProjectJobs(projectId: string): Promise<Job[]> {
   const { data, error } = await supabase
@@ -60,6 +88,153 @@ export async function getProjectJobs(projectId: string): Promise<Job[]> {
 
   if (error) throw error
   return data || []
+}
+
+/**
+ * Fetch jobs with filters and project data
+ * 
+ * This is the main function for fetching jobs for listing pages.
+ * It includes project token info and submission/application counts.
+ * 
+ * @param projectId - Optional project ID to filter by
+ * @param filters - Optional filters for status, category, and job type
+ * @returns Array of jobs with project info and counts
+ * 
+ * @example
+ * // Get all open jobs
+ * const jobs = await fetchJobs(undefined, { status: 'open' })
+ * 
+ * // Get contest jobs for a specific project
+ * const contestJobs = await fetchJobs(projectId, { is_contest: true })
+ */
+export async function fetchJobs(
+  projectId?: string, 
+  filters?: JobFilters
+): Promise<JobWithDetails[]> {
+  let query = supabase
+    .from('jobs')
+    .select(`
+      *,
+      projects:project_id (
+        token_name,
+        token_symbol
+      )
+    `)
+
+  // Apply filters
+  if (projectId) {
+    query = query.eq('project_id', projectId)
+  }
+
+  if (filters?.status) {
+    query = query.eq('status', filters.status)
+  }
+
+  if (filters?.category) {
+    query = query.eq('category', filters.category)
+  }
+
+  if (filters?.is_contest !== undefined) {
+    query = query.eq('is_contest', filters.is_contest)
+  }
+
+  // Order by created_at desc
+  query = query.order('created_at', { ascending: false })
+
+  const { data: jobs, error } = await query
+
+  if (error) throw error
+  if (!jobs) return []
+
+  // For each job, fetch submission count (contests) or application count (regular jobs)
+  const jobsWithCounts = await Promise.all(
+    jobs.map(async (job) => {
+      if (job.is_contest) {
+        // Get submission count for contests
+        const { count } = await supabase
+          .from('job_submissions')
+          .select('*', { count: 'exact', head: true })
+          .eq('job_id', job.id)
+
+        return { ...job, submissionCount: count || 0, applicationCount: 0 }
+      } else {
+        // Get application count for regular jobs
+        const { count } = await supabase
+          .from('job_applications')
+          .select('*', { count: 'exact', head: true })
+          .eq('job_id', job.id)
+
+        return { ...job, submissionCount: 0, applicationCount: count || 0 }
+      }
+    })
+  )
+
+  return jobsWithCounts as JobWithDetails[]
+}
+
+/**
+ * Fetch a single job by ID with all related data
+ * 
+ * This is the main function for job detail pages.
+ * For contest jobs, it includes all submissions.
+ * For regular jobs, use getJobApplications() separately.
+ * 
+ * @param jobId - The UUID of the job to fetch
+ * @returns Job with project info, submissions (for contests), and counts
+ * 
+ * @example
+ * const job = await fetchJobById(jobId)
+ * if (job?.is_contest) {
+ *   console.log(`Contest has ${job.submissionCount} submissions`)
+ *   job.job_submissions?.forEach(sub => console.log(sub.worker_wallet))
+ * }
+ */
+export async function fetchJobById(jobId: string): Promise<JobWithDetails | null> {
+  const { data: job, error } = await supabase
+    .from('jobs')
+    .select(`
+      *,
+      projects:project_id (
+        token_name,
+        token_symbol,
+        profile_image_url
+      ),
+      job_submissions (
+        id,
+        worker_wallet,
+        message,
+        image_urls,
+        submitted_at,
+        is_selected_winner,
+        winner_position,
+        prize_amount_tokens
+      )
+    `)
+    .eq('id', jobId)
+    .single()
+
+  if (error) {
+    console.error('Error fetching job:', error)
+    return null
+  }
+
+  // Count submissions for contest jobs
+  if (job.is_contest) {
+    const { count } = await supabase
+      .from('job_submissions')
+      .select('*', { count: 'exact', head: true })
+      .eq('job_id', jobId)
+
+    return { ...job, submissionCount: count || 0 } as JobWithDetails
+  }
+
+  // Count applications for regular jobs
+  const { count } = await supabase
+    .from('job_applications')
+    .select('*', { count: 'exact', head: true })
+    .eq('job_id', jobId)
+
+  return { ...job, applicationCount: count || 0 } as JobWithDetails
 }
 
 /**

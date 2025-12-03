@@ -38,9 +38,15 @@ export function transformToFeedItems(data: RawActivityData): FeedItem[] {
 
   // ==================== JOB ACTIVITIES ====================
 
-  // Jobs posted
+  // Jobs posted (regular jobs and contests)
   data.jobs.forEach(job => {
     try {
+      // Calculate total prize pool for contests
+      const contestPrizes = Array.isArray(job.contest_winner_prizes)
+        ? (job.contest_winner_prizes as Array<{ position: number; amount_tokens: number; amount_usd: number }>)
+        : []
+      const totalPrizePool = contestPrizes.reduce((sum, p) => sum + (p.amount_tokens || 0), 0)
+
       items.push({
         id: `job_posted_${job.id}`,
         type: 'job_posted',
@@ -49,7 +55,13 @@ export function transformToFeedItems(data: RawActivityData): FeedItem[] {
           actorWallet: job.poster_wallet,
           jobId: job.id,
           jobTitle: job.title,
-          category: job.category
+          category: job.category,
+          // Contest-specific fields
+          isContest: job.is_contest || false,
+          contestMaxWinners: job.contest_max_winners,
+          totalPrizePool: totalPrizePool,
+          contestSubmissionDeadline: job.contest_submission_deadline,
+          paymentAmount: job.payment_amount_tokens
         }
       })
 
@@ -497,6 +509,12 @@ export function transformSubscriptionEvent(event: {
     switch (event.type) {
       case 'job_posted': {
         const job = event.data
+        // Calculate total prize pool for contests
+        const contestPrizes = Array.isArray(job.contest_winner_prizes)
+          ? (job.contest_winner_prizes as Array<{ position: number; amount_tokens: number; amount_usd: number }>)
+          : []
+        const totalPrizePool = contestPrizes.reduce((sum: number, p: any) => sum + (p.amount_tokens || 0), 0)
+
         items.push({
           id: `job_posted_${job.id}`,
           type: 'job_posted',
@@ -505,7 +523,13 @@ export function transformSubscriptionEvent(event: {
             actorWallet: job.poster_wallet,
             jobId: job.id,
             jobTitle: job.title,
-            category: job.category
+            category: job.category,
+            // Contest-specific fields
+            isContest: job.is_contest || false,
+            contestMaxWinners: job.contest_max_winners,
+            totalPrizePool: totalPrizePool,
+            contestSubmissionDeadline: job.contest_submission_deadline,
+            paymentAmount: job.payment_amount_tokens
           }
         })
         break

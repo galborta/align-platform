@@ -35,7 +35,12 @@ interface FeedItemProps {
 /**
  * Get the appropriate icon for each activity type
  */
-function getIcon(type: ActivityType): React.ReactNode {
+function getIcon(type: ActivityType, isContest?: boolean): React.ReactNode {
+  // Special case: contest job posted uses trophy icon
+  if (type === 'job_posted' && isContest) {
+    return <EmojiEventsIcon fontSize="small" />
+  }
+  
   const iconMap: Record<ActivityType, React.ReactNode> = {
     job_posted: <WorkIcon fontSize="small" />,
     job_applied: <PersonAddIcon fontSize="small" />,
@@ -59,7 +64,8 @@ function getIcon(type: ActivityType): React.ReactNode {
 /**
  * Get background color for icon based on activity category
  */
-function getIconBgColor(type: ActivityType): string {
+function getIconBgColor(type: ActivityType, isContest?: boolean): string {
+  if (type === 'job_posted' && isContest) return '#EEE7FF' // contest purple
   if (type.startsWith('job_')) return '#F3E5F5' // purple tint
   if (type.startsWith('asset_')) return '#E3F2FD' // blue tint
   if (type === 'tip_sent') return '#F9FBE7' // lime tint
@@ -96,8 +102,17 @@ function getActivityContent(item: FeedItemType, projectId: string, tokenMint?: s
             projectId={projectId}
             tokenMint={tokenMint}
           />
-          {' posted job: '}
-          <span className="feed-item-link">{data.jobTitle}</span>
+          {data.isContest ? (
+            <>
+              {' created contest: '}
+              <span className="feed-item-link">🏆 {data.jobTitle}</span>
+            </>
+          ) : (
+            <>
+              {' posted job: '}
+              <span className="feed-item-link">{data.jobTitle}</span>
+            </>
+          )}
         </>
       )
     case 'job_applied':
@@ -454,8 +469,9 @@ export const FeedItem = memo(function FeedItem({
   isMobile = false 
 }: FeedItemProps) {
   const router = useRouter()
+  const isContest = item.type === 'job_posted' && item.data?.isContest
   const iconColor = getIconColor(item.type)
-  const iconBgColor = getIconBgColor(item.type)
+  const iconBgColor = getIconBgColor(item.type, isContest)
   
   // Context menu state for long-press
   const [showContextMenu, setShowContextMenu] = useState(false)
@@ -616,7 +632,7 @@ export const FeedItem = memo(function FeedItem({
           }
         }}
       >
-        {getIcon(item.type)}
+        {getIcon(item.type, isContest)}
       </Box>
       
       {/* Content */}
@@ -671,6 +687,43 @@ export const FeedItem = memo(function FeedItem({
         >
           {formatRelativeTime(item.timestamp)}
         </Typography>
+
+        {/* Contest Info Box */}
+        {item.type === 'job_posted' && item.data?.isContest && (
+          <Box sx={{ 
+            bgcolor: 'rgba(124, 77, 255, 0.1)', 
+            borderLeft: '3px solid #7C4DFF',
+            p: { xs: 1, md: 1.5 }, 
+            mt: 1,
+            borderRadius: 1 
+          }}>
+            <Typography 
+              variant="body2" 
+              sx={{ 
+                fontWeight: 600, 
+                color: '#7C4DFF', 
+                mb: 0.5,
+                fontSize: { xs: '0.75rem', md: '0.8125rem' },
+                fontFamily: 'var(--font-body)'
+              }}
+            >
+              💰 Prize Pool: {item.data.totalPrizePool?.toLocaleString() || 0} tokens
+            </Typography>
+            <Typography 
+              variant="caption" 
+              sx={{ 
+                color: 'text.secondary',
+                fontSize: { xs: 10, md: 11 },
+                fontFamily: 'var(--font-body)'
+              }}
+            >
+              {item.data.contestMaxWinners || 1} winner{(item.data.contestMaxWinners || 1) !== 1 ? 's' : ''}
+              {item.data.contestSubmissionDeadline && (
+                <> • Deadline: {new Date(item.data.contestSubmissionDeadline).toLocaleDateString()}</>
+              )}
+            </Typography>
+          </Box>
+        )}
       </Box>
 
       {/* Batched count badge */}
