@@ -195,8 +195,18 @@ export default function PosterReviewDashboard({
   }
 
   const handleFinalize = async () => {
+    // Count approved submissions (including auto_approved)
+    const totalApproved = submissions.filter(
+      s => s.social_approval_status === 'approved' || s.social_approval_status === 'auto_approved'
+    ).length
+
     if (!window.confirm(
-      `Are you sure you want to finalize this campaign and distribute ${tierBudget.toFixed(0)} tokens to ${approvedCount} participant${approvedCount !== 1 ? 's' : ''}? This cannot be undone.`
+      `Are you sure you want to finalize this campaign?\n\n` +
+      `• Participants: ${totalApproved}\n` +
+      `• Budget to distribute: ${tierBudget.toFixed(0)} tokens (~$${tierBudgetUsd.toFixed(0)})\n` +
+      `• Platform fee: ${platformFee.toFixed(0)} tokens\n` +
+      `• Refund to you: ${refundAmount.toFixed(0)} tokens\n\n` +
+      `This action cannot be undone.`
     )) {
       return
     }
@@ -204,6 +214,7 @@ export default function PosterReviewDashboard({
     setFinalizingLoading(true)
 
     try {
+      // Call finalize-payments API (server-side signing)
       const response = await fetch(`/api/jobs/${job.id}/finalize-payments`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -212,16 +223,42 @@ export default function PosterReviewDashboard({
         })
       })
 
+      const result = await response.json()
+
       if (!response.ok) {
-        const data = await response.json()
-        throw new Error(data.error || 'Failed to finalize campaign')
+        throw new Error(result.error || 'Failed to finalize campaign')
       }
 
-      alert('Campaign finalized! Payments are being distributed.')
+      // Extract response data
+      const { data } = result
+      const txSignature = data?.transaction_signature || 'N/A'
+      const participantCount = data?.participant_count || totalApproved
+      const totalDistributed = data?.active_tier?.budget_tokens || tierBudget
+      const refund = data?.refund_to_poster || refundAmount
+
+      // Show success message with details
+      alert(
+        `✅ Campaign Finalized Successfully!\n\n` +
+        `• Workers paid: ${participantCount}\n` +
+        `• Tokens distributed: ${totalDistributed.toFixed(0)}\n` +
+        `• Platform fee: ${(data?.platform_fee || platformFee).toFixed(0)}\n` +
+        `• Refunded to you: ${refund.toFixed(0)}\n\n` +
+        `Transaction: ${txSignature.slice(0, 20)}...${txSignature.slice(-8)}\n\n` +
+        `View on Solana Explorer:\nhttps://explorer.solana.com/tx/${txSignature}`
+      )
+
+      // Refresh to show completed status
       window.location.reload()
       
     } catch (error: any) {
-      alert(`Error: ${error.message}`)
+      console.error('Finalize error:', error)
+      
+      // Show detailed error message
+      alert(
+        `❌ Error Finalizing Campaign\n\n` +
+        `${error.message}\n\n` +
+        `If you believe the payment was sent, check the Solana Explorer and contact support.`
+      )
     } finally {
       setFinalizingLoading(false)
     }

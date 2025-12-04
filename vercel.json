@@ -1,7 +1,13 @@
 {
-  "crons": [{
-    "path": "/api/check-verifications",
-    "schedule": "*/5 * * * *"
-  }]
+  "crons": [
+    {
+      "path": "/api/check-verifications",
+      "schedule": "*/5 * * * *"
+    },
+    {
+      "path": "/api/cron/auto-approve-social-jobs",
+      "schedule": "0 * * * *"
+    }
+  ]
 }
 
