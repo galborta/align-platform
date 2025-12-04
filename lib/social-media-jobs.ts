@@ -312,7 +312,13 @@ export function calculateActiveTier(
     return null
   }
 
-  for (const tier of tiers) {
+  // Sort tiers by min_participants ascending to ensure correct matching
+  // This prevents issues if tiers arrive from database in unexpected order
+  const sortedTiers = [...tiers].sort(
+    (a, b) => a.min_participants - b.min_participants
+  )
+
+  for (const tier of sortedTiers) {
     // Check if participant count falls within this tier's range
     if (participantCount >= tier.min_participants) {
       // If max is null (open-ended tier like "16+"), or count is within range

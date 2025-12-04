@@ -25,9 +25,15 @@ import RepeatIcon from '@mui/icons-material/Repeat'
 import CreateIcon from '@mui/icons-material/Create'
 import InfoIcon from '@mui/icons-material/Info'
 import ScheduleIcon from '@mui/icons-material/Schedule'
+import { useConnection, useWallet } from '@solana/wallet-adapter-react'
+import { PublicKey } from '@solana/web3.js'
+import { toast } from 'react-hot-toast'
 import { BudgetTier, SocialJobType } from '@/types/social-media-jobs'
 import { calculateSocialJobTimeline, validateBudgetTiers } from '@/lib/social-media-jobs'
-import { getTokenPriceUsd } from '@/lib/helius'
+import { getTokenPriceUsd, validateMinimumUsdValue } from '@/lib/helius'
+import { transferToEscrow, validateEscrowTransfer, calculateEscrowAmount } from '@/lib/solana/escrow-transfer'
+import { getFeePercentage } from '@/lib/platform-settings'
+import { supabase } from '@/lib/supabase'
 import TierBudgetConfig from './TierBudgetConfig'
 
 // ==================== TYPES ====================
@@ -53,6 +59,10 @@ export default function CreateSocialMediaJobModal({
   tokenSymbol = 'TOKEN',
   onJobCreated
 }: CreateSocialMediaJobModalProps) {
+  // ==================== WALLET HOOKS ====================
+  const { connection } = useConnection()
+  const { publicKey, sendTransaction } = useWallet()
+
   // ==================== STATE ====================
   
   // Basic job info
@@ -80,6 +90,10 @@ export default function CreateSocialMediaJobModal({
   // UI state
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [loading, setLoading] = useState(false)
+  
+  // Escrow and submission state
+  const [isSubmitting, setIsSubmitting] = useState(false)
+  const [feePercentage, setFeePercentage] = useState<number>(5)
 
   // ==================== EFFECTS ====================
 
@@ -113,6 +127,21 @@ export default function CreateSocialMediaJobModal({
 
     fetchTokenPrice()
   }, [open, tokenMint])
+
+  // Fetch platform fee percentage
+  useEffect(() => {
+    const fetchFeePercentage = async () => {
+      if (!open) return
+      try {
+        const fee = await getFeePercentage()
+        setFeePercentage(fee)
+      } catch (error) {
+        console.error('Error fetching fee percentage:', error)
+        setFeePercentage(5) // Default to 5%
+      }
+    }
+    fetchFeePercentage()
+  }, [open])
 
   // ==================== VALIDATION ====================
 
@@ -307,6 +336,209 @@ export default function CreateSocialMediaJobModal({
     const hasPrice = tokenPrice !== null && tokenPrice > 0
     
     return hasTitle && hasDescription && hasTypeSpecificContent && hasBudget && hasValidTiers && hasToken && hasPrice && Object.keys(errors).length === 0
+  }
+
+  // ==================== CAMPAIGN CREATION ====================
+
+  /**
+   * Creates the social media campaign with escrow locking
+   * 
+   * Flow:
+   * 1. Validate form data
+   * 2. Validate wallet connection and balance
+   * 3. Transfer max budget to escrow (with platform fee)
+   * 4. Create job in database via API
+   * 5. Log escrow transaction
+   * 6. Show success and close modal
+   */
+  const handleCreateCampaign = async () => {
+    // Step 0: Final validation
+    if (!validateForm()) {
+      toast.error('Please fix the form errors before submitting')
+      return
+    }
+
+    if (!publicKey || !connection || !sendTransaction) {
+      toast.error('Please connect your wallet to create a campaign')
+      return
+    }
+
+    if (!tokenMint) {
+      toast.error('Token mint not configured')
+      return
+    }
+
+    setIsSubmitting(true)
+    let escrowTxSignature: string | undefined
+
+    try {
+      // Step 1: Calculate escrow amount (max tier budget + platform fee)
+      const maxTierBudget = Math.max(...tiers.map(t => t.budget_tokens))
+      const totalEscrowAmount = calculateEscrowAmount(maxTierBudget, feePercentage)
+
+      console.log(`[Social Campaign] Max tier budget: ${maxTierBudget}`)
+      console.log(`[Social Campaign] Fee percentage: ${feePercentage}%`)
+      console.log(`[Social Campaign] Total escrow (with fee): ${totalEscrowAmount}`)
+
+      // Step 2: Validate minimum USD value ($5)
+      const usdValidation = await validateMinimumUsdValue(tokenMint, maxTierBudget, 5)
+      if (!usdValidation.valid) {
+        toast.error('Maximum budget must be at least $5 USD')
+        setIsSubmitting(false)
+        return
+      }
+
+      // Step 3: Validate wallet has sufficient balance
+      toast.loading('Validating wallet balance...', { id: 'social-campaign' })
+
+      const balanceValidation = await validateEscrowTransfer(
+        connection,
+        publicKey,
+        new PublicKey(tokenMint),
+        totalEscrowAmount,
+        9 // Assuming 9 decimals
+      )
+
+      if (!balanceValidation.valid) {
+        toast.dismiss('social-campaign')
+        toast.error(balanceValidation.error || 'Insufficient balance for escrow')
+        setIsSubmitting(false)
+        return
+      }
+
+      // Step 4: Transfer tokens to escrow
+      toast.loading('Locking tokens in escrow...', { id: 'social-campaign' })
+
+      const transferResult = await transferToEscrow(
+        {
+          connection,
+          senderWallet: publicKey,
+          tokenMint: new PublicKey(tokenMint),
+          amount: totalEscrowAmount,
+          decimals: 9,
+          tokenSymbol: tokenSymbol,
+          jobTitle: title.trim(),
+          workerPayment: maxTierBudget
+        },
+        sendTransaction
+      )
+
+      if (!transferResult.success) {
+        toast.dismiss('social-campaign')
+        toast.error(transferResult.error || 'Failed to lock tokens in escrow')
+        setIsSubmitting(false)
+        return
+      }
+
+      escrowTxSignature = transferResult.signature
+      console.log(`[Social Campaign] Escrow locked: ${escrowTxSignature}`)
+
+      // Step 5: Calculate timeline
+      const timeline = calculateSocialJobTimeline(new Date())
+
+      // Step 6: Create job via API
+      toast.loading('Creating campaign...', { id: 'social-campaign' })
+
+      const jobPayload = {
+        project_id: projectId,
+        poster_wallet: posterWallet,
+        title: title.trim(),
+        description: description.trim(),
+        kpis: guidelines.trim() || 'Follow campaign guidelines',
+        category: 'marketing',
+        // Escrow fields
+        escrow_locked: true,
+        escrow_tx_signature: escrowTxSignature,
+        escrow_amount_tokens: totalEscrowAmount,
+        escrow_token_mint: tokenMint,
+        fee_percentage_at_creation: feePercentage,
+        // Social media job fields
+        is_social_media_job: true,
+        social_job_type: socialJobType,
+        social_tweet_url: socialJobType === 'retweet' ? tweetUrl.trim() : null,
+        social_tweet_topic: socialJobType === 'original_tweet' ? tweetTopic.trim() : null,
+        social_submission_deadline: timeline.submission_deadline.toISOString(),
+        social_engagement_deadline: timeline.engagement_deadline.toISOString(),
+        social_review_deadline: timeline.review_deadline.toISOString(),
+        social_total_budget_tokens: maxTierBudget,
+        social_total_budget_usd: maxTierBudget * (tokenPrice || 0),
+        social_budget_tiers: tiers,
+        social_min_followers_required: minFollowersRequired,
+        social_payments_distributed: false,
+        // Regular job fields (not used for social jobs but required by schema)
+        payment_amount_tokens: maxTierBudget,
+        payment_amount_usd: maxTierBudget * (tokenPrice || 0),
+        assignment_mode: 'review',
+        status: 'open',
+        token_symbol: tokenSymbol
+      }
+
+      const response = await fetch('/api/jobs/create', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(jobPayload)
+      })
+
+      const result = await response.json()
+
+      if (!response.ok || !result.success) {
+        throw new Error(result.error || 'Failed to create campaign')
+      }
+
+      const createdJob = result.job
+      console.log(`[Social Campaign] Created job: ${createdJob.id}`)
+
+      // Step 7: Log escrow transaction
+      try {
+        await supabase.from('job_escrow_transactions').insert({
+          job_id: createdJob.id,
+          transaction_type: 'lock',
+          from_wallet: posterWallet,
+          to_wallet: transferResult.escrowWallet,
+          amount_tokens: totalEscrowAmount,
+          token_mint: tokenMint,
+          token_symbol: tokenSymbol,
+          tx_signature: escrowTxSignature,
+          status: 'confirmed',
+          confirmed_at: new Date().toISOString()
+        })
+      } catch (logError) {
+        console.error('[Social Campaign] Failed to log escrow transaction:', logError)
+        // Non-critical - job is already created
+      }
+
+      // Step 8: Success!
+      toast.dismiss('social-campaign')
+      toast.success(
+        `🎉 Campaign created! ${totalEscrowAmount.toFixed(2)} ${tokenSymbol} locked in escrow`,
+        { duration: 5000 }
+      )
+
+      // Reset form and close modal
+      resetForm()
+      onClose()
+      
+      // Notify parent component
+      if (onJobCreated) {
+        onJobCreated()
+      }
+
+    } catch (error: any) {
+      console.error('[Social Campaign] Error:', error)
+      toast.dismiss('social-campaign')
+      
+      if (escrowTxSignature) {
+        // Escrow was locked but job creation failed
+        toast.error(
+          `Campaign creation failed after escrow lock. Transaction: ${escrowTxSignature.slice(0, 20)}... Contact support.`,
+          { duration: 10000 }
+        )
+      } else {
+        toast.error(error.message || 'Failed to create campaign')
+      }
+    } finally {
+      setIsSubmitting(false)
+    }
   }
 
   // ==================== RENDER ====================
@@ -1024,20 +1256,8 @@ export default function CreateSocialMediaJobModal({
         </Button>
         <Button
           variant="contained"
-          onClick={() => {
-            if (validateForm()) {
-              // Will implement submission in later sprint
-              console.log('Form validated successfully', {
-                title,
-                description,
-                socialJobType,
-                tweetUrl,
-                tweetTopic,
-                guidelines
-              })
-            }
-          }}
-          disabled={loading || !canSubmit()}
+          onClick={handleCreateCampaign}
+          disabled={loading || isSubmitting || !canSubmit() || !publicKey}
           sx={{ 
             bgcolor: 'var(--accent-primary, #7C4DFF)',
             color: '#FFFFFF',
@@ -1057,7 +1277,7 @@ export default function CreateSocialMediaJobModal({
             }
           }}
         >
-          Create Campaign & Lock Budget
+          {isSubmitting ? 'Creating Campaign...' : 'Create Campaign & Lock Budget'}
         </Button>
       </DialogActions>
     </Dialog>
