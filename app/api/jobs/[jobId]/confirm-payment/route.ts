@@ -15,7 +15,7 @@ const SOLANA_RPC = process.env.NEXT_PUBLIC_SOLANA_RPC_URL || 'https://api.mainne
 const connection = new Connection(SOLANA_RPC, 'confirmed')
 
 /**
- * POST /api/jobs/[id]/confirm-payment
+ * POST /api/jobs/[jobId]/confirm-payment
  * 
  * Confirms that a payment transaction was successfully sent on-chain
  * and updates all database records accordingly.
@@ -44,13 +44,13 @@ const connection = new Connection(SOLANA_RPC, 'confirmed')
  */
 export async function POST(
   request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
+  { params }: { params: Promise<{ jobId: string }> }
 ) {
   const startTime = Date.now()
 
   try {
     // Await params in Next.js 15+
-    const { id: jobId } = await params
+    const { jobId } = await params
     console.log(`[Confirm Payment] Starting for job ${jobId}`)
 
     // Parse request body
