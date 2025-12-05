@@ -60,8 +60,11 @@ export function WalletButton() {
   }
 
   // Get unique installed wallets (deduplicate by name)
+  // Include 'Loadable' wallets for mobile deep link support (Phantom, Solflare, etc.)
   const getUniqueInstalledWallets = () => {
-    const installed = wallets.filter(w => w.readyState === 'Installed')
+    const installed = wallets.filter(w => 
+      w.readyState === 'Installed' || w.readyState === 'Loadable'
+    )
     const seen = new Set<string>()
     return installed.filter(w => {
       const name = w.adapter.name
