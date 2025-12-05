@@ -166,8 +166,9 @@ export default function Home() {
             )}
 
             {/* Projects Grid */}
-            {!loading && !error && projects.length > 0 && (
+            {!loading && !error && (
               <div className="projects-grid">
+                {/* Real Projects */}
                 {projects.map((project) => (
                   <ProjectCard
                     key={project.id}
@@ -181,20 +182,28 @@ export default function Home() {
                     isVerified={project.isVerified}
                   />
                 ))}
-              </div>
-            )}
-
-            {/* Empty State */}
-            {!loading && !error && projects.length === 0 && (
-              <div className="empty-state">
-                <AccountBalanceWalletIcon 
-                  sx={{ fontSize: 64, color: 'var(--accent-primary)', mb: 2 }} 
-                />
-                <h3>No projects yet</h3>
-                <p>Be the first to add your project to Align!</p>
-                <a href="/create" className="cta-button">
-                  Add Your Project
-                </a>
+                
+                {/* Coming Soon Placeholder Cards - show when < 3 projects */}
+                {projects.length < 3 && [...Array(3 - projects.length)].map((_, i) => (
+                  <div key={`coming-soon-${i}`} className="coming-soon-card">
+                    <div className="coming-soon-badge">Coming Soon</div>
+                    <div className="coming-soon-avatar">
+                      <span>?</span>
+                    </div>
+                    <div className="coming-soon-content">
+                      <div className="coming-soon-name">Your Project Here</div>
+                      <div className="coming-soon-symbol">$TOKEN</div>
+                      <div className="coming-soon-stats">
+                        <span>0 Active Jobs</span>
+                        <span>•</span>
+                        <span>0 Completed</span>
+                      </div>
+                    </div>
+                    <a href="/create" className="coming-soon-cta">
+                      Add Your Project →
+                    </a>
+                  </div>
+                ))}
               </div>
             )}
           </section>
@@ -240,7 +249,8 @@ export default function Home() {
       <style jsx global>{`
         /* Fix Messaging Badge Position on Homepage Only */
         /* Target the 3rd button (messages) in the header buttons group */
-        .page-wrapper header .flex.items-center.gap-2 > .MuiIconButton-root:nth-of-type(3) .MuiBadge-badge {
+        /* Only apply when badge is visible (not invisible) */
+        .page-wrapper header .flex.items-center.gap-2 > .MuiIconButton-root:nth-of-type(3) .MuiBadge-badge:not(.MuiBadge-invisible) {
           position: absolute !important;
           top: -8px !important;
           right: -8px !important;
@@ -424,6 +434,107 @@ export default function Home() {
         /* Karma Sidebar - Right Column */
         .karma-sidebar {
           align-self: start; /* Important for sticky child to work */
+        }
+
+        /* Coming Soon Cards */
+        .coming-soon-card {
+          background: var(--card-background);
+          border-radius: var(--radius-card-lg);
+          padding: var(--space-lg);
+          box-shadow: var(--shadow-card);
+          border: 2px dashed var(--border-subtle);
+          position: relative;
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          text-align: center;
+          gap: var(--space-md);
+          opacity: 0.7;
+          transition: all 0.3s ease;
+        }
+
+        .coming-soon-card:hover {
+          opacity: 1;
+          border-color: var(--accent-primary);
+          transform: translateY(-2px);
+        }
+
+        .coming-soon-badge {
+          position: absolute;
+          top: var(--space-sm);
+          right: var(--space-sm);
+          background: var(--accent-primary-soft);
+          color: var(--accent-primary);
+          padding: 4px 12px;
+          border-radius: 20px;
+          font-family: var(--font-body);
+          font-size: 11px;
+          font-weight: 600;
+          text-transform: uppercase;
+          letter-spacing: 0.5px;
+        }
+
+        .coming-soon-avatar {
+          width: 64px;
+          height: 64px;
+          border-radius: 50%;
+          background: linear-gradient(135deg, var(--accent-primary-soft), var(--subtle-background));
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          border: 2px dashed var(--border-subtle);
+        }
+
+        .coming-soon-avatar span {
+          font-size: 28px;
+          color: var(--text-muted);
+          font-weight: 600;
+        }
+
+        .coming-soon-content {
+          display: flex;
+          flex-direction: column;
+          gap: var(--space-xs);
+        }
+
+        .coming-soon-name {
+          font-family: var(--font-heading);
+          font-size: var(--text-body);
+          font-weight: 600;
+          color: var(--text-secondary);
+        }
+
+        .coming-soon-symbol {
+          font-family: var(--font-body);
+          font-size: var(--text-body-small);
+          color: var(--text-muted);
+        }
+
+        .coming-soon-stats {
+          display: flex;
+          gap: var(--space-xs);
+          font-family: var(--font-body);
+          font-size: var(--text-caption);
+          color: var(--text-muted);
+        }
+
+        .coming-soon-cta {
+          background: transparent;
+          border: 1px solid var(--accent-primary);
+          color: var(--accent-primary);
+          padding: var(--space-xs) var(--space-md);
+          border-radius: var(--radius-control);
+          font-family: var(--font-body);
+          font-size: var(--text-caption);
+          font-weight: 600;
+          text-decoration: none;
+          transition: all 0.2s ease;
+          margin-top: var(--space-sm);
+        }
+
+        .coming-soon-cta:hover {
+          background: var(--accent-primary);
+          color: white;
         }
 
         /* Tablet Breakpoint (768px - 1024px) */
