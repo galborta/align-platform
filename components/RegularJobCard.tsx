@@ -246,7 +246,7 @@ export default function RegularJobCard({
           >
             {job.status === 'completed' && job.completed_at 
               ? `Completed ${formatDistanceToNow(new Date(job.completed_at), { addSuffix: true })}`
-              : `Posted ${formatDistanceToNow(new Date(job.created_at), { addSuffix: true })}`
+              : `Posted ${formatDistanceToNow(new Date(job.created_at || 0), { addSuffix: true })}`
             }
           </Typography>
           

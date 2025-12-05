@@ -1085,7 +1085,7 @@ export default function JobDetailPage() {
       case 'recent':
         // Sort by application created_at DESC (newest first)
         return appsWithVotes.sort((a, b) => 
-          new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+          new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime()
         )
       
       default:

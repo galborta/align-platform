@@ -116,7 +116,7 @@ export default function Home() {
             return b.activity_score - a.activity_score
           }
           // Tie-breaker: created_at (newer first)
-          return new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+          return new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime()
         })
 
         setProjects(projectsWithCounts)

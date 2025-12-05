@@ -51,3 +51,4 @@ COMMENT ON COLUMN wallet_karma.dispute_votes_won_count IS 'Number of dispute vot
 
 
 
+

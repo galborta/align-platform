@@ -217,7 +217,7 @@ export default function AdminPage() {
         if (a.status === 'pending' && b.status !== 'pending') return -1
         if (a.status !== 'pending' && b.status === 'pending') return 1
         // Then by creation date (newest first)
-        return new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+        return new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime()
       })
 
       setPendingProjects(sortedProjects)

@@ -134,3 +134,4 @@ ALTER PUBLICATION supabase_realtime ADD TABLE job_application_votes;
 
 
 
+

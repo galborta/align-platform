@@ -1854,9 +1854,9 @@ export default function AdminProjectPage() {
     filtered.sort((a, b) => {
       switch (pendingSort) {
         case 'newest':
-          return new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+          return new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime()
         case 'oldest':
-          return new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+          return new Date(a.created_at || 0).getTime() - new Date(b.created_at || 0).getTime()
         case 'most-upvotes':
           return b.unique_upvoters_count - a.unique_upvoters_count
         case 'most-reports':
@@ -3906,7 +3906,7 @@ export default function AdminProjectPage() {
                         <TextField
                           label="Created Date"
                           fullWidth
-                          value={new Date(project.created_at).toLocaleString()}
+                          value={new Date(project.created_at || 0).toLocaleString()}
                           InputProps={{ readOnly: true }}
                           helperText="Read-only"
                         />
@@ -3914,7 +3914,7 @@ export default function AdminProjectPage() {
                         <TextField
                           label="Last Updated"
                           fullWidth
-                          value={new Date(project.updated_at).toLocaleString()}
+                          value={new Date(project.updated_at || 0).toLocaleString()}
                           InputProps={{ readOnly: true }}
                           helperText="Read-only"
                         />
