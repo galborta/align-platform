@@ -23,10 +23,10 @@ import { notificationService } from '@/lib/services/notificationService'
  */
 export async function POST(
   request: NextRequest,
-  { params }: { params: { jobId: string } }
+  { params }: { params: Promise<{ jobId: string }> }
 ) {
   try {
-    const jobId = params.jobId
+    const { jobId } = await params
 
     const body = await request.json()
     const { submission_id, action, denial_reason } = body

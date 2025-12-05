@@ -37,6 +37,7 @@ import {
   SubmissionComment,
   SubmissionCommentWithReplies 
 } from '@/lib/submission-comments'
+import { truncateWalletAddress } from '@/lib/usePosterDisplayName'
 
 type JobSubmission = Database['public']['Tables']['job_submissions']['Row']
 
@@ -62,6 +63,7 @@ export default function ContestSubmissionDetailModal({
   const [posting, setPosting] = useState(false)
   const [postingReply, setPostingReply] = useState<string | null>(null)
   const [loadingComments, setLoadingComments] = useState(true)
+  const [displayNames, setDisplayNames] = useState<Map<string, string>>(new Map())
   
   // Real-time subscription ref
   const channelRef = useRef<RealtimeChannel | null>(null)
@@ -102,7 +104,35 @@ export default function ContestSubmissionDetailModal({
     setLoadingComments(true)
     const data = await getSubmissionComments(submission.id)
     setComments(data)
+    
+    // Fetch display names for all commenters
+    const wallets = [...new Set(data.map(c => c.wallet_address))]
+    if (wallets.length > 0) {
+      const { data: profiles } = await supabase
+        .from('user_profiles')
+        .select('wallet_address, display_name')
+        .in('wallet_address', wallets)
+      
+      if (profiles) {
+        const newDisplayNames = new Map<string, string>()
+        profiles.forEach(p => {
+          if (p.display_name) {
+            newDisplayNames.set(p.wallet_address, p.display_name)
+          }
+        })
+        setDisplayNames(newDisplayNames)
+      }
+    }
     setLoadingComments(false)
+  }
+
+  // Helper to get display name or truncated wallet
+  const getDisplayName = (address: string) => {
+    return displayNames.get(address) || truncateWalletAddress(address)
+  }
+
+  const hasDisplayName = (address: string) => {
+    return displayNames.has(address)
   }
 
   const handleSubmitComment = async () => {
@@ -162,9 +192,7 @@ export default function ContestSubmissionDetailModal({
     }
   }
 
-  const formatWalletAddress = (address: string) => {
-    return `${address.slice(0, 4)}...${address.slice(-4)}`
-  }
+  // Removed formatWalletAddress - using getDisplayName instead
 
   const getWinnerLabel = (position: number | null) => {
     if (!position) return ''
@@ -210,11 +238,11 @@ export default function ContestSubmissionDetailModal({
             variant="body2" 
             sx={{ 
               fontWeight: 600,
-              fontFamily: 'var(--font-mono, JetBrains Mono, monospace)',
+              fontFamily: hasDisplayName(comment.wallet_address) ? 'inherit' : 'var(--font-mono, JetBrains Mono, monospace)',
               color: 'var(--text-primary, #1A1A1E)'
             }}
           >
-            {formatWalletAddress(comment.wallet_address)}
+            {getDisplayName(comment.wallet_address)}
           </Typography>
           <Typography 
             variant="caption" 

@@ -56,6 +56,8 @@ interface CreateJobModalProps {
   tokenSymbol: string
   walletAddress: string
   onJobCreated?: () => void
+  initialJobType?: 'regular' | 'contest'
+  onSwitchToSocialMedia?: () => void
 }
 
 const CATEGORIES = [
@@ -88,7 +90,9 @@ export function CreateJobModal({
   tokenMint,
   tokenSymbol,
   walletAddress,
-  onJobCreated
+  onJobCreated,
+  initialJobType = 'regular',
+  onSwitchToSocialMedia
 }: CreateJobModalProps) {
   const { connection } = useConnection()
   const { publicKey, sendTransaction } = useWallet()
@@ -154,8 +158,11 @@ export function CreateJobModal({
       
       // Fetch application count
       fetchApplicationCount(existingJob.id)
+    } else if (isOpen && mode === 'create') {
+      // Set initial job type when opening in create mode
+      setJobType(initialJobType)
     }
-  }, [isOpen, mode, existingJob])
+  }, [isOpen, mode, existingJob, initialJobType])
 
   // Fetch fee percentage on mount
   useEffect(() => {
@@ -1211,7 +1218,7 @@ export function CreateJobModal({
         onScroll={handleScroll}
       >
         {/* Job Type Toggle */}
-        <Box sx={{ mb: 3, display: 'flex', gap: 2, justifyContent: 'center' }}>
+        <Box sx={{ mb: 3, display: 'flex', gap: 2, justifyContent: 'center', flexWrap: 'wrap' }}>
           <Button
             variant={jobType === 'regular' ? 'contained' : 'outlined'}
             onClick={() => setJobType('regular')}
@@ -1227,7 +1234,7 @@ export function CreateJobModal({
               }
             }}
           >
-            Regular Job
+            💼 Regular Job
           </Button>
           <Button
             variant={jobType === 'contest' ? 'contained' : 'outlined'}
@@ -1246,6 +1253,47 @@ export function CreateJobModal({
           >
             🏆 Contest Job
           </Button>
+          {onSwitchToSocialMedia && (
+            <Button
+              variant="outlined"
+              onClick={() => {
+                onClose()
+                onSwitchToSocialMedia()
+              }}
+              sx={{
+                bgcolor: 'transparent',
+                color: '#7C4DFF',
+                borderColor: '#7C4DFF',
+                textTransform: 'none',
+                fontWeight: 600,
+                px: 3,
+                position: 'relative',
+                '&:hover': {
+                  bgcolor: 'rgba(124, 77, 255, 0.08)'
+                }
+              }}
+            >
+              📣 Social Campaign
+              <Box
+                component="span"
+                sx={{
+                  position: 'absolute',
+                  top: -8,
+                  right: -8,
+                  bgcolor: '#E3F06F',
+                  color: '#1A1A1E',
+                  fontSize: '9px',
+                  fontWeight: 700,
+                  px: 0.75,
+                  py: 0.25,
+                  borderRadius: '4px',
+                  textTransform: 'uppercase'
+                }}
+              >
+                New
+              </Box>
+            </Button>
+          )}
         </Box>
 
         {/* Contest Info Alert */}

@@ -10,6 +10,7 @@ import { useMessaging } from '@/lib/MessagingContext'
 import { canMessageUser } from '@/lib/messaging'
 import { toast } from 'react-hot-toast'
 import { UserProfileView } from '@/components/UserProfileView'
+import { truncateWalletAddress } from '@/lib/usePosterDisplayName'
 
 interface WalletKarma {
   wallet_address: string
@@ -32,8 +33,18 @@ export function KarmaLeaderboard({ projectId }: { projectId: string }) {
   const [messageStatuses, setMessageStatuses] = useState<Record<string, MessageStatus>>({})
   const [showProfileView, setShowProfileView] = useState(false)
   const [selectedProfileWallet, setSelectedProfileWallet] = useState<string | null>(null)
+  const [displayNames, setDisplayNames] = useState<Map<string, string>>(new Map())
   const currentWallet = useWallet().publicKey?.toString()
   const { openMessages } = useMessaging()
+  
+  // Helper to get display name or truncated wallet
+  const getDisplayName = (address: string) => {
+    return displayNames.get(address) || truncateWalletAddress(address)
+  }
+
+  const hasDisplayName = (address: string) => {
+    return displayNames.has(address)
+  }
   
   useEffect(() => {
     async function fetchLeaders() {
@@ -48,6 +59,25 @@ export function KarmaLeaderboard({ projectId }: { projectId: string }) {
       
       if (data) {
         setLeaders(data)
+        
+        // Fetch display names for all leaders
+        const wallets = data.map(l => l.wallet_address)
+        if (wallets.length > 0) {
+          const { data: profiles } = await supabase
+            .from('user_profiles')
+            .select('wallet_address, display_name')
+            .in('wallet_address', wallets)
+          
+          if (profiles) {
+            const newDisplayNames = new Map<string, string>()
+            profiles.forEach(p => {
+              if (p.display_name) {
+                newDisplayNames.set(p.wallet_address, p.display_name)
+              }
+            })
+            setDisplayNames(newDisplayNames)
+          }
+        }
       }
       setLoading(false)
     }
@@ -257,8 +287,8 @@ export function KarmaLeaderboard({ projectId }: { projectId: string }) {
                     {index === 2 && <span className="text-2xl">🥉</span>}
                     
                     <div>
-                      <div className="font-mono text-sm">
-                        {leader.wallet_address.slice(0, 4)}...{leader.wallet_address.slice(-4)}
+                      <div className={`text-sm ${hasDisplayName(leader.wallet_address) ? '' : 'font-mono'}`}>
+                        {getDisplayName(leader.wallet_address)}
                         {isOwn && (
                           <span className="ml-2 text-xs bg-purple-100 text-purple-700 px-2 py-0.5 rounded">
                             You

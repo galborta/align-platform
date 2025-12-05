@@ -307,6 +307,40 @@
   margin-bottom: var(--space-lg);
 }
 
+/* Placeholder Row */
+.placeholder-row .row-link:hover {
+  background: transparent;
+}
+
+.placeholder-row .row-link:hover .rank {
+  transform: none;
+}
+
+.placeholder-row .row-link:hover .avatar {
+  transform: none;
+  box-shadow: none;
+}
+
+.placeholder-row .row-link:hover .username {
+  color: var(--text-secondary);
+}
+
+/* Empty CTA */
+.empty-cta {
+  margin-top: var(--space-lg);
+  padding-top: var(--space-md);
+  border-top: 1px solid var(--border-subtle);
+  text-align: center;
+}
+
+.empty-cta p {
+  font-family: var(--font-body);
+  font-size: var(--text-body-small);
+  color: var(--text-secondary);
+  margin-bottom: var(--space-sm);
+  font-style: italic;
+}
+
 .cta-button {
   display: inline-block;
   background: var(--accent-primary);

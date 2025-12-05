@@ -14,6 +14,7 @@ import { SupporterBadgeFetcher } from './SupporterBadgeFetcher'
 import { getHolderInfo } from '@/lib/token-balance'
 import { useMessaging } from '@/lib/MessagingContext'
 import TipModal from './TipModal'
+import { truncateWalletAddress } from '@/lib/usePosterDisplayName'
 
 interface JobCommentsProps {
   jobId: string
@@ -50,6 +51,7 @@ export default function JobComments({ jobId, projectId }: JobCommentsProps) {
   const [tipModalOpen, setTipModalOpen] = useState(false)
   const [tipRecipient, setTipRecipient] = useState<string>('')
   const [openingMessageFor, setOpeningMessageFor] = useState<string | null>(null)
+  const [displayNames, setDisplayNames] = useState<Map<string, string>>(new Map())
 
   // Fetch project token mint
   useEffect(() => {
@@ -131,6 +133,34 @@ export default function JobComments({ jobId, projectId }: JobCommentsProps) {
   async function fetchComments() {
     const data = await getJobComments(jobId)
     setComments(data as Comment[])
+    
+    // Fetch display names for all commenters
+    const wallets = [...new Set((data as Comment[]).map(c => c.wallet_address))]
+    if (wallets.length > 0) {
+      const { data: profiles } = await supabase
+        .from('user_profiles')
+        .select('wallet_address, display_name')
+        .in('wallet_address', wallets)
+      
+      if (profiles) {
+        const newDisplayNames = new Map<string, string>()
+        profiles.forEach(p => {
+          if (p.display_name) {
+            newDisplayNames.set(p.wallet_address, p.display_name)
+          }
+        })
+        setDisplayNames(newDisplayNames)
+      }
+    }
+  }
+
+  // Helper to get display name or truncated wallet
+  const getDisplayName = (address: string) => {
+    return displayNames.get(address) || truncateWalletAddress(address)
+  }
+
+  const hasDisplayName = (address: string) => {
+    return displayNames.has(address)
   }
 
   // Organize comments into top-level and replies
@@ -202,9 +232,7 @@ export default function JobComments({ jobId, projectId }: JobCommentsProps) {
     }
   }
 
-  const formatWalletAddress = (address: string) => {
-    return `${address.slice(0, 4)}...${address.slice(-4)}`
-  }
+  // Removed formatWalletAddress - using getDisplayName instead
 
   const handleOpenMessage = async (targetWallet: string) => {
     if (!publicKey) {
@@ -333,11 +361,11 @@ export default function JobComments({ jobId, projectId }: JobCommentsProps) {
             variant="body2" 
             sx={{ 
               fontWeight: 600,
-              fontFamily: 'monospace',
+              fontFamily: hasDisplayName(comment.wallet_address) ? 'inherit' : 'monospace',
               color: '#1A1A1E'
             }}
           >
-            {formatWalletAddress(comment.wallet_address)}
+            {getDisplayName(comment.wallet_address)}
           </Typography>
           <SupporterBadgeFetcher 
             walletAddress={comment.wallet_address} 

@@ -12,6 +12,7 @@ import PeopleIcon from '@mui/icons-material/People'
 import TrendingUpIcon from '@mui/icons-material/TrendingUp'
 import { BudgetTier } from '@/types/social-media-jobs'
 import { calculateActiveTier, formatTierRange, getNextTier } from '@/lib/social-media-jobs'
+import { usePosterDisplayName } from '@/lib/usePosterDisplayName'
 
 type Job = Database['public']['Tables']['jobs']['Row']
 
@@ -29,6 +30,7 @@ export default function SocialMediaJobCard({
   tokenSymbol = 'tokens'
 }: SocialMediaJobCardProps) {
   const router = useRouter()
+  const { displayNameOrWallet, hasDisplayName } = usePosterDisplayName(job.poster_wallet)
 
   // Guard: Only render social media jobs
   if (!job.is_social_media_job) {
@@ -229,8 +231,8 @@ export default function SocialMediaJobCard({
           }}
         >
           by{' '}
-          <span style={{ fontFamily: 'var(--font-mono, JetBrains Mono, monospace)' }}>
-            {job.poster_wallet.slice(0, 4)}...{job.poster_wallet.slice(-4)}
+          <span style={{ fontFamily: hasDisplayName ? 'inherit' : 'var(--font-mono, JetBrains Mono, monospace)' }}>
+            {displayNameOrWallet}
           </span>
           {projectName && (
             <span style={{ color: 'var(--text-muted, #A3A7B5)' }}> • {projectName}</span>

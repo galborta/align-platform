@@ -18,6 +18,7 @@ import ContestSubmissionModal from '@/components/ContestSubmissionModal'
 import ContestSubmissionGallery from '@/components/ContestSubmissionGallery'
 import { SocialMediaJobDetail } from '@/components/jobs'
 import { supabase } from '@/lib/supabase'
+import { usePosterDisplayName } from '@/lib/usePosterDisplayName'
 import { getJobById } from '@/lib/jobs'
 import { upvoteApplication, getApplicationVotes, hasUserVoted } from '@/lib/job-upvoting'
 import { awardApplicationUpvoterBonuses } from '@/lib/job-karma'
@@ -179,6 +180,10 @@ export default function JobDetailPage() {
   const [hasSubmittedToContest, setHasSubmittedToContest] = useState(false)
   const [contestSubmissionCount, setContestSubmissionCount] = useState(0)
   const [checkingContestEligibility, setCheckingContestEligibility] = useState(true)
+
+  // Display name hooks for poster and worker
+  const { displayNameOrWallet: posterDisplayName, hasDisplayName: posterHasDisplayName } = usePosterDisplayName(job?.poster_wallet || '')
+  const { displayNameOrWallet: workerDisplayName, hasDisplayName: workerHasDisplayName } = usePosterDisplayName(job?.assigned_to || '')
 
   useEffect(() => {
     if (params.jobId && params.id) {
@@ -1328,7 +1333,7 @@ export default function JobDetailPage() {
               
               <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 0.5 }}>
                 <Typography variant="body2" sx={{ color: '#a5d6a7' }}>
-                  Worker ({job.assigned_to ? formatWalletAddress(job.assigned_to) : 'N/A'}):
+                  Worker ({job.assigned_to ? workerDisplayName : 'N/A'}):
                 </Typography>
                 <Typography variant="body2" sx={{ color: '#4caf50', fontWeight: 'bold' }}>
                   +{(job.payment_amount_usd * 50).toLocaleString()} karma
@@ -1337,7 +1342,7 @@ export default function JobDetailPage() {
               
               <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 0.5 }}>
                 <Typography variant="body2" sx={{ color: '#a5d6a7' }}>
-                  Poster ({formatWalletAddress(job.poster_wallet)}):
+                  Poster ({posterDisplayName}):
                 </Typography>
                 <Typography variant="body2" sx={{ color: '#4caf50', fontWeight: 'bold' }}>
                   +{(job.payment_amount_usd * 50).toLocaleString()} karma
@@ -1413,12 +1418,12 @@ export default function JobDetailPage() {
                       }}
                     />
                     <span 
-                      className="text-sm font-mono"
+                      className={`text-sm ${(dispute.opened_by === 'poster' && posterHasDisplayName) || (dispute.opened_by !== 'poster' && workerHasDisplayName) ? '' : 'font-mono'}`}
                       style={{ color: '#6F7280' }}
                     >
                       {dispute.opened_by === 'poster' 
-                        ? formatWalletAddress(job.poster_wallet)
-                        : job.assigned_to ? formatWalletAddress(job.assigned_to) : 'N/A'
+                        ? posterDisplayName
+                        : job.assigned_to ? workerDisplayName : 'N/A'
                       }
                     </span>
                     <span className="text-sm" style={{ color: '#A3A7B5' }}>
@@ -1779,10 +1784,10 @@ export default function JobDetailPage() {
                     Posted by:
                   </span>
                    <span 
-                     className="text-sm font-mono font-medium"
+                     className={`text-sm font-medium ${posterHasDisplayName ? '' : 'font-mono'}`}
                      style={{ color: '#1A1A1E' }}
                    >
-                     {formatWalletAddress(job.poster_wallet)}
+                     {posterDisplayName}
                    </span>
                    <Tooltip title={copiedAddress === job.poster_wallet ? "Copied!" : "Copy address"}>
                      <IconButton

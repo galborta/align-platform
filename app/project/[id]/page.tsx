@@ -95,6 +95,11 @@ export default function ProjectDetailPage() {
   const [statsLoading, setStatsLoading] = useState(false)
   const [showMockFeed, setShowMockFeed] = useState(true)
 
+  // Scroll to top when navigating to this page
+  useEffect(() => {
+    window.scrollTo(0, 0)
+  }, [])
+
   useEffect(() => {
     if (params.id) {
       fetchProject(params.id as string)
@@ -363,7 +368,7 @@ export default function ProjectDetailPage() {
             {/* Jobs Widget - Above holder chat */}
             {project.status === 'live' && (
               <Box sx={{ order: { xs: 0, lg: 0 } }}>
-                <ProjectJobsWidget projectId={project.id} tokenSymbol={project.token_symbol} />
+                <ProjectJobsWidget projectId={project.id} tokenSymbol={project.token_symbol} tokenMint={project.token_mint} />
               </Box>
             )}
 

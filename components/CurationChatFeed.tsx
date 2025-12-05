@@ -9,6 +9,7 @@ import { Database } from '@/types/database'
 import { Dialog, Box } from '@mui/material'
 import { UserProfileView } from '@/components/UserProfileView'
 import { WalletAddressWithButtons } from '@/components/WalletAddressWithButtons'
+import { truncateWalletAddress } from '@/lib/usePosterDisplayName'
 
 const getPlatformUrl = (platform: string, handle: string): string => {
   const urls: Record<string, string> = {
@@ -38,6 +39,7 @@ export function CurationChatFeed({ projectId }: CurationChatFeedProps) {
   const [hasMore, setHasMore] = useState(true)
   const [loadingMore, setLoadingMore] = useState(false)
   const [displayCount, setDisplayCount] = useState(2)
+  const [displayNames, setDisplayNames] = useState<Map<string, string>>(new Map())
   
   // Fetch messages function
   const fetchMessages = useCallback(async () => {
@@ -53,8 +55,38 @@ export function CurationChatFeed({ projectId }: CurationChatFeedProps) {
     if (!error && data) {
       setMessages(data)
       setHasMore(data.length > displayCount)
+      
+      // Fetch display names for all wallet addresses in messages
+      const wallets = [...new Set(data.map(m => m.wallet_address).filter(Boolean) as string[])]
+      if (wallets.length > 0) {
+        const { data: profiles } = await supabase
+          .from('user_profiles')
+          .select('wallet_address, display_name')
+          .in('wallet_address', wallets)
+        
+        if (profiles) {
+          const newDisplayNames = new Map<string, string>()
+          profiles.forEach(p => {
+            if (p.display_name) {
+              newDisplayNames.set(p.wallet_address, p.display_name)
+            }
+          })
+          setDisplayNames(newDisplayNames)
+        }
+      }
     }
   }, [projectId, displayCount])
+  
+  // Helper to get display name or truncated wallet
+  const getDisplayName = (address: string | null) => {
+    if (!address) return '...'
+    return displayNames.get(address) || truncateWalletAddress(address)
+  }
+
+  const hasDisplayName = (address: string | null) => {
+    if (!address) return false
+    return displayNames.has(address)
+  }
   
   // Load more function
   const loadMore = () => {
@@ -314,7 +346,7 @@ function CurationChatMessage({
         <p className="text-sm text-red-900">
           <span className="font-bold">🚫 Wallet Banned:</span>{' '}
           <span 
-            className="font-mono cursor-pointer hover:text-red-700 underline decoration-dotted transition-colors"
+            className={`cursor-pointer hover:text-red-700 underline decoration-dotted transition-colors ${hasDisplayName(message.wallet_address) ? '' : 'font-mono'}`}
             onClick={() => {
               if (message.wallet_address) {
                 setSelectedProfileWallet(message.wallet_address)
@@ -323,7 +355,7 @@ function CurationChatMessage({
             }}
             title="View profile"
           >
-            {message.wallet_address?.slice(0, 4)}...{message.wallet_address?.slice(-4)}
+            {getDisplayName(message.wallet_address)}
           </span>
         </p>
       </div>

@@ -12,10 +12,10 @@ import { ADMIN_WALLET } from '@/lib/admin-auth'
  */
 export async function POST(
   request: NextRequest,
-  { params }: { params: { jobId: string } }
+  { params }: { params: Promise<{ jobId: string }> }
 ) {
   try {
-    const jobId = params.jobId
+    const { jobId } = await params
 
     // Verify admin authorization
     const authHeader = request.headers.get('authorization')

@@ -69,7 +69,10 @@ export function ProjectChat({ projectId, tokenMint }: ProjectChatProps) {
   // Auto-scroll to bottom when new messages arrive (only if near bottom)
   const scrollToBottom = (force = false) => {
     if (force || isNearBottom()) {
-      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+      // Use scrollTop on container instead of scrollIntoView to prevent page scroll
+      if (messagesContainerRef.current) {
+        messagesContainerRef.current.scrollTop = messagesContainerRef.current.scrollHeight
+      }
       setShowNewMessagesIndicator(false)
     } else {
       setShowNewMessagesIndicator(true)

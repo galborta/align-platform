@@ -6,6 +6,7 @@ import EmojiEventsIcon from '@mui/icons-material/EmojiEvents'
 import AccessTimeIcon from '@mui/icons-material/AccessTime'
 import PeopleIcon from '@mui/icons-material/People'
 import { useRouter } from 'next/navigation'
+import { usePosterDisplayName } from '@/lib/usePosterDisplayName'
 
 type Job = Database['public']['Tables']['jobs']['Row']
 
@@ -23,6 +24,7 @@ export default function ContestJobCard({
   tokenSymbol = 'tokens'
 }: ContestJobCardProps) {
   const router = useRouter()
+  const { displayNameOrWallet, hasDisplayName } = usePosterDisplayName(job.poster_wallet)
 
   // Don't render regular jobs - use RegularJobCard instead
   if (!job.is_contest) {
@@ -205,8 +207,8 @@ export default function ContestJobCard({
           }}
         >
           by{' '}
-          <span style={{ fontFamily: 'var(--font-mono, JetBrains Mono, monospace)' }}>
-            {job.poster_wallet.slice(0, 4)}...{job.poster_wallet.slice(-4)}
+          <span style={{ fontFamily: hasDisplayName ? 'inherit' : 'var(--font-mono, JetBrains Mono, monospace)' }}>
+            {displayNameOrWallet}
           </span>
           {projectName && (
             <span style={{ color: 'var(--text-muted, #A3A7B5)' }}> • {projectName}</span>

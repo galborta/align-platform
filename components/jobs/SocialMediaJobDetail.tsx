@@ -45,6 +45,9 @@ import {
 // Submission modal
 import SubmitSocialParticipationModal from './SubmitSocialParticipationModal'
 
+// Display name hook
+import { usePosterDisplayName } from '@/lib/usePosterDisplayName'
+
 type Job = Database['public']['Tables']['jobs']['Row']
 type JobSubmission = Database['public']['Tables']['job_submissions']['Row']
 
@@ -62,6 +65,7 @@ export default function SocialMediaJobDetail({
   onSubmissionSuccess
 }: SocialMediaJobDetailProps) {
   const { publicKey } = useWallet()
+  const { displayNameOrWallet, hasDisplayName } = usePosterDisplayName(job.poster_wallet)
   const [submissionCount, setSubmissionCount] = useState(0)
   const [userSubmission, setUserSubmission] = useState<JobSubmission | null>(null)
   const [allSubmissions, setAllSubmissions] = useState<JobSubmission[]>([])
@@ -268,8 +272,8 @@ export default function SocialMediaJobDetail({
           }}
         >
           Posted by{' '}
-          <span style={{ fontFamily: 'var(--font-mono, JetBrains Mono, monospace)' }}>
-            {job.poster_wallet.slice(0, 6)}...{job.poster_wallet.slice(-4)}
+          <span style={{ fontFamily: hasDisplayName ? 'inherit' : 'var(--font-mono, JetBrains Mono, monospace)' }}>
+            {displayNameOrWallet}
           </span>
           {projectName && ` • ${projectName}`}
         </Typography>

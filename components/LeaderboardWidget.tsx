@@ -129,15 +129,58 @@ function LeaderboardSkeleton() {
   )
 }
 
+// Placeholder data for empty leaderboard
+const PLACEHOLDER_ENTRIES = [
+  { rank: 1, name: 'Your name here?', karma: '???', emoji: '🥇' },
+  { rank: 2, name: 'Future champion', karma: '???', emoji: '🥈' },
+  { rank: 3, name: 'Rising star', karma: '???', emoji: '🥉' },
+  { rank: 4, name: 'Community builder', karma: '???', emoji: '4.' },
+  { rank: 5, name: 'Task master', karma: '???', emoji: '5.' },
+]
+
 function LeaderboardEmpty() {
   return (
     <aside className={styles['leaderboard-widget']}>
-      <div className={styles['empty-state']}>
-        <div className={styles['empty-icon']}>🏆</div>
-        <h3>No karma earned yet</h3>
-        <p>Complete jobs to get on the leaderboard!</p>
-        <Link href="/jobs" className={styles['cta-button']}>
-          Browse Jobs
+      <header className={styles['widget-header']}>
+        <h2>🏆 Top Contributors</h2>
+      </header>
+      
+      {/* Placeholder Leaderboard */}
+      <ul className={styles['leaderboard-list']}>
+        {PLACEHOLDER_ENTRIES.map((entry) => (
+          <li 
+            key={entry.rank}
+            className={`${styles['leaderboard-row']} ${styles['placeholder-row']}`}
+          >
+            <div className={styles['row-link']} style={{ cursor: 'default', opacity: 0.5 }}>
+              <span className={styles.rank}>{entry.emoji}</span>
+              <div className={styles.avatar}>
+                <div 
+                  className={styles['avatar-fallback']} 
+                  style={{ 
+                    background: 'linear-gradient(135deg, #E5E7F0, #D1D5DB)',
+                    border: '2px dashed #9CA3AF'
+                  }}
+                >
+                  ?
+                </div>
+              </div>
+              <div className={styles['user-info']}>
+                <div className={styles.username} style={{ fontStyle: 'italic' }}>
+                  {entry.name}
+                </div>
+                <div className={styles.karma}>{entry.karma} karma</div>
+              </div>
+            </div>
+          </li>
+        ))}
+      </ul>
+
+      {/* CTA */}
+      <div className={styles['empty-cta']}>
+        <p>Be the first on the leaderboard!</p>
+        <Link href="/projects" className={styles['cta-button']}>
+          Find Work →
         </Link>
       </div>
     </aside>
@@ -195,6 +238,10 @@ export default function LeaderboardWidget() {
   if (error) return <LeaderboardError />
   if (leaderboard.length === 0) return <LeaderboardEmpty />
 
+  // Calculate how many placeholders needed to fill up to 5 entries
+  const placeholdersNeeded = Math.max(0, 5 - leaderboard.length)
+  const placeholdersToShow = PLACEHOLDER_ENTRIES.slice(leaderboard.length, leaderboard.length + placeholdersNeeded)
+
   return (
     <aside className={styles['leaderboard-widget']}>
       {/* Header */}
@@ -213,6 +260,7 @@ export default function LeaderboardWidget() {
 
       {/* Leaderboard List */}
       <ul className={styles['leaderboard-list']}>
+        {/* Real entries */}
         {leaderboard.map((entry, index) => (
           <LeaderboardRow
             key={entry.id}
@@ -221,6 +269,35 @@ export default function LeaderboardWidget() {
             animationDelay={index * 0.05}
             onProfileClick={handleProfileClick}
           />
+        ))}
+        
+        {/* Placeholder entries to fill up to 5 */}
+        {placeholdersToShow.map((placeholder) => (
+          <li 
+            key={`placeholder-${placeholder.rank}`}
+            className={`${styles['leaderboard-row']} ${styles['placeholder-row']}`}
+          >
+            <div className={styles['row-link']} style={{ cursor: 'default', opacity: 0.5 }}>
+              <span className={styles.rank}>{placeholder.emoji}</span>
+              <div className={styles.avatar}>
+                <div 
+                  className={styles['avatar-fallback']} 
+                  style={{ 
+                    background: 'linear-gradient(135deg, #E5E7F0, #D1D5DB)',
+                    border: '2px dashed #9CA3AF'
+                  }}
+                >
+                  ?
+                </div>
+              </div>
+              <div className={styles['user-info']}>
+                <div className={styles.username} style={{ fontStyle: 'italic' }}>
+                  {placeholder.name}
+                </div>
+                <div className={styles.karma}>{placeholder.karma} karma</div>
+              </div>
+            </div>
+          </li>
         ))}
       </ul>
 

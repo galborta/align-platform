@@ -77,6 +77,7 @@ export default function ProjectJobsPage() {
   const [showCreateModal, setShowCreateModal] = useState(false)
   const [showJobTypeSelector, setShowJobTypeSelector] = useState(false)
   const [showSocialMediaModal, setShowSocialMediaModal] = useState(false)
+  const [selectedJobType, setSelectedJobType] = useState<'regular' | 'contest'>('regular')
   
   // Advanced filter states
   const [statusFilter, setStatusFilter] = useState<string>('all')
@@ -647,6 +648,7 @@ export default function ProjectJobsPage() {
             {/* Regular Job Option */}
             <Box
               onClick={() => {
+                setSelectedJobType('regular')
                 setShowJobTypeSelector(false)
                 setShowCreateModal(true)
               }}
@@ -681,7 +683,7 @@ export default function ProjectJobsPage() {
               </Box>
               <Box>
                 <Typography sx={{ fontWeight: 600, color: '#1A1A1E', fontSize: '16px' }}>
-                  Regular Job
+                  💼 Regular Job
                 </Typography>
                 <Typography variant="body2" sx={{ color: '#6F7280' }}>
                   Assign to one worker, fixed payment upon completion
@@ -692,6 +694,7 @@ export default function ProjectJobsPage() {
             {/* Contest Job Option */}
             <Box
               onClick={() => {
+                setSelectedJobType('contest')
                 setShowJobTypeSelector(false)
                 setShowCreateModal(true)
               }}
@@ -817,6 +820,10 @@ export default function ProjectJobsPage() {
             // Refresh jobs list
             fetchData(params.id as string)
           }}
+          initialJobType={selectedJobType}
+          onSwitchToSocialMedia={() => {
+            setShowSocialMediaModal(true)
+          }}
         />
       )}
 
@@ -833,6 +840,14 @@ export default function ProjectJobsPage() {
             setShowSocialMediaModal(false)
             // Refresh jobs list
             fetchData(params.id as string)
+          }}
+          onSwitchToRegular={() => {
+            setSelectedJobType('regular')
+            setShowCreateModal(true)
+          }}
+          onSwitchToContest={() => {
+            setSelectedJobType('contest')
+            setShowCreateModal(true)
           }}
         />
       )}

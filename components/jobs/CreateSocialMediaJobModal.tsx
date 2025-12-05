@@ -46,6 +46,8 @@ interface CreateSocialMediaJobModalProps {
   tokenMint?: string
   tokenSymbol?: string
   onJobCreated?: () => void
+  onSwitchToRegular?: () => void
+  onSwitchToContest?: () => void
 }
 
 // ==================== COMPONENT ====================
@@ -57,7 +59,9 @@ export default function CreateSocialMediaJobModal({
   posterWallet,
   tokenMint = '',
   tokenSymbol = 'TOKEN',
-  onJobCreated
+  onJobCreated,
+  onSwitchToRegular,
+  onSwitchToContest
 }: CreateSocialMediaJobModalProps) {
   // ==================== WALLET HOOKS ====================
   const { connection } = useConnection()
@@ -587,6 +591,71 @@ export default function CreateSocialMediaJobModal({
       {/* ==================== CONTENT ==================== */}
       <DialogContent sx={{ pt: 3 }}>
         
+        {/* Job Type Toggle */}
+        {(onSwitchToRegular || onSwitchToContest) && (
+          <Box sx={{ mb: 3, display: 'flex', gap: 2, justifyContent: 'center', flexWrap: 'wrap' }}>
+            {onSwitchToRegular && (
+              <Button
+                variant="outlined"
+                onClick={() => {
+                  onClose()
+                  onSwitchToRegular()
+                }}
+                sx={{
+                  bgcolor: 'transparent',
+                  color: '#7C4DFF',
+                  borderColor: '#7C4DFF',
+                  textTransform: 'none',
+                  fontWeight: 600,
+                  px: 3,
+                  '&:hover': {
+                    bgcolor: 'rgba(124, 77, 255, 0.08)'
+                  }
+                }}
+              >
+                💼 Regular Job
+              </Button>
+            )}
+            {onSwitchToContest && (
+              <Button
+                variant="outlined"
+                onClick={() => {
+                  onClose()
+                  onSwitchToContest()
+                }}
+                sx={{
+                  bgcolor: 'transparent',
+                  color: '#7C4DFF',
+                  borderColor: '#7C4DFF',
+                  textTransform: 'none',
+                  fontWeight: 600,
+                  px: 3,
+                  '&:hover': {
+                    bgcolor: 'rgba(124, 77, 255, 0.08)'
+                  }
+                }}
+              >
+                🏆 Contest Job
+              </Button>
+            )}
+            <Button
+              variant="contained"
+              sx={{
+                bgcolor: '#7C4DFF',
+                color: 'white',
+                textTransform: 'none',
+                fontWeight: 600,
+                px: 3,
+                '&:hover': {
+                  bgcolor: '#6A3FDB'
+                }
+              }}
+            >
+              📣 Social Campaign
+            </Button>
+          </Box>
+        )}
+
         {/* Info Alert */}
         <Alert 
           severity="info" 

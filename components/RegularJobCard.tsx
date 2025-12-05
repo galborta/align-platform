@@ -7,6 +7,7 @@ import PersonIcon from '@mui/icons-material/Person'
 import LockIcon from '@mui/icons-material/Lock'
 import { useRouter } from 'next/navigation'
 import { formatDistanceToNow } from 'date-fns'
+import { usePosterDisplayName } from '@/lib/usePosterDisplayName'
 
 type Job = Database['public']['Tables']['jobs']['Row']
 
@@ -24,6 +25,8 @@ export default function RegularJobCard({
   applicationCount = 0
 }: RegularJobCardProps) {
   const router = useRouter()
+  const { displayNameOrWallet, hasDisplayName } = usePosterDisplayName(job.poster_wallet)
+  const { displayNameOrWallet: workerDisplayName, hasDisplayName: workerHasDisplayName } = usePosterDisplayName(job.assigned_to || '')
 
   // Don't render contest jobs - use ContestJobCard instead
   if (job.is_contest) {
@@ -132,8 +135,8 @@ export default function RegularJobCard({
           }}
         >
           by{' '}
-          <span style={{ fontFamily: 'var(--font-mono, JetBrains Mono, monospace)' }}>
-            {job.poster_wallet.slice(0, 4)}...{job.poster_wallet.slice(-4)}
+          <span style={{ fontFamily: hasDisplayName ? 'inherit' : 'var(--font-mono, JetBrains Mono, monospace)' }}>
+            {displayNameOrWallet}
           </span>
           {projectName && (
             <span style={{ color: 'var(--text-muted, #A3A7B5)' }}> • {projectName}</span>
@@ -189,11 +192,11 @@ export default function RegularJobCard({
             <Typography 
               sx={{ 
                 color: 'var(--text-secondary, #6F7280)',
-                fontFamily: 'var(--font-mono, JetBrains Mono, monospace)',
+                fontFamily: workerHasDisplayName ? 'var(--font-body, Satoshi, sans-serif)' : 'var(--font-mono, JetBrains Mono, monospace)',
                 fontSize: '13px',
               }}
             >
-              {job.assigned_to.slice(0, 4)}...{job.assigned_to.slice(-4)}
+              {workerDisplayName}
             </Typography>
           </Box>
         )}
@@ -214,11 +217,11 @@ export default function RegularJobCard({
               <Typography 
                 sx={{ 
                   color: 'var(--text-primary, #1A1A1E)',
-                  fontFamily: 'var(--font-mono, JetBrains Mono, monospace)',
+                  fontFamily: workerHasDisplayName ? 'var(--font-body, Satoshi, sans-serif)' : 'var(--font-mono, JetBrains Mono, monospace)',
                   fontSize: '13px',
                 }}
               >
-                {job.assigned_to.slice(0, 4)}...{job.assigned_to.slice(-4)}
+                {workerDisplayName}
               </Typography>
             </Box>
           </Box>
