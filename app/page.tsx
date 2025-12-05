@@ -247,13 +247,23 @@ export default function Home() {
       </footer>
 
       <style jsx global>{`
-        /* Fix Messaging Badge Position on Homepage Only */
-        /* Target the 3rd button (messages) in the header buttons group */
-        /* Only apply when badge is visible (not invisible) */
-        .page-wrapper header .flex.items-center.gap-2 > .MuiIconButton-root:nth-of-type(3) .MuiBadge-badge:not(.MuiBadge-invisible) {
+        /* Fix Badge Positions on Homepage Only */
+        /* The page-wrapper can interfere with header badge positioning */
+        
+        /* Notification Bell Badge (2nd IconButton) */
+        .page-wrapper header .flex.items-center.gap-2 > .MuiIconButton-root:nth-of-type(2) .MuiBadge-badge:not(.MuiBadge-invisible) {
           position: absolute !important;
           top: -8px !important;
           right: -8px !important;
+          transform: scale(1) !important;
+        }
+        
+        /* Messaging Badge (3rd IconButton, inside Tooltip) */
+        .page-wrapper header .flex.items-center.gap-2 > .MuiTooltip-root .MuiBadge-badge:not(.MuiBadge-invisible),
+        .page-wrapper header .flex.items-center.gap-2 .MuiIconButton-root:nth-of-type(3) .MuiBadge-badge:not(.MuiBadge-invisible) {
+          position: absolute !important;
+          top: -4px !important;
+          right: -4px !important;
           transform: scale(1) !important;
         }
       `}</style>
