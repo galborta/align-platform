@@ -421,7 +421,7 @@ export default function AdminProjectPage() {
         .select('total_karma_points')
         .eq('project_id', project.id)
 
-      const totalKarma = karmaData?.reduce((sum, k) => sum + k.total_karma_points, 0) || 0
+      const totalKarma = karmaData?.reduce((sum, k) => sum + (k.total_karma_points || 0), 0) || 0
 
       // Get active voters count (wallets with votes)
       const { data: voters } = await supabase
@@ -484,7 +484,7 @@ export default function AdminProjectPage() {
         merged.push({
           id: `user-${msg.id}`,
           type: 'user',
-          timestamp: msg.created_at,
+          timestamp: msg.created_at || '',
           wallet: msg.wallet_address,
           tier: msg.holding_tier,
           tokenPercentage: msg.token_percentage,
@@ -513,12 +513,12 @@ export default function AdminProjectPage() {
         merged.push({
           id: `system-${msg.id}`,
           type: 'system',
-          timestamp: msg.created_at,
+          timestamp: msg.created_at || '',
           wallet: msg.wallet_address || null,
           tier: null,
           tokenPercentage: msg.token_percentage || null,
           content,
-          messageType: msg.message_type,
+          messageType: msg.message_type || undefined,
           originalData: msg
         })
       })
@@ -633,11 +633,12 @@ export default function AdminProjectPage() {
         .eq('project_id', project.id)
         .order('created_at', { ascending: false })
 
-      setActivityLogs(logs || [])
-      setFilteredLogs(logs || [])
+      const typedLogs = (logs || []) as AdminLogWithProject[]
+      setActivityLogs(typedLogs)
+      setFilteredLogs(typedLogs)
       
       // Calculate stats
-      await calculateLogStats(logs || [])
+      await calculateLogStats(typedLogs)
     } catch (error) {
       console.error('Error loading activity logs:', error)
       toast.error('Failed to load activity logs')
@@ -656,7 +657,7 @@ export default function AdminProjectPage() {
       // Actions today
       const today = new Date().toISOString().split('T')[0]
       const actionsToday = logs.filter(log => 
-        log.created_at.startsWith(today)
+        log.created_at?.startsWith(today)
       ).length
 
       // Most active admin
@@ -701,10 +702,10 @@ export default function AdminProjectPage() {
       // OPTIMISTIC UPDATE: Update UI immediately
       setProject({
         ...project,
-        token_name: editFormData.token_name,
-        token_symbol: editFormData.token_symbol,
-        description: editFormData.description,
-        profile_image_url: editFormData.profile_image_url,
+        token_name: editFormData.token_name ?? project.token_name,
+        token_symbol: editFormData.token_symbol ?? project.token_symbol,
+        description: editFormData.description ?? project.description,
+        profile_image_url: editFormData.profile_image_url ?? project.profile_image_url,
         updated_at: new Date().toISOString()
       })
       setShowEditModal(false)
@@ -1820,8 +1821,8 @@ export default function AdminProjectPage() {
   }
 
   const calculateVerificationProgress = (asset: PendingAssetWithVotes): number => {
-    const supplyPercent = asset.total_upvote_weight
-    const voterCount = asset.unique_upvoters_count
+    const supplyPercent = asset.total_upvote_weight || 0
+    const voterCount = asset.unique_upvoters_count || 0
     
     // Either 5% supply OR 10 voters needed for verification
     const supplyProgress = (supplyPercent / 5) * 100
@@ -1858,9 +1859,9 @@ export default function AdminProjectPage() {
         case 'oldest':
           return new Date(a.created_at || 0).getTime() - new Date(b.created_at || 0).getTime()
         case 'most-upvotes':
-          return b.unique_upvoters_count - a.unique_upvoters_count
+          return (b.unique_upvoters_count || 0) - (a.unique_upvoters_count || 0)
         case 'most-reports':
-          return b.unique_reporters_count - a.unique_reporters_count
+          return (b.unique_reporters_count || 0) - (a.unique_reporters_count || 0)
         case 'closest':
           return calculateVerificationProgress(b) - calculateVerificationProgress(a)
         default:
@@ -1882,14 +1883,17 @@ export default function AdminProjectPage() {
     try {
       setProcessingPendingAction(true)
 
+      // Cast asset_data to a record type for property access
+      const assetData = (asset.asset_data || {}) as Record<string, any>
+
       // 1. Copy to appropriate verified table based on type
       if (asset.asset_type === 'social') {
         const { error } = await supabase.from('social_assets').insert({
           project_id: asset.project_id,
-          platform: asset.asset_data.platform,
-          handle: asset.asset_data.handle,
-          follower_tier: asset.asset_data.follower_tier || null,
-          verification_code: asset.asset_data.verification_code || null,
+          platform: assetData.platform,
+          handle: assetData.handle,
+          follower_tier: assetData.follower_tier || null,
+          verification_code: assetData.verification_code || null,
           verified: true,
           verified_at: new Date().toISOString()
         })
@@ -1897,22 +1901,22 @@ export default function AdminProjectPage() {
       } else if (asset.asset_type === 'creative') {
         const { error } = await supabase.from('creative_assets').insert({
           project_id: asset.project_id,
-          asset_type: asset.asset_data.asset_type || 'other',
-          asset_name: asset.asset_data.name || null,
-          name: asset.asset_data.name || null,
-          description: asset.asset_data.description || null,
-          media_url: asset.asset_data.media_url || null
+          asset_type: assetData.asset_type || 'other',
+          asset_name: assetData.name || null,
+          name: assetData.name || null,
+          description: assetData.description || null,
+          media_url: assetData.media_url || null
         })
         if (error) throw error
       } else if (asset.asset_type === 'legal') {
         const { error } = await supabase.from('legal_assets').insert({
           project_id: asset.project_id,
-          asset_type: asset.asset_data.asset_type || 'other',
-          asset_name: asset.asset_data.name || null,
-          name: asset.asset_data.name || null,
-          status: asset.asset_data.status || 'active',
-          jurisdiction: asset.asset_data.jurisdiction || null,
-          registration_id: asset.asset_data.registration_id || null
+          asset_type: assetData.asset_type || 'other',
+          asset_name: assetData.name || null,
+          name: assetData.name || null,
+          status: assetData.status || 'active',
+          jurisdiction: assetData.jurisdiction || null,
+          registration_id: assetData.registration_id || null
         })
         if (error) throw error
       }
@@ -1935,7 +1939,7 @@ export default function AdminProjectPage() {
       const upvoters = asset.votes.filter(v => v.vote_type === 'upvote')
       
       // Award submitter karma
-      await supabase.rpc('increment_karma', {
+      await (supabase.rpc as any)('increment_karma', {
         p_wallet: asset.submitter_wallet,
         p_project_id: asset.project_id,
         p_amount: BASE_KARMA
@@ -1943,7 +1947,7 @@ export default function AdminProjectPage() {
 
       // Award voter karma
       for (const vote of upvoters) {
-        await supabase.rpc('increment_karma', {
+        await (supabase.rpc as any)('increment_karma', {
           p_wallet: vote.voter_wallet,
           p_project_id: asset.project_id,
           p_amount: Math.floor(BASE_KARMA * 0.2) // 20% of base for voters
@@ -1958,7 +1962,7 @@ export default function AdminProjectPage() {
         asset_summary: assetSummary,
         pending_asset_id: asset.id,
         wallet_address: asset.submitter_wallet,
-        token_percentage: asset.submitter_token_percentage,
+        token_percentage: asset.submission_token_percentage,
         vote_count: asset.unique_upvoters_count,
         supply_percentage: asset.total_upvote_weight
       })
@@ -1976,10 +1980,11 @@ export default function AdminProjectPage() {
   // Edit pending asset
   const handleEditPendingAsset = (asset: PendingAssetWithVotes) => {
     setEditingPendingAsset(asset)
+    const assetDataObj = (asset.asset_data || {}) as Record<string, any>
     setPendingAssetFormData({
       assetData: JSON.stringify(asset.asset_data, null, 2),
-      status: asset.verification_status,
-      adminNote: asset.asset_data.admin_note || ''
+      status: asset.verification_status || 'pending',
+      adminNote: assetDataObj.admin_note || ''
     })
   }
 
@@ -2029,7 +2034,8 @@ export default function AdminProjectPage() {
     if (!deletingAsset) return
 
     const assetName = extractAssetSummary(deletingAsset.asset_type, deletingAsset.asset_data)
-    const expectedText = deletingAsset.asset_data.handle || deletingAsset.asset_data.name || 'DELETE'
+    const deletingAssetData = (deletingAsset.asset_data || {}) as Record<string, any>
+    const expectedText = deletingAssetData.handle || deletingAssetData.name || 'DELETE'
 
     if (deleteConfirmText !== expectedText) {
       toast.error(`Please type "${expectedText}" to confirm deletion`)
@@ -2042,19 +2048,19 @@ export default function AdminProjectPage() {
       // 1. Calculate karma to reverse
       const totalKarmaToReverse = deletingAsset.votes.reduce((sum, v) => sum + (v.karma_earned || 0), 0)
 
-      // 2. Reverse karma for submitter
-      if (deletingAsset.submitter_karma_earned) {
-        await supabase.rpc('increment_karma', {
+      // 2. Reverse karma for submitter (if any karma was earned)
+      if (totalKarmaToReverse > 0) {
+        await (supabase.rpc as any)('increment_karma', {
           p_wallet: deletingAsset.submitter_wallet,
           p_project_id: deletingAsset.project_id,
-          p_amount: -deletingAsset.submitter_karma_earned
+          p_amount: -totalKarmaToReverse
         })
       }
 
       // 3. Reverse karma for all voters
       for (const vote of deletingAsset.votes) {
         if (vote.karma_earned) {
-          await supabase.rpc('increment_karma', {
+          await (supabase.rpc as any)('increment_karma', {
             p_wallet: vote.voter_wallet,
             p_project_id: deletingAsset.project_id,
             p_amount: -vote.karma_earned
@@ -2093,7 +2099,7 @@ export default function AdminProjectPage() {
     if (selectedPendingAssets.size === 0) return
 
     const assets = filteredPendingAssets.filter(a => selectedPendingAssets.has(a.id))
-    const totalKarma = assets.reduce((sum, a) => sum + (a.unique_upvoters_count + 1) * 10, 0)
+    const totalKarma = assets.reduce((sum, a) => sum + ((a.unique_upvoters_count || 0) + 1) * 10, 0)
 
     if (!confirm(`Approve ${assets.length} assets?\n\nThis will award ~${totalKarma} karma points to participants.\n\nThis cannot be undone.`)) {
       return
@@ -2138,7 +2144,7 @@ export default function AdminProjectPage() {
         // Reverse karma
         for (const vote of asset.votes) {
           if (vote.karma_earned) {
-            await supabase.rpc('increment_karma', {
+            await (supabase.rpc as any)('increment_karma', {
               p_wallet: vote.voter_wallet,
               p_project_id: asset.project_id,
               p_amount: -vote.karma_earned
@@ -2255,9 +2261,9 @@ export default function AdminProjectPage() {
     if (karmaStatusFilter === 'banned') {
       filtered = filtered.filter(k => k.is_banned)
     } else if (karmaStatusFilter === 'warned') {
-      filtered = filtered.filter(k => k.warning_count > 0 && !k.is_banned)
+      filtered = filtered.filter(k => (k.warning_count || 0) > 0 && !k.is_banned)
     } else if (karmaStatusFilter === 'active') {
-      filtered = filtered.filter(k => !k.is_banned && k.warning_count === 0)
+      filtered = filtered.filter(k => !k.is_banned && (k.warning_count || 0) === 0)
     }
 
     // Wallet search
@@ -2270,9 +2276,9 @@ export default function AdminProjectPage() {
     filtered.sort((a, b) => {
       switch (karmaSort) {
         case 'karma-desc':
-          return b.total_karma_points - a.total_karma_points
+          return (b.total_karma_points || 0) - (a.total_karma_points || 0)
         case 'karma-asc':
-          return a.total_karma_points - b.total_karma_points
+          return (a.total_karma_points || 0) - (b.total_karma_points || 0)
         case 'assets-added':
           return (b.assets_added_count || 0) - (a.assets_added_count || 0)
         default:
@@ -2293,7 +2299,7 @@ export default function AdminProjectPage() {
     try {
       setProcessingKarmaAction(true)
 
-      const oldKarma = adjustingKarmaWallet.total_karma_points
+      const oldKarma = adjustingKarmaWallet.total_karma_points || 0
       const newKarma = oldKarma + karmaAdjustAmount
 
       // OPTIMISTIC UPDATE: Update UI immediately
@@ -2312,7 +2318,7 @@ export default function AdminProjectPage() {
       setKarmaAdjustReason('')
 
       // Adjust karma using RPC function
-      await supabase.rpc('increment_karma', {
+      await (supabase.rpc as any)('increment_karma', {
         p_wallet: adjustingKarmaWallet.wallet_address,
         p_project_id: adjustingKarmaWallet.project_id,
         p_amount: karmaAdjustAmount
@@ -2369,7 +2375,7 @@ export default function AdminProjectPage() {
           warnings: []
         })
         .eq('wallet_address', wallet.wallet_address)
-        .eq('project_id', wallet.project_id)
+        .eq('project_id', wallet.project_id || '')
 
       if (error) throw error
 
@@ -2403,7 +2409,7 @@ export default function AdminProjectPage() {
     try {
       setProcessingKarmaAction(true)
 
-      const existingWarnings = banningWallet.warnings || []
+      const existingWarnings = (banningWallet.warnings || []) as any[]
       const newWarning = {
         timestamp: new Date().toISOString(),
         reason: banReason,
@@ -2448,13 +2454,13 @@ export default function AdminProjectPage() {
           warning_count: existingWarnings.length + 1
         })
         .eq('wallet_address', banningWallet.wallet_address)
-        .eq('project_id', banningWallet.project_id)
+        .eq('project_id', banningWallet.project_id || '')
 
       if (error) throw error
 
       // Create system message
       await supabase.from('curation_chat_messages').insert({
-        project_id: banningWallet.project_id,
+        project_id: banningWallet.project_id || '',
         message_type: 'wallet_banned',
         wallet_address: banningWallet.wallet_address,
         asset_summary: banReason
@@ -2521,7 +2527,7 @@ export default function AdminProjectPage() {
           ban_expires_at: null
         })
         .eq('wallet_address', wallet.wallet_address)
-        .eq('project_id', wallet.project_id)
+        .eq('project_id', wallet.project_id || '')
 
       if (error) throw error
 
@@ -2570,7 +2576,7 @@ export default function AdminProjectPage() {
       const wallets = filteredKarmaRecords.filter(k => selectedKarmaWallets.has(k.wallet_address))
 
       for (const wallet of wallets) {
-        await supabase.rpc('increment_karma', {
+        await (supabase.rpc as any)('increment_karma', {
           p_wallet: wallet.wallet_address,
           p_project_id: wallet.project_id,
           p_amount: karmaAmount
@@ -2591,10 +2597,10 @@ export default function AdminProjectPage() {
   // Calculate karma stats
   const getKarmaStats = () => {
     const total = karmaRecords.length
-    const totalKarma = karmaRecords.reduce((sum, k) => sum + k.total_karma_points, 0)
+    const totalKarma = karmaRecords.reduce((sum, k) => sum + (k.total_karma_points || 0), 0)
     const avgKarma = total > 0 ? totalKarma / total : 0
     const banned = karmaRecords.filter(k => k.is_banned).length
-    const warned = karmaRecords.filter(k => k.warning_count > 0 && !k.is_banned).length
+    const warned = karmaRecords.filter(k => (k.warning_count || 0) > 0 && !k.is_banned).length
 
     return { total, totalKarma, avgKarma, banned, warned }
   }
@@ -2680,7 +2686,7 @@ export default function AdminProjectPage() {
     // Most voted asset
     const assetCounts: Record<string, { count: number; asset: PendingAsset }> = {}
     votes.forEach(v => {
-      if (v.pending_asset) {
+      if (v.pending_asset && v.pending_asset_id) {
         const assetId = v.pending_asset_id
         if (!assetCounts[assetId]) {
           assetCounts[assetId] = { count: 0, asset: v.pending_asset }
@@ -2728,7 +2734,7 @@ export default function AdminProjectPage() {
     // Get votes from last 24 hours
     const yesterday = new Date()
     yesterday.setHours(yesterday.getHours() - 24)
-    const recentVotes = votes.filter(v => new Date(v.created_at) > yesterday)
+    const recentVotes = votes.filter(v => new Date(v.created_at || 0) > yesterday)
 
     // 1. Spam voting (>50 votes in 24h)
     const voterCounts: Record<string, number> = {}
@@ -2774,8 +2780,8 @@ export default function AdminProjectPage() {
     // 3. Instant voting (<1 min after asset submission)
     const instantVotes = votes.filter(v => {
       if (!v.pending_asset) return false
-      const voteTime = new Date(v.created_at).getTime()
-      const assetTime = new Date(v.pending_asset.created_at).getTime()
+      const voteTime = new Date(v.created_at || 0).getTime()
+      const assetTime = new Date(v.pending_asset.created_at || 0).getTime()
       const diffMinutes = (voteTime - assetTime) / 1000 / 60
       return diffMinutes < 1
     })
@@ -2847,7 +2853,7 @@ export default function AdminProjectPage() {
       const search = voteAssetSearch.toLowerCase()
       filtered = filtered.filter(v => {
         if (!v.pending_asset) return false
-        const summary = extractAssetSummary(v.pending_asset.asset_data)
+        const summary = extractAssetSummary(v.pending_asset.asset_type, v.pending_asset.asset_data)
         return summary.toLowerCase().includes(search)
       })
     }
@@ -2864,10 +2870,10 @@ export default function AdminProjectPage() {
 
     const headers = ['Timestamp', 'Voter Wallet', 'Asset Type', 'Asset Summary', 'Vote Type', 'Token %', 'Karma Earned', 'Asset Status']
     const rows = filteredVotes.map(v => [
-      new Date(v.created_at).toLocaleString(),
+      new Date(v.created_at || 0).toLocaleString(),
       v.voter_wallet,
       v.pending_asset?.asset_type || 'N/A',
-      v.pending_asset ? extractAssetSummary(v.pending_asset.asset_data) : 'N/A',
+      v.pending_asset ? extractAssetSummary(v.pending_asset.asset_type, v.pending_asset.asset_data) : 'N/A',
       v.vote_type,
       (v.token_percentage_snapshot || 0).toFixed(3),
       v.karma_earned || 0,
@@ -3169,7 +3175,7 @@ export default function AdminProjectPage() {
       // Reverse karma
       for (const vote of votes || []) {
         if (vote.karma_earned) {
-          await supabase.rpc('increment_karma', {
+          await (supabase.rpc as any)('increment_karma', {
             p_wallet: vote.voter_wallet,
             p_project_id: project.id,
             p_amount: -vote.karma_earned
@@ -3240,7 +3246,7 @@ export default function AdminProjectPage() {
 
       for (const vote of votes || []) {
         if (vote.karma_earned) {
-          await supabase.rpc('increment_karma', {
+          await (supabase.rpc as any)('increment_karma', {
             p_wallet: vote.voter_wallet,
             p_project_id: project.id,
             p_amount: -vote.karma_earned
@@ -3662,8 +3668,8 @@ export default function AdminProjectPage() {
                       {project.token_name}
                     </h1>
                     <Chip 
-                      label={project.status.toUpperCase()} 
-                      color={getProjectStatusColor(project.status) as any}
+                      label={(project.status || 'unknown').toUpperCase()} 
+                      color={getProjectStatusColor(project.status || '') as any}
                       size="small"
                     />
                   </div>
@@ -4712,7 +4718,7 @@ export default function AdminProjectPage() {
                                     color="primary"
                                   />
                                   <Chip 
-                                    label={asset.verification_status.toUpperCase()} 
+                                    label={(asset.verification_status || 'pending').toUpperCase()} 
                                     size="small"
                                     color={
                                       asset.verification_status === 'verified' ? 'success' :
@@ -4774,7 +4780,7 @@ export default function AdminProjectPage() {
                               {/* Timestamp & Actions */}
                               <div className="flex flex-col items-end gap-2">
                                 <span className="text-xs text-text-muted whitespace-nowrap">
-                                  {formatDistanceToNow(new Date(asset.created_at), { addSuffix: true })}
+                                  {formatDistanceToNow(new Date(asset.created_at || 0), { addSuffix: true })}
                                 </span>
                                 
                                 {/* Action Buttons */}
@@ -4900,7 +4906,7 @@ export default function AdminProjectPage() {
                               <div>
                                 <p className="text-sm text-text-muted">Status</p>
                                 <Chip 
-                                  label={viewingAsset.verification_status.toUpperCase()} 
+                                  label={(viewingAsset.verification_status || 'pending').toUpperCase()} 
                                   size="small"
                                   color={
                                     viewingAsset.verification_status === 'verified' ? 'success' :
@@ -4916,7 +4922,7 @@ export default function AdminProjectPage() {
                               </div>
                               <div>
                                 <p className="text-sm text-text-muted">Created</p>
-                                <p>{new Date(viewingAsset.created_at).toLocaleString()}</p>
+                                <p>{new Date(viewingAsset.created_at || 0).toLocaleString()}</p>
                               </div>
                             </div>
                             <div>
@@ -5273,7 +5279,7 @@ export default function AdminProjectPage() {
                                         {asset.media_url && (
                                           <MuiButton
                                             size="small"
-                                            onClick={() => window.open(asset.media_url, '_blank')}
+                                            onClick={() => window.open(asset.media_url || '', '_blank')}
                                           >
                                             View Full
                                           </MuiButton>
@@ -5394,7 +5400,7 @@ export default function AdminProjectPage() {
                                           <p><strong>Registration ID:</strong> <span className="font-mono">{asset.registration_id}</span></p>
                                         )}
                                         <p className="text-xs">
-                                          Added {formatDistanceToNow(new Date(asset.created_at), { addSuffix: true })}
+                                          Added {formatDistanceToNow(new Date(asset.created_at || 0), { addSuffix: true })}
                                         </p>
                                       </div>
                                     </div>
@@ -5739,7 +5745,7 @@ export default function AdminProjectPage() {
                                 </div>
                               </div>
                               <div className="text-right">
-                                <p className="text-2xl font-bold text-purple-600">{karma.total_karma_points.toFixed(0)}</p>
+                                <p className="text-2xl font-bold text-purple-600">{(karma.total_karma_points || 0).toFixed(0)}</p>
                                 <p className="text-xs text-text-muted">karma</p>
                               </div>
                             </div>
@@ -5970,7 +5976,7 @@ export default function AdminProjectPage() {
                                           }
                                         />
                                         <span className="text-xs text-text-muted">
-                                          {new Date(log.created_at).toLocaleString('en-US', {
+                                          {new Date(log.created_at || 0).toLocaleString('en-US', {
                                             month: 'short',
                                             day: 'numeric',
                                             year: 'numeric',
@@ -6080,7 +6086,7 @@ export default function AdminProjectPage() {
                         <div>
                           <p className="text-sm font-medium text-text-muted mb-1">Timestamp</p>
                           <p className="text-sm">
-                            {new Date(viewingLogDetails.created_at).toLocaleString()}
+                            {new Date(viewingLogDetails.created_at || 0).toLocaleString()}
                           </p>
                         </div>
                         

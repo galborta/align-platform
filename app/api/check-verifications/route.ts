@@ -30,8 +30,8 @@ export async function GET(request: NextRequest) {
       // Check if should transition to backed
       if (asset.verification_status === 'pending') {
         const newStatus = checkVerificationStatus(
-          asset.total_upvote_weight,
-          asset.unique_upvoters_count
+          asset.total_upvote_weight || 0,
+          asset.unique_upvoters_count || 0
         )
         
         if (newStatus === 'backed' || newStatus === 'verified') {
@@ -43,8 +43,8 @@ export async function GET(request: NextRequest) {
       // Check if should transition to verified
       if (asset.verification_status === 'backed') {
         const newStatus = checkVerificationStatus(
-          asset.total_upvote_weight,
-          asset.unique_upvoters_count
+          asset.total_upvote_weight || 0,
+          asset.unique_upvoters_count || 0
         )
         
         if (newStatus === 'verified') {
@@ -56,8 +56,8 @@ export async function GET(request: NextRequest) {
       // Check if should be hidden
       const shouldHide = checkHiddenStatus(
         asset.verification_status as any,
-        asset.total_report_weight,
-        asset.unique_reporters_count
+        asset.total_report_weight || 0,
+        asset.unique_reporters_count || 0
       )
       
       if (shouldHide) {
@@ -123,7 +123,7 @@ async function transitionToVerified(asset: any) {
         false // Remaining 75%
       )
       
-      await supabase.rpc('add_karma', {
+      await (supabase.rpc as any)('add_karma', {
         p_wallet: vote.voter_wallet,
         p_project_id: asset.project_id,
         p_karma_delta: remainingKarma
@@ -144,14 +144,14 @@ async function transitionToVerified(asset: any) {
     false // Remaining 75%
   )
   
-  await supabase.rpc('add_karma', {
+  await (supabase.rpc as any)('add_karma', {
     p_wallet: asset.submitter_wallet,
     p_project_id: asset.project_id,
     p_karma_delta: submitterKarma
   })
   
   // Increment assets_added_count
-  await supabase.rpc('increment_assets_added', {
+  await (supabase.rpc as any)('increment_assets_added', {
     p_wallet: asset.submitter_wallet,
     p_project_id: asset.project_id
   })
@@ -234,7 +234,7 @@ async function transitionToHidden(asset: any) {
         true
       )
       
-      await supabase.rpc('add_karma', {
+      await (supabase.rpc as any)('add_karma', {
         p_wallet: vote.voter_wallet,
         p_project_id: asset.project_id,
         p_karma_delta: -immediateKarma
@@ -249,14 +249,14 @@ async function transitionToHidden(asset: any) {
     true
   )
   
-  await supabase.rpc('add_karma', {
+  await (supabase.rpc as any)('add_karma', {
     p_wallet: asset.submitter_wallet,
     p_project_id: asset.project_id,
     p_karma_delta: -immediateKarma
   })
   
   // Add warning to submitter
-  await supabase.rpc('add_warning', {
+  await (supabase.rpc as any)('add_warning', {
     p_wallet: asset.submitter_wallet,
     p_project_id: asset.project_id,
     p_reason: 'Asset was hidden by community'
@@ -282,7 +282,7 @@ async function transitionToHidden(asset: any) {
         false
       )
       
-      await supabase.rpc('add_karma', {
+      await (supabase.rpc as any)('add_karma', {
         p_wallet: vote.voter_wallet,
         p_project_id: asset.project_id,
         p_karma_delta: totalKarma

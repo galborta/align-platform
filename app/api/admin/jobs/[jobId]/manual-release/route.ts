@@ -65,7 +65,7 @@ export async function POST(
 
     console.log('[Admin Manual Release] Initiating release...')
     console.log('[Admin Manual Release] Worker:', job.assigned_to)
-    console.log('[Admin Manual Release] Amount:', job.escrow_amount_tokens, job.token_symbol)
+    console.log('[Admin Manual Release] Amount:', job.escrow_amount_tokens, (job as any).token_symbol || 'tokens')
 
     // Get current retry count from job_escrow_transactions
     const { data: attempts } = await supabase
@@ -146,19 +146,21 @@ export async function POST(
       console.error('[Admin Manual Release] Failed to update job status:', updateError)
     }
 
+    const tokenSymbol = (job as any).token_symbol || 'tokens'
+    
     // Send notification to worker
     await supabase.from('notifications').insert({
-      wallet_address: job.assigned_to,
+      user_wallet: job.assigned_to || '',
       type: 'job_payment_released',
       title: 'Payment Released (Admin)',
-      message: `Payment of ${result.workerReceived} ${job.token_symbol} has been manually released by admin for "${job.title}"`,
+      message: `Payment of ${result.workerReceived} ${tokenSymbol} has been manually released by admin for "${job.title}"`,
       job_id: job.id,
       created_at: new Date().toISOString()
     })
 
     // Send notification to poster
     await supabase.from('notifications').insert({
-      wallet_address: job.poster_wallet,
+      user_wallet: job.poster_wallet,
       type: 'job_completed',
       title: 'Job Completed',
       message: `Your job "${job.title}" has been completed and payment released.`,
@@ -172,7 +174,7 @@ export async function POST(
       feeTxSignature: result.feeTxSignature,
       workerReceived: result.workerReceived,
       feeCollected: result.feeCollected,
-      tokenSymbol: job.token_symbol,
+      tokenSymbol: tokenSymbol,
       message: 'Payment released successfully'
     })
 

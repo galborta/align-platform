@@ -176,8 +176,8 @@ export async function POST(request: Request) {
     console.log('[Recovery] Job created:', job.id)
 
     // Get escrow wallet address
-    const { data: escrowWalletSetting } = await supabaseAdmin
-      .rpc('get_platform_setting', { 
+    const { data: escrowWalletSetting } = await (supabaseAdmin
+      .rpc as any)('get_platform_setting', { 
         p_setting_key: 'escrow_wallet_address' 
       })
 
