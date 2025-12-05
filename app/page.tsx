@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import { AppHeader } from '@/components/AppHeader'
 import { Hero } from '@/components/Hero'
+import { BackgroundShapes } from '@/components/BackgroundShapes'
 import ProjectCard from '@/components/ProjectCard'
 import LeaderboardWidget from '@/components/LeaderboardWidget'
 import { supabase } from '@/lib/supabase'
@@ -133,6 +134,9 @@ export default function Home() {
   
   return (
     <div className="page-wrapper">
+      {/* Animated Background Shapes - Page Level */}
+      <BackgroundShapes />
+      
       <AppHeader />
 
       {/* Hero Section */}
@@ -274,6 +278,7 @@ export default function Home() {
           min-height: 100vh;
           background: var(--page-background);
           position: relative;
+          overflow-x: hidden;
         }
 
         /* Subtle pattern overlay for entire page */
