@@ -70,7 +70,7 @@ export default function AdminPage() {
     if (isAdmin) {
       // Check if there's a valid session
       const session = getAdminSession()
-      if (session && isSessionValid(publicKey.toBase58())) {
+      if (session && publicKey && isSessionValid(publicKey.toBase58())) {
         console.log('Valid admin session found')
         setIsVerified(true)
       } else if (!isVerified) {
