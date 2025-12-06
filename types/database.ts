@@ -421,6 +421,11 @@ export type Database = {
           job_id: string | null
           pitch: string
           updated_at: string | null
+          // ==================== REVISION OFFERING FIELDS ====================
+          revisions_offered: string | null
+          revisions_used: number
+          revisions_remaining: string | null
+          last_revision_requested_at: string | null
         }
         Insert: {
           applicant_wallet: string
@@ -433,6 +438,11 @@ export type Database = {
           job_id?: string | null
           pitch: string
           updated_at?: string | null
+          // Revision offering fields
+          revisions_offered?: string | null
+          revisions_used?: number
+          revisions_remaining?: string | null
+          last_revision_requested_at?: string | null
         }
         Update: {
           applicant_wallet?: string
@@ -445,6 +455,11 @@ export type Database = {
           job_id?: string | null
           pitch?: string
           updated_at?: string | null
+          // Revision offering fields
+          revisions_offered?: string | null
+          revisions_used?: number
+          revisions_remaining?: string | null
+          last_revision_requested_at?: string | null
         }
         Relationships: [
           {
@@ -551,6 +566,7 @@ export type Database = {
           poster_percentage: number | null
           reason: string
           resolved_at: string | null
+          revision_context: RevisionDisputeContext | null
           status: string | null
           worker_percentage: number | null
         }
@@ -568,6 +584,7 @@ export type Database = {
           poster_percentage?: number | null
           reason: string
           resolved_at?: string | null
+          revision_context?: RevisionDisputeContext | null
           status?: string | null
           worker_percentage?: number | null
         }
@@ -585,6 +602,7 @@ export type Database = {
           poster_percentage?: number | null
           reason?: string
           resolved_at?: string | null
+          revision_context?: RevisionDisputeContext | null
           status?: string | null
           worker_percentage?: number | null
         }
@@ -1568,7 +1586,19 @@ export type NotificationType =
   | 'social_submission_received'
   | 'social_submission_approved'
   | 'social_submission_denied'
-  | 'social_payment_distributed';
+  | 'social_payment_distributed'
+  // Revision notifications
+  | 'revision_requested'
+  | 'voluntary_revision_requested'
+  | 'voluntary_revision_accepted'
+  | 'voluntary_revision_declined'
+  // Revision warning notifications
+  | 'high_revision_count_warning_poster'
+  | 'high_revision_count_warning_worker'
+  // Contest notifications
+  | 'contest_judging_started'
+  | 'contest_winners_selected'
+  | 'contest_prize_won';
 
 /**
  * Types of entities that can be referenced in notifications
@@ -1582,7 +1612,39 @@ export type NotificationReferenceType =
   | 'karma'
   | 'payment'
   | 'dispute'
-  | 'social_submission';
+  | 'social_submission'
+  | 'contest';
+
+/**
+ * Context data for revision-related disputes
+ * Stored in job_disputes.revision_context as JSONB
+ */
+export interface RevisionDisputeContext {
+  /** Number of revisions offered (number or 'unlimited') */
+  revisions_offered: string | number;
+  /** Number of revisions used */
+  revisions_used: number;
+  /** Revisions remaining (number or 'unlimited') */
+  revisions_remaining: string | number;
+  /** Full history of revision requests */
+  revision_history: Array<{
+    number: number;
+    notes: string;
+    requestedAt: string;
+    submittedAt?: string;
+    isVoluntary?: boolean;
+  }>;
+  /** When the latest revision was requested (ISO string) */
+  last_revision_requested_at?: string;
+  /** How long the revision has been unanswered (for refusal disputes) */
+  unanswered_duration_hours?: number;
+  /** Original job scope/KPIs */
+  original_scope?: string;
+  /** Whether abuse threshold was exceeded (for unlimited abuse disputes) */
+  abuse_threshold_exceeded?: boolean;
+  /** Suggested prorated payment percentage */
+  suggested_proration?: number;
+}
 
 /**
  * Flexible metadata structure for different notification types
@@ -1593,6 +1655,7 @@ export interface NotificationMetadata {
   job_title?: string;
   job_type?: string;
   applicant_count?: number;
+  project_id?: string;
   
   // Payment related
   amount?: number;
@@ -1632,6 +1695,33 @@ export interface NotificationMetadata {
   social_follower_count?: number;
   social_payment_amount?: number;
   social_denial_reason?: string;
+  
+  // Revision related
+  revision_number?: number;
+  revision_count?: number;
+  is_voluntary?: boolean;
+  is_revision?: boolean;
+  notes_preview?: string;
+  
+  // Revision dispute context
+  revisions_offered?: string | number;
+  revisions_used?: number;
+  revisions_remaining?: string | number;
+  revision_request_history?: Array<{
+    number: number;
+    notes: string;
+    requestedAt: string;
+    isVoluntary?: boolean;
+  }>;
+  unanswered_since?: string;
+  abuse_threshold_exceeded?: boolean;
+  
+  // Contest related
+  contest_submission_count?: number;
+  contest_max_winners?: number;
+  winner_position?: number;
+  prize_amount_tokens?: number;
+  prize_amount_usd?: number;
   
   // Generic fields
   url?: string;
@@ -1686,3 +1776,24 @@ export interface TipFormData {
 // ==================== SOCIAL MEDIA JOB TYPES ====================
 // Re-export from dedicated file for convenience
 export type { BudgetTier, SocialJobType, SocialApprovalStatus, DisputeType, SocialDisputeType } from './social-media-jobs'
+
+// ==================== REVISION OFFERING TYPES ====================
+
+/**
+ * Represents a revision offering - either 'unlimited' or a specific number
+ */
+export type RevisionOffering = 'unlimited' | number
+
+/**
+ * Status object for revision-related information
+ */
+export type RevisionStatus = {
+  offered: RevisionOffering | null
+  used: number
+  remaining: RevisionOffering | null
+}
+
+/**
+ * Job application type alias for convenience
+ */
+export type JobApplication = Database['public']['Tables']['job_applications']['Row']

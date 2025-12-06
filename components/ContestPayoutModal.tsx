@@ -22,22 +22,15 @@ import CheckCircleIcon from '@mui/icons-material/CheckCircle'
 import ErrorIcon from '@mui/icons-material/Error'
 import OpenInNewIcon from '@mui/icons-material/OpenInNew'
 import { Database } from '@/types/database'
-import { useConnection, useWallet } from '@solana/wallet-adapter-react'
+import { useConnection } from '@solana/wallet-adapter-react'
 import { PublicKey } from '@solana/web3.js'
-import { executeContestPayout, verifyEscrowBalance } from '@/lib/escrow-payout'
+import { verifyEscrowBalance } from '@/lib/escrow-payout'
 import { getEscrowWallet } from '@/lib/platform-settings'
 import { toast } from 'react-hot-toast'
 import { WalletAddressWithButtons } from './WalletAddressWithButtons'
 
 type Job = Database['public']['Tables']['jobs']['Row']
 type JobSubmission = Database['public']['Tables']['job_submissions']['Row']
-
-interface Winner {
-  wallet: string
-  amount_tokens: number
-  position: number
-  submission_id: string
-}
 
 interface ContestPayoutModalProps {
   open: boolean
@@ -55,7 +48,6 @@ export default function ContestPayoutModal({
   onPayoutComplete
 }: ContestPayoutModalProps) {
   const { connection } = useConnection()
-  const wallet = useWallet()
 
   const [activeStep, setActiveStep] = useState(0)
   const [isProcessing, setIsProcessing] = useState(false)
@@ -87,10 +79,22 @@ export default function ContestPayoutModal({
       }
 
       const escrowPubkey = new PublicKey(escrowWalletAddress)
+      
+      // Get token decimals - for SPL tokens we need to check the mint
+      // Default to 9 decimals (SOL standard)
+      const tokenDecimals = 9
+      
+      console.log('[ContestPayout] Verifying balance...')
+      console.log('[ContestPayout] Escrow:', escrowWalletAddress)
+      console.log('[ContestPayout] Required:', totalPayout)
+      console.log('[ContestPayout] Token mint:', job.escrow_token_mint || 'SOL')
+      
       const { sufficient, actualBalance } = await verifyEscrowBalance(
         connection,
         escrowPubkey,
-        totalPayout
+        totalPayout,
+        tokenDecimals,
+        job.escrow_token_mint // Pass the token mint for SPL token balance check
       )
 
       if (!sufficient) {
@@ -103,6 +107,7 @@ export default function ContestPayoutModal({
       setActiveStep(1)
       toast.success('Escrow balance verified')
     } catch (err: any) {
+      console.error('[ContestPayout] Balance verification error:', err)
       setError(err.message || 'Failed to verify escrow balance')
       toast.error('Balance verification failed')
     } finally {
@@ -115,32 +120,26 @@ export default function ContestPayoutModal({
     setError('')
 
     try {
-      if (!escrowWalletAddress) {
-        throw new Error('No escrow wallet found')
-      }
-
-      const escrowPubkey = new PublicKey(escrowWalletAddress)
+      console.log('[ContestPayout] Executing payout via API...')
       
-      const winnersData: Winner[] = winners.map(w => ({
-        wallet: w.worker_wallet,
-        amount_tokens: w.prize_amount_tokens!,
-        position: w.winner_position!,
-        submission_id: w.id
-      }))
+      // Call server-side API that uses escrow keypair
+      const response = await fetch(`/api/jobs/${job.id}/contest-payout`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          posterWallet: job.poster_wallet
+        })
+      })
 
-      const result = await executeContestPayout(
-        connection,
-        wallet,
-        job.id,
-        winnersData,
-        escrowPubkey
-      )
+      const result = await response.json()
 
-      if (!result.success) {
+      if (!response.ok) {
         throw new Error(result.error || 'Payout failed')
       }
 
-      setTxSignature(result.signature!)
+      console.log('[ContestPayout] Payout successful:', result)
+
+      setTxSignature(result.signature)
       setActiveStep(2)
       toast.success('🎉 Prizes distributed successfully!')
       
@@ -150,6 +149,7 @@ export default function ContestPayoutModal({
         onClose()
       }, 3000)
     } catch (err: any) {
+      console.error('[ContestPayout] Payout error:', err)
       setError(err.message || 'Failed to execute payout')
       toast.error('Payout failed')
     } finally {
@@ -272,9 +272,9 @@ export default function ContestPayoutModal({
               sx={{ 
                 p: 3, 
                 mb: 3, 
-                bgcolor: 'var(--accent-primary-soft)',
-                border: '1px solid var(--accent-primary)',
-                borderRadius: 'var(--radius-control)'
+                bgcolor: 'rgba(124, 77, 255, 0.08)',
+                border: '1px solid rgba(124, 77, 255, 0.3)',
+                borderRadius: '16px'
               }}
             >
               <Typography 
@@ -336,7 +336,7 @@ export default function ContestPayoutModal({
                     p: 2,
                     mb: 1,
                     bgcolor: 'var(--subtle-background)',
-                    borderRadius: 'var(--radius-control)',
+                    borderRadius: '12px',
                     border: '1px solid var(--border-subtle)'
                   }}
                 >
@@ -453,10 +453,10 @@ export default function ContestPayoutModal({
             <Paper 
               sx={{ 
                 p: 2, 
-                bgcolor: 'var(--accent-success-soft)', 
+                bgcolor: 'rgba(54, 193, 112, 0.08)', 
                 mb: 3,
-                borderRadius: 'var(--radius-control)',
-                border: '1px solid var(--accent-success)'
+                borderRadius: '12px',
+                border: '1px solid rgba(54, 193, 112, 0.3)'
               }}
             >
               <Typography 

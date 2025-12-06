@@ -24,6 +24,7 @@ import EmojiEventsIcon from '@mui/icons-material/EmojiEvents'
 import CheckCircleIcon from '@mui/icons-material/CheckCircle'
 import { Database } from '@/types/database'
 import { supabase } from '@/lib/supabase'
+import { notificationService } from '@/lib/services/notificationService'
 import { WalletAddressWithButtons } from './WalletAddressWithButtons'
 import { toast } from 'react-hot-toast'
 
@@ -125,52 +126,90 @@ export default function WinnerSelectionModal({
     setError('')
 
     try {
-      // Update job_submissions with winner info
-      const updatePromises = Object.entries(selectedWinners).map(([position, submissionId]) => {
+      // Build winners data for API
+      const winnersData = Object.entries(selectedWinners).map(([position, submissionId]) => {
         const prize = getPrizeForPosition(Number(position))
-        
-        return supabase
-          .from('job_submissions')
-          .update({
-            is_selected_winner: true,
-            winner_position: Number(position),
-            prize_amount_tokens: prize?.amount_tokens,
-            prize_amount_usd: prize?.amount_usd
-          })
-          .eq('id', submissionId)
+        return {
+          submissionId,
+          position: Number(position),
+          prizeAmountTokens: prize?.amount_tokens || 0,
+          prizeAmountUsd: prize?.amount_usd || 0
+        }
       })
 
-      await Promise.all(updatePromises)
+      // Call API to select winners (uses service role to bypass RLS)
+      const response = await fetch(`/api/jobs/${job.id}/select-winners`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          posterWallet: job.poster_wallet,
+          winners: winnersData
+        })
+      })
 
-      // Update unselected submissions to ensure they're not marked as winners
-      const selectedIds = Object.values(selectedWinners)
-      const unselectedSubmissions = submissions
-        .filter(s => !selectedIds.includes(s.id))
-        .map(s => s.id)
+      const result = await response.json()
 
-      if (unselectedSubmissions.length > 0) {
-        await supabase
-          .from('job_submissions')
-          .update({
-            is_selected_winner: false,
-            winner_position: null,
-            prize_amount_tokens: null,
-            prize_amount_usd: null
-          })
-          .in('id', unselectedSubmissions)
+      if (!response.ok) {
+        throw new Error(result.error || 'Failed to select winners')
       }
 
-      // Update job with winners_selected_at timestamp
-      await supabase
-        .from('jobs')
-        .update({
-          contest_winners_selected_at: new Date().toISOString()
-        })
-        .eq('id', job.id)
+      console.log('[WinnerSelection] Winners selected successfully:', result)
+
+      // Get project info for token symbol (for notifications)
+      const { data: project } = await supabase
+        .from('projects')
+        .select('token_symbol')
+        .eq('id', job.project_id)
+        .single()
+
+      const tokenSymbol = project?.token_symbol || 'tokens'
 
       toast.success('Winners selected! Proceeding to payment...')
       onWinnersSelected()
       onClose()
+
+      // Send notifications to winners (fire and forget - don't block UI)
+      // These run after the modal closes to not delay the user experience
+      setTimeout(async () => {
+        try {
+          for (const [position, submissionId] of Object.entries(selectedWinners)) {
+            const submission = submissions.find(s => s.id === submissionId)
+            const prize = getPrizeForPosition(Number(position))
+            
+            if (submission && prize) {
+              await notificationService.notifyContestPrizeWon({
+                winnerWallet: submission.worker_wallet,
+                jobId: job.id,
+                jobTitle: job.title,
+                position: Number(position),
+                prizeAmountTokens: prize.amount_tokens,
+                prizeAmountUsd: prize.amount_usd,
+                tokenSymbol
+              }).catch(err => console.warn('Winner notification failed:', err))
+            }
+          }
+
+          // Notify all non-winning participants
+          const winnerWallets = new Set(
+            Object.values(selectedWinners).map(id => 
+              submissions.find(s => s.id === id)?.worker_wallet
+            ).filter(Boolean)
+          )
+          const nonWinnerWallets = submissions
+            .filter(s => !winnerWallets.has(s.worker_wallet))
+            .map(s => s.worker_wallet)
+          
+          if (nonWinnerWallets.length > 0) {
+            await notificationService.notifyContestWinnersSelected({
+              jobId: job.id,
+              jobTitle: job.title,
+              participantWallets: nonWinnerWallets as string[]
+            }).catch(err => console.warn('Participants notification failed:', err))
+          }
+        } catch (notifError) {
+          console.warn('Failed to send winner notifications (non-critical):', notifError)
+        }
+      }, 100)
 
     } catch (err: any) {
       console.error('Error selecting winners:', err)

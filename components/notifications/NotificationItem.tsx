@@ -1,15 +1,19 @@
 'use client'
 
-import { Avatar, Button } from '@mui/material'
+import { useState } from 'react'
+import { Avatar, Button, CircularProgress } from '@mui/material'
 import { formatDistanceToNow } from 'date-fns'
 import { useRouter } from 'next/navigation'
 import {
   Briefcase, CheckCircle, Upload, DollarSign, AlertTriangle,
   MessageSquare, ThumbsUp, BadgeCheck, EyeOff, Mail, Award,
-  AlertCircle, ShieldX, ArrowDown, ArrowUp, Shield, LucideIcon
+  AlertCircle, ShieldX, ArrowDown, ArrowUp, Shield, LucideIcon,
+  RefreshCw, Share2, XCircle, Inbox
 } from 'lucide-react'
 import { notificationService } from '@/lib/services/notificationService'
 import { handleNotificationNavigation } from '@/lib/notifications/navigationHandler'
+import { acceptVoluntaryRevision, declineVoluntaryRevision } from '@/lib/revisions'
+import { toast } from 'react-hot-toast'
 import type { EnrichedNotification } from '@/lib/services/notificationService'
 import type { NotificationType } from '@/types/database'
 
@@ -17,6 +21,7 @@ interface NotificationItemProps {
   notification: EnrichedNotification
   onClick: (notification: EnrichedNotification) => void
   showActions?: boolean
+  onActionComplete?: () => void
 }
 
 // Icon mapping
@@ -42,6 +47,19 @@ const NOTIFICATION_ICONS: Record<NotificationType, LucideIcon> = {
   admin_job_new: Shield,
   admin_asset_new: Shield,
   admin_revenue_earned: Shield,
+  // Social media job notifications
+  social_submission_received: Share2,
+  social_submission_approved: CheckCircle,
+  social_submission_denied: XCircle,
+  social_payment_distributed: DollarSign,
+  // Revision notifications
+  revision_requested: RefreshCw,
+  voluntary_revision_requested: Inbox, // Different icon for voluntary
+  voluntary_revision_accepted: CheckCircle,
+  voluntary_revision_declined: XCircle,
+  // Revision warning notifications
+  high_revision_count_warning_poster: AlertTriangle,
+  high_revision_count_warning_worker: AlertTriangle,
 }
 
 // Icon color mapping
@@ -95,15 +113,21 @@ function getNotificationIconColor(type: NotificationType): string {
 export function NotificationItem({ 
   notification, 
   onClick, 
-  showActions = false 
+  showActions = false,
+  onActionComplete 
 }: NotificationItemProps) {
   const router = useRouter()
+  const [actionLoading, setActionLoading] = useState<'accept' | 'decline' | null>(null)
+  
   const text = notificationService.generateNotificationText(notification)
   const IconComponent = NOTIFICATION_ICONS[notification.type]
   const iconColor = getNotificationIconColor(notification.type)
   
   // Check if this is an admin notification
   const isAdminNotification = notification.type.startsWith('admin_')
+  
+  // Check if this is a voluntary revision that needs action
+  const isVoluntaryRevisionRequest = notification.type === 'voluntary_revision_requested'
 
   const handleClick = () => {
     // Navigate to the appropriate page
@@ -117,6 +141,63 @@ export function NotificationItem({
     e.stopPropagation()
     // Action handlers will be implemented in Task 5.3
     console.log(`Action: ${action}`, notification)
+  }
+
+  // Handle voluntary revision accept
+  const handleAcceptVoluntary = async (e: React.MouseEvent) => {
+    e.stopPropagation()
+    if (!notification.reference_id) return
+    
+    setActionLoading('accept')
+    try {
+      const result = await acceptVoluntaryRevision(
+        notification.reference_id,
+        notification.user_wallet
+      )
+      
+      if (result.success) {
+        toast.success('Voluntary revision accepted! You can now submit your revised work.', {
+          duration: 4000,
+          style: { background: '#7C4DFF', color: '#fff' }
+        })
+        onActionComplete?.()
+      } else {
+        toast.error(result.error || 'Failed to accept revision')
+      }
+    } catch (error) {
+      console.error('Error accepting voluntary revision:', error)
+      toast.error('Failed to accept voluntary revision')
+    } finally {
+      setActionLoading(null)
+    }
+  }
+
+  // Handle voluntary revision decline
+  const handleDeclineVoluntary = async (e: React.MouseEvent) => {
+    e.stopPropagation()
+    if (!notification.reference_id) return
+    
+    setActionLoading('decline')
+    try {
+      const result = await declineVoluntaryRevision(
+        notification.reference_id,
+        notification.user_wallet
+      )
+      
+      if (result.success) {
+        toast.success('Voluntary revision declined. No penalty applied.', {
+          duration: 4000,
+        })
+        onActionComplete?.()
+      } else {
+        toast.error(result.error || 'Failed to decline revision')
+      }
+    } catch (error) {
+      console.error('Error declining voluntary revision:', error)
+      toast.error('Failed to decline voluntary revision')
+    } finally {
+      setActionLoading(null)
+    }
   }
 
   return (
@@ -253,6 +334,62 @@ export function NotificationItem({
                 Review
               </Button>
             )}
+          </div>
+        )}
+
+        {/* Voluntary Revision Action Buttons - Always show for this type */}
+        {isVoluntaryRevisionRequest && (
+          <div className="flex gap-2 mt-3">
+            <Button
+              size="small"
+              variant="contained"
+              onClick={handleAcceptVoluntary}
+              disabled={actionLoading !== null}
+              startIcon={actionLoading === 'accept' ? <CircularProgress size={14} color="inherit" /> : undefined}
+              sx={{
+                textTransform: 'none',
+                backgroundColor: '#36C170',
+                color: '#fff',
+                fontSize: { xs: '0.75rem', sm: '0.875rem' },
+                padding: { xs: '4px 12px', sm: '6px 16px' },
+                '&:hover': {
+                  backgroundColor: '#2AA55B',
+                },
+                '&:disabled': {
+                  backgroundColor: '#A3A7B5',
+                  color: '#fff'
+                }
+              }}
+            >
+              Accept
+            </Button>
+            <Button
+              size="small"
+              variant="outlined"
+              onClick={handleDeclineVoluntary}
+              disabled={actionLoading !== null}
+              startIcon={actionLoading === 'decline' ? <CircularProgress size={14} /> : undefined}
+              sx={{ 
+                textTransform: 'none',
+                borderColor: '#EF4444',
+                color: '#EF4444',
+                fontSize: { xs: '0.75rem', sm: '0.875rem' },
+                padding: { xs: '4px 12px', sm: '6px 16px' },
+                '&:hover': {
+                  borderColor: '#DC2626',
+                  backgroundColor: 'rgba(239, 68, 68, 0.05)'
+                },
+                '&:disabled': {
+                  borderColor: '#A3A7B5',
+                  color: '#A3A7B5'
+                }
+              }}
+            >
+              Decline
+            </Button>
+            <span className="text-xs text-gray-500 self-center ml-1">
+              (No penalty for declining)
+            </span>
           </div>
         )}
       </div>

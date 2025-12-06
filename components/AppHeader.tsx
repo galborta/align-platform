@@ -97,17 +97,7 @@ export function AppHeader() {
 
   return (
     <>
-      <style jsx global>{`
-        header .MuiBadge-root {
-          overflow: visible !important;
-        }
-        header .MuiBadge-badge {
-          position: absolute !important;
-          top: 0 !important;
-          right: 0 !important;
-        }
-      `}</style>
-      <header className="sticky top-0 bg-page-bg/95 backdrop-blur-sm border-b border-border-subtle z-50" style={{ overflow: 'visible', isolation: 'isolate', minHeight: '80px' }}>
+      <header className="sticky top-0 bg-page-bg/95 backdrop-blur-sm border-b border-border-subtle z-50" style={{ overflow: 'visible', minHeight: '80px' }}>
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4" style={{ overflow: 'visible', minHeight: '64px' }}>
           <div className="flex items-center justify-between" style={{ overflow: 'visible' }}>
           <Link href="/" className="no-underline">

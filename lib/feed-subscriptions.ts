@@ -73,6 +73,7 @@ export class FeedSubscriptionManager {
     this.subscribeToJobComments()
     this.subscribeToJobSubmissions()
     this.subscribeToJobDisputes()
+    this.subscribeToFeedEvents() // For revision events and other custom feed events
     this.subscribeToPendingAssets()
     this.subscribeToAssetVotes()
     this.subscribeToChatTips()
@@ -600,6 +601,44 @@ export class FeedSubscriptionManager {
               })
             }
           })
+        }
+      )
+      .subscribe()
+    
+    this.channels.push(channel)
+  }
+
+  /**
+   * Subscribe to feed_events table
+   * 
+   * Listens for:
+   * - INSERT: New custom feed events (revision requests, submissions, etc.)
+   */
+  private subscribeToFeedEvents(): void {
+    const channel = supabase
+      .channel(`feed_events_${this.projectId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'feed_events',
+          filter: `project_id=eq.${this.projectId}`
+        },
+        (payload) => {
+          const feedEvent = payload.new as any
+          
+          // Only process revision-related events (others are handled by their native tables)
+          const revisionEventTypes = ['job_revision_requested', 'job_revision_submitted']
+          
+          if (revisionEventTypes.includes(feedEvent.event_type)) {
+            console.log('🔄 Revision event:', feedEvent.event_type, feedEvent.id)
+            this.queueEvent({
+              type: feedEvent.event_type,
+              table: 'feed_events',
+              data: feedEvent
+            })
+          }
         }
       )
       .subscribe()

@@ -94,6 +94,36 @@ export function handleNotificationNavigation(
       }
       break
 
+    case 'revision_requested':
+    case 'voluntary_revision_requested':
+      // Navigate to job detail page - scroll to comments/work section
+      if (reference_id && metadata?.project_id) {
+        navigate(`/project/${metadata.project_id}/jobs/${reference_id}#submitted-work`)
+      } else if (reference_id) {
+        navigate(`/jobs/${reference_id}#submitted-work`)
+      }
+      break
+
+    case 'voluntary_revision_accepted':
+    case 'voluntary_revision_declined':
+      // Navigate to job detail page (for poster to see the response)
+      if (reference_id && metadata?.project_id) {
+        navigate(`/project/${metadata.project_id}/jobs/${reference_id}`)
+      } else if (reference_id) {
+        navigate(`/jobs/${reference_id}`)
+      }
+      break
+
+    case 'high_revision_count_warning_poster':
+    case 'high_revision_count_warning_worker':
+      // Navigate to job detail page - both parties can review the situation
+      if (reference_id && metadata?.project_id) {
+        navigate(`/project/${metadata.project_id}/jobs/${reference_id}`)
+      } else if (reference_id) {
+        navigate(`/jobs/${reference_id}`)
+      }
+      break
+
     case 'job_comment':
       if (reference_id) {
         const baseUrl = metadata?.project_id 

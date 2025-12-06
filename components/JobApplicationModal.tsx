@@ -38,6 +38,7 @@ import EmojiEventsIcon from '@mui/icons-material/EmojiEvents'
 import InfoIcon from '@mui/icons-material/Info'
 import WarningIcon from '@mui/icons-material/Warning'
 import { Database } from '@/types/database'
+import { RevisionSelector } from '@/components/jobs/RevisionSelector'
 
 type Job = Database['public']['Tables']['jobs']['Row']
 
@@ -102,6 +103,9 @@ export function JobApplicationModal({
   // Deadline commitment state
   const [committedDeadline, setCommittedDeadline] = useState<Date | null>(null)
   const [deadlineError, setDeadlineError] = useState<string | null>(null)
+  
+  // Revision offering state
+  const [revisionsOffered, setRevisionsOffered] = useState<string | null>(null)
 
   // Reset form when modal closes
   useEffect(() => {
@@ -125,6 +129,7 @@ export function JobApplicationModal({
     setErrors({})
     setCommittedDeadline(null)
     setDeadlineError(null)
+    setRevisionsOffered(null)
   }
 
   // Validate deadline
@@ -321,6 +326,16 @@ export function JobApplicationModal({
       newErrors.deadline = deadlineError || 'Valid deadline is required'
     }
 
+    // Revisions validation
+    if (!revisionsOffered) {
+      newErrors.revisions = 'Please select how many revisions you\'re offering'
+    } else if (revisionsOffered !== 'unlimited') {
+      const parsed = parseInt(revisionsOffered, 10)
+      if (isNaN(parsed) || parsed < 0) {
+        newErrors.revisions = 'Revisions must be a valid positive number or "unlimited"'
+      }
+    }
+
     setErrors(newErrors)
     return Object.keys(newErrors).length === 0
   }
@@ -345,14 +360,15 @@ export function JobApplicationModal({
         ? customTime
         : TIME_OPTIONS.find(opt => opt.value === estimatedCompletion)?.label || estimatedCompletion
 
-      // Submit application with deadline commitment
+      // Submit application with deadline commitment and revision offering
       const applicationData = await applyToJob({
         job_id: jobId,
         applicant_wallet: walletAddress,
         pitch: pitch.trim(),
         image_urls: imageUrls,
         estimated_completion: completionText,
-        committed_completion_date: committedDeadline!.toISOString()
+        committed_completion_date: committedDeadline!.toISOString(),
+        revisions_offered: revisionsOffered
       })
 
       // TODO: Award karma via job-karma helper
@@ -729,6 +745,14 @@ export function JobApplicationModal({
             </ul>
           </Alert>
         )}
+
+        {/* Revision Selector */}
+        <RevisionSelector
+          value={revisionsOffered}
+          onChange={setRevisionsOffered}
+          error={errors.revisions}
+          disabled={loading}
+        />
 
         {/* Your Profile Section */}
         <div 

@@ -17,7 +17,8 @@ import {
   Verified as VerifiedIcon,
   VisibilityOff as VisibilityOffIcon,
   AttachMoney as AttachMoneyIcon,
-  EmojiEvents as EmojiEventsIcon
+  EmojiEvents as EmojiEventsIcon,
+  Loop as LoopIcon
 } from '@mui/icons-material'
 import { FeedItem as FeedItemType, ActivityType } from '@/types/feed'
 import { isFreshItem } from '@/lib/feed-utils'
@@ -54,6 +55,8 @@ function getIcon(type: ActivityType, isContest?: boolean): React.ReactNode {
     job_completed: <CelebrationIcon fontSize="small" />,
     job_disputed: <GavelIcon fontSize="small" />,
     job_comment: <CommentIcon fontSize="small" />,
+    job_revision_requested: <LoopIcon fontSize="small" />,
+    job_revision_submitted: <LoopIcon fontSize="small" />,
     submission_comment: <CommentIcon fontSize="small" />,
     asset_submitted: <AddBoxIcon fontSize="small" />,
     asset_upvoted: <ThumbUpIcon fontSize="small" />,
@@ -73,6 +76,9 @@ function getIconBgColor(type: ActivityType, isContest?: boolean): string {
   if (type === 'job_posted' && isContest) return '#EEE7FF' // contest purple
   if (type === 'job_completed' && isContest) return '#FFF8E1' // contest gold/yellow
   if (type === 'submission_comment') return '#EEE7FF' // contest purple for submission comments
+  // Revision activities get a distinct teal/cyan tint
+  if (type === 'job_revision_requested') return '#E0F7FA' // cyan tint for revision requests
+  if (type === 'job_revision_submitted') return '#E8F5E9' // green tint for revision submissions
   if (type.startsWith('job_')) return '#F3E5F5' // purple tint
   if (type.startsWith('asset_')) return '#E3F2FD' // blue tint
   if (type === 'tip_sent') return '#F9FBE7' // lime tint
@@ -86,6 +92,9 @@ function getIconBgColor(type: ActivityType, isContest?: boolean): string {
 function getIconColor(type: ActivityType, isContest?: boolean): string {
   if (type === 'job_completed' && isContest) return '#FFD700' // contest gold
   if (type === 'submission_comment') return '#7C4DFF' // contest purple for submission comments
+  // Revision activities get distinct colors
+  if (type === 'job_revision_requested') return '#00ACC1' // cyan for revision requests
+  if (type === 'job_revision_submitted') return '#43A047' // green for revision submissions
   if (type.startsWith('job_')) return '#7C4DFF'
   if (type.startsWith('asset_')) return '#2196F3'
   if (type === 'tip_sent') return '#CDDC39'
@@ -287,6 +296,46 @@ function getActivityContent(item: FeedItemType, projectId: string, tokenMint?: s
           />
           {' commented on '}
           <span className="feed-item-link">{data.jobTitle}</span>
+        </>
+      )
+    case 'job_revision_requested':
+      return (
+        <>
+          <WalletAddressWithButtons 
+            address={data.actorWallet}
+            showMessage
+            showTip
+            compact
+            projectId={projectId}
+            tokenMint={tokenMint}
+          />
+          {' requested revision'}
+          {data.revisionNumber && ` #${data.revisionNumber}`}
+          {' on '}
+          <span className="feed-item-link">{data.jobTitle}</span>
+          {data.revisionsRemaining !== undefined && data.revisionsRemaining !== 'unlimited' && (
+            <span style={{ color: '#666', fontSize: '0.85em' }}>
+              {' '}({data.revisionsRemaining} remaining)
+            </span>
+          )}
+        </>
+      )
+    case 'job_revision_submitted':
+      return (
+        <>
+          <WalletAddressWithButtons 
+            address={data.actorWallet}
+            showMessage
+            showTip
+            compact
+            projectId={projectId}
+            tokenMint={tokenMint}
+          />
+          {' submitted revision'}
+          {data.revisionNumber && ` #${data.revisionNumber}`}
+          {' for '}
+          <span className="feed-item-link">{data.jobTitle}</span>
+          {' ✓'}
         </>
       )
     case 'submission_comment':

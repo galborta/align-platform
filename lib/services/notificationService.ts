@@ -81,7 +81,16 @@ class NotificationService {
     'admin_dispute_new',
     'admin_job_new',
     'admin_asset_new',
-    'admin_revenue_earned'
+    'admin_revenue_earned',
+    'revision_requested', // Important: worker needs to know immediately
+    'voluntary_revision_requested', // Worker needs to respond
+    'voluntary_revision_accepted', // Poster needs to know
+    'voluntary_revision_declined', // Poster needs to know
+    'high_revision_count_warning_poster', // Important warning
+    'high_revision_count_warning_worker', // Important warning
+    'contest_judging_started', // Poster needs to select winners
+    'contest_winners_selected', // Participants need to know results
+    'contest_prize_won' // Winner needs to know they won
   ];
 
   // Types that trigger browser notifications (high priority)
@@ -96,7 +105,15 @@ class NotificationService {
     'admin_dispute_new',
     'admin_job_new',
     'admin_asset_new',
-    'admin_revenue_earned'
+    'admin_revenue_earned',
+    'revision_requested', // Worker needs immediate browser notification
+    'voluntary_revision_requested', // Worker needs to respond
+    'voluntary_revision_accepted', // Poster notification
+    'voluntary_revision_declined', // Poster notification
+    'high_revision_count_warning_poster', // Important warning
+    'high_revision_count_warning_worker', // Important warning
+    'contest_judging_started', // Poster needs to select winners
+    'contest_prize_won' // Winner needs to know immediately
   ];
 
   // Batching window in milliseconds (5 minutes)
@@ -1002,12 +1019,200 @@ class NotificationService {
           body: `Earned ${metadata.revenue_amount || '...'} ${metadata.token || 'tokens'} in platform fees`
         };
 
+      // Revision notifications
+      case 'revision_requested':
+        return {
+          title: '🔄 Revision Requested',
+          body: metadata.revision_number 
+            ? `${actorName} requested revision #${metadata.revision_number} on ${metadata.job_title || 'your work'}`
+            : `${actorName} requested a revision on ${metadata.job_title || 'your work'}`
+        };
+
+      case 'voluntary_revision_requested':
+        return {
+          title: '📩 Voluntary Revision Request',
+          body: `${actorName} requested a voluntary revision on ${metadata.job_title || 'your work'} (beyond your commitment)`
+        };
+
+      case 'voluntary_revision_accepted':
+        return {
+          title: '✅ Voluntary Revision Accepted',
+          body: `${actorName} accepted your voluntary revision request for ${metadata.job_title || 'a job'}`
+        };
+
+      case 'voluntary_revision_declined':
+        return {
+          title: '❌ Voluntary Revision Declined',
+          body: `${actorName} declined your voluntary revision request for ${metadata.job_title || 'a job'}`
+        };
+
+      // Revision warning notifications
+      case 'high_revision_count_warning_poster':
+        return {
+          title: '⚠️ High Revision Count',
+          body: `Your job "${metadata.job_title || 'a job'}" has exceeded ${metadata.revision_count || 10} revisions. Consider if the scope has changed or if a dispute is needed.`
+        };
+
+      case 'high_revision_count_warning_worker':
+        return {
+          title: '⚠️ High Revision Count Alert',
+          body: `The job "${metadata.job_title || 'a job'}" has ${metadata.revision_count || '10+'} revisions. You can dispute if requests are unreasonable or beyond scope.`
+        };
+
+      // Contest notifications
+      case 'contest_judging_started':
+        return {
+          title: '🏆 Contest Judging Started!',
+          body: `Your contest "${metadata.job_title || 'a contest'}" is ready for judging! ${metadata.contest_submission_count || 0} submissions await your review.`
+        };
+
+      case 'contest_winners_selected':
+        return {
+          title: '🎉 Contest Winners Announced!',
+          body: `Winners have been selected for "${metadata.job_title || 'a contest'}". Check if you won!`
+        };
+
+      case 'contest_prize_won':
+        const positionText = metadata.winner_position === 1 ? '1st' : 
+                             metadata.winner_position === 2 ? '2nd' : 
+                             metadata.winner_position === 3 ? '3rd' : 
+                             `${metadata.winner_position}th`;
+        return {
+          title: `🥇 Congratulations! You won ${positionText} place!`,
+          body: `You won ${positionText} place in "${metadata.job_title || 'a contest'}"! Prize: ${metadata.prize_amount_tokens?.toLocaleString() || '...'} ${metadata.token || 'tokens'}`
+        };
+
       default:
         return {
           title: '🔔 Notification',
           body: 'You have a new notification'
         };
     }
+  }
+
+  /**
+   * Notify contest poster that judging phase has started
+   * Called when submission deadline passes
+   * 
+   * @param params - Contest judging details
+   * @returns Created notification or null
+   * 
+   * @example
+   * ```typescript
+   * await notificationService.notifyContestJudgingStarted({
+   *   posterWallet: job.poster_wallet,
+   *   jobId: job.id,
+   *   jobTitle: job.title,
+   *   submissionCount: 15
+   * })
+   * ```
+   */
+  async notifyContestJudgingStarted(params: {
+    posterWallet: string;
+    jobId: string;
+    jobTitle: string;
+    submissionCount: number;
+  }): Promise<Notification | null> {
+    console.log(`[NotificationService] 🏆 Notifying poster of contest judging: ${params.jobTitle}`);
+
+    return this.createNotification({
+      userWallet: params.posterWallet,
+      type: 'contest_judging_started',
+      referenceId: params.jobId,
+      referenceType: 'contest',
+      metadata: {
+        job_title: params.jobTitle,
+        contest_submission_count: params.submissionCount
+      }
+    });
+  }
+
+  /**
+   * Notify all contest participants that winners were selected
+   * 
+   * @param params - Contest and participants details
+   * @returns Array of created notifications
+   * 
+   * @example
+   * ```typescript
+   * await notificationService.notifyContestWinnersSelected({
+   *   jobId: job.id,
+   *   jobTitle: job.title,
+   *   participantWallets: ['wallet1', 'wallet2', 'wallet3']
+   * })
+   * ```
+   */
+  async notifyContestWinnersSelected(params: {
+    jobId: string;
+    jobTitle: string;
+    participantWallets: string[];
+  }): Promise<Notification[]> {
+    console.log(`[NotificationService] 🎉 Notifying ${params.participantWallets.length} participants of winners`);
+
+    const notifications = await Promise.all(
+      params.participantWallets.map(wallet =>
+        this.createNotification({
+          userWallet: wallet,
+          type: 'contest_winners_selected',
+          referenceId: params.jobId,
+          referenceType: 'contest',
+          metadata: {
+            job_title: params.jobTitle
+          }
+        })
+      )
+    );
+
+    return notifications.filter((n): n is Notification => n !== null);
+  }
+
+  /**
+   * Notify a contest winner about their prize
+   * 
+   * @param params - Winner details
+   * @returns Created notification or null
+   * 
+   * @example
+   * ```typescript
+   * await notificationService.notifyContestPrizeWon({
+   *   winnerWallet: submission.worker_wallet,
+   *   jobId: job.id,
+   *   jobTitle: job.title,
+   *   position: 1,
+   *   prizeAmountTokens: 1000,
+   *   prizeAmountUsd: 100,
+   *   tokenSymbol: 'USDC'
+   * })
+   * ```
+   */
+  async notifyContestPrizeWon(params: {
+    winnerWallet: string;
+    jobId: string;
+    jobTitle: string;
+    position: number;
+    prizeAmountTokens: number;
+    prizeAmountUsd?: number;
+    tokenSymbol?: string;
+  }): Promise<Notification | null> {
+    const positionText = params.position === 1 ? '1st' : 
+                         params.position === 2 ? '2nd' : 
+                         params.position === 3 ? '3rd' : 
+                         `${params.position}th`;
+    console.log(`[NotificationService] 🥇 Notifying ${positionText} place winner: ${params.winnerWallet.slice(0, 8)}...`);
+
+    return this.createNotification({
+      userWallet: params.winnerWallet,
+      type: 'contest_prize_won',
+      referenceId: params.jobId,
+      referenceType: 'contest',
+      metadata: {
+        job_title: params.jobTitle,
+        winner_position: params.position,
+        prize_amount_tokens: params.prizeAmountTokens,
+        prize_amount_usd: params.prizeAmountUsd,
+        token: params.tokenSymbol
+      }
+    });
   }
 }
 

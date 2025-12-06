@@ -66,7 +66,18 @@ export type SocialDisputeType =
   | 'social_link_invalid'
 
 /**
- * All dispute types including social media specific ones
+ * Revision-related dispute reasons
+ * 
+ * These dispute types are specifically for handling revision-related conflicts:
+ * - 'revision_refusal': Worker refused to complete a committed revision
+ * - 'unlimited_revisions_abuse': Worker claims poster is abusing unlimited revisions
+ */
+export type RevisionDisputeType =
+  | 'revision_refusal'         // Poster: worker refused committed revision
+  | 'unlimited_revisions_abuse' // Worker: poster is abusing unlimited revisions
+
+/**
+ * All dispute types including social media and revision specific ones
  */
 export type DisputeType =
   | 'quality_issues'
@@ -76,6 +87,7 @@ export type DisputeType =
   | 'communication_failure'
   | 'scope_creep'
   | SocialDisputeType
+  | RevisionDisputeType
   | 'other'
 
 // ==================== TIMELINE HELPERS ====================

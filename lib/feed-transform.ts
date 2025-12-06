@@ -666,6 +666,44 @@ export function transformSubscriptionEvent(event: {
         break
       }
 
+      // ==================== REVISION ACTIVITIES ====================
+
+      case 'job_revision_requested': {
+        const feedEvent = event.data
+        items.push({
+          id: `job_revision_requested_${feedEvent.id || Date.now()}`,
+          type: 'job_revision_requested',
+          timestamp: new Date(feedEvent.created_at),
+          data: {
+            actorWallet: feedEvent.actor_wallet,
+            jobId: feedEvent.metadata?.job_id || feedEvent.entity_id,
+            jobTitle: feedEvent.metadata?.job_title,
+            revisionNumber: feedEvent.metadata?.revision_number,
+            revisionsRemaining: feedEvent.metadata?.revisions_remaining,
+            isVoluntary: feedEvent.metadata?.is_voluntary,
+            workerWallet: feedEvent.metadata?.worker_wallet
+          }
+        })
+        break
+      }
+
+      case 'job_revision_submitted': {
+        const feedEvent = event.data
+        items.push({
+          id: `job_revision_submitted_${feedEvent.id || Date.now()}`,
+          type: 'job_revision_submitted',
+          timestamp: new Date(feedEvent.created_at),
+          data: {
+            actorWallet: feedEvent.actor_wallet,
+            jobId: feedEvent.metadata?.job_id || feedEvent.entity_id,
+            jobTitle: feedEvent.metadata?.job_title,
+            revisionNumber: feedEvent.metadata?.revision_number,
+            posterWallet: feedEvent.metadata?.poster_wallet
+          }
+        })
+        break
+      }
+
       case 'asset_submitted': {
         const asset = event.data
         items.push({

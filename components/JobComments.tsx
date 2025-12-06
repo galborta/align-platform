@@ -4,10 +4,11 @@ import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
 import { getJobComments, postJobComment } from '@/lib/job-comments'
 import { useWallet, useConnection } from '@solana/wallet-adapter-react'
-import { Box, TextField, Button, Typography, Avatar, Paper, CircularProgress, IconButton, Tooltip } from '@mui/material'
+import { Box, TextField, Button, Typography, Avatar, Paper, CircularProgress, IconButton, Tooltip, Chip } from '@mui/material'
 import MessageIcon from '@mui/icons-material/Message'
 import LocalAtmIcon from '@mui/icons-material/LocalAtm'
 import ReplyIcon from '@mui/icons-material/Reply'
+import LoopIcon from '@mui/icons-material/Loop'
 import { formatDistanceToNow } from 'date-fns'
 import { toast } from 'react-hot-toast'
 import { SupporterBadgeFetcher } from './SupporterBadgeFetcher'
@@ -161,6 +162,50 @@ export default function JobComments({ jobId, projectId }: JobCommentsProps) {
 
   const hasDisplayName = (address: string) => {
     return displayNames.has(address)
+  }
+
+  // Helper to detect revision request comments
+  const isRevisionRequest = (message: string): boolean => {
+    return message.includes('**Revision Request') || message.includes('**Voluntary Revision Request')
+  }
+
+  // Helper to parse revision request metadata
+  const parseRevisionRequest = (message: string): { 
+    revisionNumber: number | null
+    isVoluntary: boolean
+    notes: string
+    images: string[]
+  } => {
+    const isVoluntary = message.includes('Voluntary Revision Request')
+    const revisionMatch = message.match(/Revision Request #(\d+)/)
+    const revisionNumber = revisionMatch ? parseInt(revisionMatch[1], 10) : null
+    
+    // Extract notes (content after header, before images)
+    const lines = message.split('\n')
+    const headerIndex = lines.findIndex(l => l.includes('**Revision Request'))
+    let notes = ''
+    let images: string[] = []
+    
+    if (headerIndex !== -1) {
+      // Find where images section starts
+      const imagesIndex = lines.findIndex(l => l.includes('📎 Reference Images:'))
+      const notesLines = imagesIndex > -1 
+        ? lines.slice(headerIndex + 2, imagesIndex)
+        : lines.slice(headerIndex + 2)
+      notes = notesLines.join('\n').trim()
+      
+      // Extract image URLs
+      if (imagesIndex > -1) {
+        for (let i = imagesIndex + 1; i < lines.length; i++) {
+          const urlMatch = lines[i].match(/https?:\/\/[^\s]+/)
+          if (urlMatch) {
+            images.push(urlMatch[0])
+          }
+        }
+      }
+    }
+    
+    return { revisionNumber, isVoluntary, notes, images }
   }
 
   // Organize comments into top-level and replies
@@ -328,76 +373,142 @@ export default function JobComments({ jobId, projectId }: JobCommentsProps) {
   }
 
   // Render a single comment (top-level or reply)
-  const renderComment = (comment: Comment, isReply: boolean = false) => (
-    <Box
-      key={comment.id}
-      sx={{
-        ml: isReply ? 4 : 0,
-        mb: isReply ? 1.5 : 0
-      }}
-    >
-      <Paper 
-        sx={{ 
-          p: 2.5, 
-          bgcolor: isReply ? '#F8F9FC' : '#FAFBFC',
-          border: '1px solid #E5E7F0',
-          borderRadius: '8px',
-          borderLeft: isReply ? '3px solid #7C4DFF' : undefined
+  const renderComment = (comment: Comment, isReply: boolean = false) => {
+    const isRevision = isRevisionRequest(comment.message)
+    const revisionData = isRevision ? parseRevisionRequest(comment.message) : null
+    
+    return (
+      <Box
+        key={comment.id}
+        sx={{
+          ml: isReply ? 4 : 0,
+          mb: isReply ? 1.5 : 0
         }}
       >
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mb: 1.5 }}>
-          <Avatar 
-            sx={{ 
-              width: 28, 
-              height: 28, 
-              bgcolor: '#7C4DFF',
-              fontSize: '14px',
-              fontWeight: 600
-            }}
-          >
-            {comment.wallet_address.slice(0, 1).toUpperCase()}
-          </Avatar>
+        <Paper 
+          sx={{ 
+            p: 2.5, 
+            bgcolor: isRevision 
+              ? revisionData?.isVoluntary ? '#FFF7ED' : '#F8F5FF'
+              : isReply ? '#F8F9FC' : '#FAFBFC',
+            border: isRevision 
+              ? `2px solid ${revisionData?.isVoluntary ? '#FB923C' : '#7C4DFF'}`
+              : '1px solid #E5E7F0',
+            borderRadius: '12px',
+            borderLeft: isReply && !isRevision ? '3px solid #7C4DFF' : undefined
+          }}
+        >
+          {/* Revision Request Header Badge */}
+          {isRevision && (
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
+              <Chip
+                icon={<LoopIcon sx={{ fontSize: 16 }} />}
+                label={revisionData?.isVoluntary 
+                  ? 'Voluntary Revision Request' 
+                  : `Revision Request #${revisionData?.revisionNumber}`
+                }
+                sx={{
+                  backgroundColor: revisionData?.isVoluntary ? '#FB923C' : '#7C4DFF',
+                  color: '#fff',
+                  fontWeight: 700,
+                  fontSize: 12,
+                  '& .MuiChip-icon': { color: '#fff' }
+                }}
+              />
+            </Box>
+          )}
+
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mb: 1.5 }}>
+            <Avatar 
+              sx={{ 
+                width: 28, 
+                height: 28, 
+                bgcolor: isRevision 
+                  ? revisionData?.isVoluntary ? '#FB923C' : '#7C4DFF'
+                  : '#7C4DFF',
+                fontSize: '14px',
+                fontWeight: 600
+              }}
+            >
+              {isRevision ? <LoopIcon sx={{ fontSize: 16 }} /> : comment.wallet_address.slice(0, 1).toUpperCase()}
+            </Avatar>
+            <Typography 
+              variant="body2" 
+              sx={{ 
+                fontWeight: 600,
+                fontFamily: hasDisplayName(comment.wallet_address) ? 'inherit' : 'monospace',
+                color: '#1A1A1E'
+              }}
+            >
+              {getDisplayName(comment.wallet_address)}
+            </Typography>
+            <SupporterBadgeFetcher 
+              walletAddress={comment.wallet_address} 
+              projectId={projectId}
+              size="small"
+            />
+            {renderMessageTipButtons(comment.wallet_address)}
+            <Typography 
+              variant="caption" 
+              sx={{ 
+                color: '#A3A7B5',
+                ml: 'auto'
+              }}
+            >
+              {formatDistanceToNow(new Date(comment.created_at), { addSuffix: true })}
+            </Typography>
+          </Box>
+          
+          {/* Content - show parsed notes for revision requests */}
           <Typography 
             variant="body2" 
             sx={{ 
-              fontWeight: 600,
-              fontFamily: hasDisplayName(comment.wallet_address) ? 'inherit' : 'monospace',
-              color: '#1A1A1E'
+              whiteSpace: 'pre-wrap',
+              color: '#1A1A1E',
+              lineHeight: 1.6,
+              fontSize: '15px',
+              mb: 1
             }}
           >
-            {getDisplayName(comment.wallet_address)}
+            {isRevision && revisionData ? revisionData.notes : comment.message}
           </Typography>
-          <SupporterBadgeFetcher 
-            walletAddress={comment.wallet_address} 
-            projectId={projectId}
-            size="small"
-          />
-          {renderMessageTipButtons(comment.wallet_address)}
-          <Typography 
-            variant="caption" 
-            sx={{ 
-              color: '#A3A7B5',
-              ml: 'auto'
-            }}
-          >
-            {formatDistanceToNow(new Date(comment.created_at), { addSuffix: true })}
-          </Typography>
-        </Box>
-        <Typography 
-          variant="body2" 
-          sx={{ 
-            whiteSpace: 'pre-wrap',
-            color: '#1A1A1E',
-            lineHeight: 1.6,
-            fontSize: '15px',
-            mb: 1
-          }}
-        >
-          {comment.message}
-        </Typography>
+          
+          {/* Revision Reference Images */}
+          {isRevision && revisionData?.images && revisionData.images.length > 0 && (
+            <Box sx={{ mt: 2 }}>
+              <Typography variant="caption" sx={{ color: '#6F7280', fontWeight: 600, mb: 1, display: 'block' }}>
+                Reference Images
+              </Typography>
+              <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
+                {revisionData.images.map((url, idx) => (
+                  <Box
+                    key={idx}
+                    component="a"
+                    href={url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    sx={{
+                      width: 60,
+                      height: 60,
+                      borderRadius: '8px',
+                      overflow: 'hidden',
+                      border: '2px solid #E5E7F0',
+                      '&:hover': { borderColor: '#7C4DFF' }
+                    }}
+                  >
+                    <img
+                      src={url}
+                      alt={`Reference ${idx + 1}`}
+                      style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                    />
+                  </Box>
+                ))}
+              </Box>
+            </Box>
+          )}
 
-        {/* Reply button (only for top-level comments) */}
-        {!isReply && publicKey && isHolder && (
+        {/* Reply button (only for top-level comments, not revision requests) */}
+        {!isReply && !isRevision && publicKey && isHolder && (
           <Box sx={{ mt: 1 }}>
             <Button
               size="small"
@@ -487,6 +598,7 @@ export default function JobComments({ jobId, projectId }: JobCommentsProps) {
       </Paper>
     </Box>
   )
+  }
 
   const organizedComments = organizeComments()
 

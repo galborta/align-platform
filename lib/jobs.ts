@@ -240,7 +240,12 @@ export async function fetchJobById(jobId: string): Promise<JobWithDetails | null
 /**
  * Apply to a job
  * 
- * Creates a job application and notifies the job poster
+ * Creates a job application and notifies the job poster.
+ * Also initializes revision tracking fields when revisions_offered is provided.
+ * 
+ * @param applicationData.revisions_offered - Number of revisions offered ('1', '2', 'unlimited', etc.)
+ *   - If provided, revisions_used is set to 0 and revisions_remaining is auto-computed by trigger
+ *   - If null, no revision tracking is enabled for this application
  */
 export async function applyToJob(applicationData: {
   job_id: string
@@ -249,11 +254,27 @@ export async function applyToJob(applicationData: {
   image_urls?: string[]
   estimated_completion: string
   committed_completion_date: string
+  revisions_offered?: string | null
 }): Promise<JobApplication> {
+  // Prepare insert data with revision fields
+  const insertData: any = {
+    job_id: applicationData.job_id,
+    applicant_wallet: applicationData.applicant_wallet,
+    pitch: applicationData.pitch,
+    image_urls: applicationData.image_urls,
+    estimated_completion: applicationData.estimated_completion,
+    committed_completion_date: applicationData.committed_completion_date,
+    // Revision tracking
+    revisions_offered: applicationData.revisions_offered || null,
+    revisions_used: 0, // Always start at 0
+    // revisions_remaining is auto-computed by the database trigger
+    last_revision_requested_at: null
+  }
+
   // Create the application
   const { data, error } = await supabase
     .from('job_applications')
-    .insert(applicationData)
+    .insert(insertData)
     .select()
     .single()
 
@@ -584,6 +605,51 @@ export async function getApplicationWithStats(
     }
   } catch (error) {
     console.error('Error getting application with stats:', error)
+    return null
+  }
+}
+
+/**
+ * Get the assigned worker's application for a job
+ * 
+ * This function retrieves the application of the currently assigned worker,
+ * including all revision-related fields. Useful for:
+ * - Displaying revision status on job detail pages
+ * - Tracking revision usage for assigned jobs
+ * - Showing worker commitment details post-assignment
+ * 
+ * @param jobId - The UUID of the job
+ * @param workerWallet - The wallet address of the assigned worker
+ * @returns JobApplication with all fields including revision data, or null if not found
+ * 
+ * @example
+ * const application = await getAssignedWorkerApplication(jobId, job.assigned_to)
+ * if (application) {
+ *   console.log(`Revisions offered: ${application.revisions_offered}`)
+ *   console.log(`Revisions used: ${application.revisions_used}`)
+ *   console.log(`Revisions remaining: ${application.revisions_remaining}`)
+ * }
+ */
+export async function getAssignedWorkerApplication(
+  jobId: string,
+  workerWallet: string
+): Promise<JobApplication | null> {
+  try {
+    const { data, error } = await supabase
+      .from('job_applications')
+      .select('*')
+      .eq('job_id', jobId)
+      .eq('applicant_wallet', workerWallet)
+      .single()
+
+    if (error) {
+      console.error('Error fetching assigned worker application:', error)
+      return null
+    }
+
+    return data
+  } catch (error) {
+    console.error('Error in getAssignedWorkerApplication:', error)
     return null
   }
 }

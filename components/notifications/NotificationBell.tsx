@@ -20,11 +20,15 @@ import { NotificationDropdown } from './NotificationDropdown'
  * - Badge only shows when unreadCount > 0
  */
 export function NotificationBell() {
-  const { unreadCount } = useNotifications()
+  const { unreadCount, markAllAsRead } = useNotifications()
   const [anchorEl, setAnchorEl] = useState<HTMLElement | null>(null)
 
   const handleClick = (event: React.MouseEvent<HTMLElement>) => {
     setAnchorEl(event.currentTarget)
+    // Mark all notifications as read when opening the dropdown
+    if (unreadCount > 0) {
+      markAllAsRead()
+    }
   }
 
   const handleClose = () => {

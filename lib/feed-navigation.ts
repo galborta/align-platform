@@ -113,6 +113,24 @@ export function getDeepLink(item: FeedItem, projectId: string): DeepLinkConfig |
         scrollTo: 'dispute'
       }
     
+    // ==================== REVISION ACTIVITIES ====================
+    
+    case 'job_revision_requested':
+      if (!data.jobId) return null
+      return {
+        url: `/project/${projectId}/jobs/${data.jobId}`,
+        openInNewTab: false,
+        scrollTo: 'comments' // Revision requests appear in comments
+      }
+    
+    case 'job_revision_submitted':
+      if (!data.jobId) return null
+      return {
+        url: `/project/${projectId}/jobs/${data.jobId}`,
+        openInNewTab: false,
+        scrollTo: 'submission' // Scroll to latest submission
+      }
+    
     // ==================== ASSET ACTIVITIES ====================
     
     case 'asset_submitted':

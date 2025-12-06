@@ -16,8 +16,16 @@ import TipModal from '@/components/TipModal'
 import ContestJobHeader from '@/components/ContestJobHeader'
 import ContestSubmissionModal from '@/components/ContestSubmissionModal'
 import ContestSubmissionGallery from '@/components/ContestSubmissionGallery'
+import WinnerSelectionModal from '@/components/WinnerSelectionModal'
+import ContestPayoutModal from '@/components/ContestPayoutModal'
 import { SocialMediaJobDetail } from '@/components/jobs'
+import { RevisionCounter } from '@/components/jobs/RevisionCounter'
+import { RequestRevisionModal } from '@/components/jobs/RequestRevisionModal'
+import { SubmitRevisionModal } from '@/components/jobs/SubmitRevisionModal'
+import { OpenRevisionDisputeModal } from '@/components/jobs/OpenRevisionDisputeModal'
+import { JobActivityTimeline } from '@/components/jobs/JobActivityTimeline'
 import { supabase } from '@/lib/supabase'
+import { getLatestRevisionRequest, getRevisionHistory, parseRevisionOffering, formatRevisionOffering } from '@/lib/revisions'
 import { usePosterDisplayName } from '@/lib/usePosterDisplayName'
 import { getJobById } from '@/lib/jobs'
 import { upvoteApplication, getApplicationVotes, hasUserVoted } from '@/lib/job-upvoting'
@@ -41,11 +49,13 @@ import FlashOnIcon from '@mui/icons-material/FlashOn'
 import LockIcon from '@mui/icons-material/Lock'
 import WorkIcon from '@mui/icons-material/Work'
 import CheckCircleIcon from '@mui/icons-material/CheckCircle'
+import EmojiEventsIcon from '@mui/icons-material/EmojiEvents'
 import WarningIcon from '@mui/icons-material/Warning'
 import CloseIcon from '@mui/icons-material/Close'
 import GavelIcon from '@mui/icons-material/Gavel'
 import OpenInNewIcon from '@mui/icons-material/OpenInNew'
 import ThumbUpIcon from '@mui/icons-material/ThumbUp'
+import InfoIcon from '@mui/icons-material/Info'
 import Dialog from '@mui/material/Dialog'
 import DialogTitle from '@mui/material/DialogTitle'
 import DialogContent from '@mui/material/DialogContent'
@@ -58,6 +68,8 @@ import FormControlLabel from '@mui/material/FormControlLabel'
 import Alert from '@mui/material/Alert'
 import AlertTitle from '@mui/material/AlertTitle'
 import CalendarTodayIcon from '@mui/icons-material/CalendarToday'
+import LoopIcon from '@mui/icons-material/Loop'
+import AllInclusiveIcon from '@mui/icons-material/AllInclusive'
 import Typography from '@mui/material/Typography'
 import Box from '@mui/material/Box'
 import Paper from '@mui/material/Paper'
@@ -148,6 +160,23 @@ export default function JobDetailPage() {
   const [assigning, setAssigning] = useState(false)
   const [submission, setSubmission] = useState<JobSubmission | null>(null)
   const [showReleaseConfirm, setShowReleaseConfirm] = useState(false)
+  const [showRevisionModal, setShowRevisionModal] = useState(false)
+  const [showSubmitRevisionModal, setShowSubmitRevisionModal] = useState(false)
+  const [showRevisionDisputeModal, setShowRevisionDisputeModal] = useState(false)
+  const [latestRevisionRequest, setLatestRevisionRequest] = useState<{
+    revisionNumber: number
+    isVoluntary: boolean
+    notes: string
+    requestedAt: string
+    images: string[]
+  } | null>(null)
+  const [revisionHistory, setRevisionHistory] = useState<Array<{
+    number: number
+    notes: string
+    requestedAt: string
+    submittedAt?: string
+    isVoluntary: boolean
+  }>>([])
   const [releasing, setReleasing] = useState(false)
   const [releaseError, setReleaseError] = useState<string | null>(null)
   const [workerTxSignature, setWorkerTxSignature] = useState<string | null>(null)
@@ -173,13 +202,21 @@ export default function JobDetailPage() {
   const [reassigning, setReassigning] = useState(false)
   const [applicationVotes, setApplicationVotes] = useState<Record<string, { totalWeight: number; voterCount: number; hasVoted: boolean }>>({})
   const [upvoting, setUpvoting] = useState<string | null>(null)
-  const [sortBy, setSortBy] = useState<'votes' | 'karma' | 'recent'>('votes')
+  const [sortBy, setSortBy] = useState<'votes' | 'karma' | 'recent' | 'revisions'>('votes')
+  const [revisionFilter, setRevisionFilter] = useState<'all' | '3+' | '5+' | 'unlimited'>('all')
   
   // Contest-specific state
   const [contestSubmissionModalOpen, setContestSubmissionModalOpen] = useState(false)
   const [hasSubmittedToContest, setHasSubmittedToContest] = useState(false)
   const [contestSubmissionCount, setContestSubmissionCount] = useState(0)
   const [checkingContestEligibility, setCheckingContestEligibility] = useState(true)
+  
+  // Contest winner selection state
+  const [winnerSelectionOpen, setWinnerSelectionOpen] = useState(false)
+  const [payoutModalOpen, setPayoutModalOpen] = useState(false)
+  const [contestSubmissions, setContestSubmissions] = useState<JobSubmission[]>([])
+  const [selectedWinners, setSelectedWinners] = useState<JobSubmission[]>([])
+  const [winnersForPayout, setWinnersForPayout] = useState<JobSubmission[]>([]) // Separate state for payout modal
 
   // Display name hooks for poster and worker
   const { displayNameOrWallet: posterDisplayName, hasDisplayName: posterHasDisplayName } = usePosterDisplayName(job?.poster_wallet || '')
@@ -234,6 +271,39 @@ export default function JobDetailPage() {
 
     checkContestEligibility()
   }, [job?.id, job?.is_contest, publicKey])
+
+  // Load contest submissions and winners for winner selection
+  useEffect(() => {
+    const loadContestSubmissionsAndWinners = async () => {
+      if (!job?.is_contest) return
+
+      try {
+        // Fetch all submissions for this contest
+        const { data: submissions, error } = await supabase
+          .from('job_submissions')
+          .select('*')
+          .eq('job_id', job.id)
+          .order('submitted_at', { ascending: true })
+
+        if (error) {
+          console.error('Error fetching contest submissions:', error)
+          return
+        }
+
+        setContestSubmissions(submissions || [])
+
+        // If winners have been selected, set them
+        if (job.contest_winners_selected_at) {
+          const winners = (submissions || []).filter(s => s.is_selected_winner)
+          setSelectedWinners(winners)
+        }
+      } catch (err) {
+        console.error('Error loading contest submissions:', err)
+      }
+    }
+
+    loadContestSubmissionsAndWinners()
+  }, [job?.id, job?.is_contest, job?.contest_winners_selected_at])
 
   const fetchJobData = async () => {
     try {
@@ -335,6 +405,20 @@ export default function JobDetailPage() {
         } else {
           setSubmission(submissionData)
         }
+      }
+
+      // Fetch latest revision request if job is assigned (worker needs to respond)
+      if (jobData.status === 'assigned' && jobData.assigned_to) {
+        const revisionRequest = await getLatestRevisionRequest(params.jobId as string)
+        setLatestRevisionRequest(revisionRequest)
+      } else {
+        setLatestRevisionRequest(null)
+      }
+
+      // Fetch revision history for disputes
+      if (jobData.assigned_to) {
+        const history = await getRevisionHistory(params.jobId as string)
+        setRevisionHistory(history)
       }
 
       // Fetch dispute if job is disputed
@@ -1059,12 +1143,38 @@ export default function JobDetailPage() {
     return url.slice(0, maxLength) + '...'
   }
 
+  // Helper to get revision value for sorting (unlimited = 999, null = -1)
+  const getRevisionSortValue = (revisions: string | null): number => {
+    if (!revisions) return -1
+    if (revisions === 'unlimited') return 999
+    const parsed = parseInt(revisions, 10)
+    return isNaN(parsed) ? -1 : parsed
+  }
+
+  // Filter and sort applications
   const getSortedApplications = () => {
     // Combine applications with their vote data
-    const appsWithVotes = applications.map(app => ({
+    let appsWithVotes = applications.map(app => ({
       ...app,
       votes: applicationVotes[app.id] || { totalWeight: 0, voterCount: 0, hasVoted: false }
     }))
+
+    // Apply revision filter
+    if (revisionFilter !== 'all') {
+      appsWithVotes = appsWithVotes.filter(app => {
+        const revValue = getRevisionSortValue(app.revisions_offered)
+        switch (revisionFilter) {
+          case '3+':
+            return revValue >= 3 || revValue === 999 // 3+ or unlimited
+          case '5+':
+            return revValue >= 5 || revValue === 999 // 5+ or unlimited
+          case 'unlimited':
+            return revValue === 999 // unlimited only
+          default:
+            return true
+        }
+      })
+    }
 
     switch (sortBy) {
       case 'votes':
@@ -1087,6 +1197,15 @@ export default function JobDetailPage() {
         return appsWithVotes.sort((a, b) => 
           new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime()
         )
+      
+      case 'revisions':
+        // Sort by revisions offered DESC (unlimited first, then highest numbers)
+        return appsWithVotes.sort((a, b) => {
+          const revDiff = getRevisionSortValue(b.revisions_offered) - getRevisionSortValue(a.revisions_offered)
+          if (revDiff !== 0) return revDiff
+          // Tie-breaker: use karma
+          return (b.applicant_karma || 0) - (a.applicant_karma || 0)
+        })
       
       default:
         return appsWithVotes
@@ -1140,6 +1259,24 @@ export default function JobDetailPage() {
   // BUT not if user has already applied
   const canApply = (job.status === 'open' || job.status === 'assigned') && publicKey && !isPoster && !hasAlreadyApplied
 
+  // Check if contest can select winners
+  const canSelectWinners = (): boolean => {
+    if (!isPoster) return false
+    if (!job?.is_contest) return false
+    if (job.contest_winners_selected_at) return false // Already selected
+    if (contestSubmissions.length === 0) return false
+    
+    // Require submission deadline to have passed
+    if (job.contest_submission_deadline) {
+      const deadline = new Date(job.contest_submission_deadline)
+      if (new Date() < deadline) {
+        return false // Still accepting submissions
+      }
+    }
+    
+    return true
+  }
+
   return (
     <div className="min-h-screen" style={{ backgroundColor: '#FFFFFF' }}>
       <AppHeader />
@@ -1162,6 +1299,104 @@ export default function JobDetailPage() {
             submissionCount={contestSubmissionCount}
             tokenSymbol={project.token_symbol}
           />
+        )}
+
+        {/* Poster Contest Actions (Winner Selection & Payout) */}
+        {job.is_contest && isPoster && (
+          <Box sx={{ mb: 3 }}>
+            {!job.contest_winners_selected_at ? (
+              canSelectWinners() ? (
+                <Button
+                  onClick={() => setWinnerSelectionOpen(true)}
+                  className="w-full py-3"
+                  style={{
+                    background: 'var(--accent-gold, #FFD700)',
+                    color: 'var(--text-primary, #1A1A1E)',
+                    fontSize: '1.1rem',
+                    fontWeight: 600,
+                    borderRadius: '999px',
+                    boxShadow: '0 8px 20px 0 rgba(15, 23, 42, 0.08)'
+                  }}
+                >
+                  <EmojiEventsIcon sx={{ mr: 1 }} />
+                  Select Contest Winners
+                </Button>
+              ) : (
+                <Alert 
+                  severity="info"
+                  sx={{
+                    borderRadius: '24px',
+                    '& .MuiAlert-message': {
+                      fontFamily: 'var(--font-body, Satoshi, sans-serif)'
+                    }
+                  }}
+                >
+                  {contestSubmissions.length === 0 
+                    ? 'Waiting for submissions before selecting winners'
+                    : job.contest_submission_deadline && new Date() < new Date(job.contest_submission_deadline)
+                    ? 'Winner selection will be available after the submission deadline'
+                    : 'Not enough submissions to select winners'
+                  }
+                </Alert>
+              )
+            ) : job.status !== 'completed' ? (
+              <Button
+                onClick={() => {
+                  // Set winners for payout from the already selected winners
+                  setWinnersForPayout(selectedWinners)
+                  setPayoutModalOpen(true)
+                }}
+                className="w-full py-3"
+                style={{
+                  background: 'var(--accent-success, #36C170)',
+                  fontSize: '1.1rem',
+                  fontWeight: 600,
+                  borderRadius: '999px',
+                  boxShadow: '0 8px 20px 0 rgba(15, 23, 42, 0.08)'
+                }}
+              >
+                <CheckCircleIcon sx={{ mr: 1 }} />
+                💰 Distribute Prizes ({selectedWinners.length} winners)
+              </Button>
+            ) : (
+              <Alert 
+                severity="success" 
+                icon={<CheckCircleIcon />}
+                sx={{
+                  borderRadius: '24px',
+                  bgcolor: 'rgba(54, 193, 112, 0.08)',
+                  '& .MuiAlert-message': {
+                    fontFamily: 'var(--font-body, Satoshi, sans-serif)'
+                  },
+                  '& .MuiAlert-icon': {
+                    color: 'var(--accent-success, #36C170)'
+                  }
+                }}
+              >
+                <Typography 
+                  variant="body2" 
+                  sx={{ 
+                    fontWeight: 600,
+                    fontFamily: 'var(--font-body, Satoshi, sans-serif)'
+                  }}
+                >
+                  Contest Complete! Prizes have been distributed.
+                </Typography>
+                {job.escrow_tx_signature && (
+                  <Typography 
+                    variant="caption"
+                    sx={{ 
+                      fontFamily: 'var(--font-mono, JetBrains Mono, monospace)',
+                      display: 'block',
+                      mt: 0.5
+                    }}
+                  >
+                    Transaction: {job.escrow_tx_signature.slice(0, 20)}...
+                  </Typography>
+                )}
+              </Alert>
+            )}
+          </Box>
         )}
 
         {/* Contest Submit Button */}
@@ -2001,25 +2236,65 @@ export default function JobDetailPage() {
                         </div>
                     </div>
                     {job.assigned_at && applications.find(a => a.applicant_wallet === job.assigned_to) && (
-                      <div>
-                        <span 
-                          className="text-sm"
-                          style={{ color: '#6F7280' }}
-                        >
-                          Expected completion:
-                        </span>
-                        <div 
-                          className="text-base font-semibold mt-1"
-                          style={{ color: '#1A1A1E' }}
-                        >
-                          {format(
-                            getExpectedCompletionDate(
-                              applications.find(a => a.applicant_wallet === job.assigned_to)!.estimated_completion
-                            ),
-                            'MMMM dd, yyyy'
-                          )}
+                      <>
+                        <div>
+                          <span 
+                            className="text-sm"
+                            style={{ color: '#6F7280' }}
+                          >
+                            Expected completion:
+                          </span>
+                          <div 
+                            className="text-base font-semibold mt-1"
+                            style={{ color: '#1A1A1E' }}
+                          >
+                            {format(
+                              getExpectedCompletionDate(
+                                applications.find(a => a.applicant_wallet === job.assigned_to)!.estimated_completion
+                              ),
+                              'MMMM dd, yyyy'
+                            )}
+                          </div>
                         </div>
-                      </div>
+                        {/* Revision Counter - Poster View */}
+                        <RevisionCounter
+                          application={applications.find(a => a.applicant_wallet === job.assigned_to) || null}
+                          size="medium"
+                          isWorkerView={false}
+                        />
+
+                        {/* Revision Refusal Dispute Option - Show when revision pending for 24+ hours */}
+                        {latestRevisionRequest && (() => {
+                          const hoursSinceRequest = Math.floor(
+                            (Date.now() - new Date(latestRevisionRequest.requestedAt).getTime()) / (1000 * 60 * 60)
+                          )
+                          if (hoursSinceRequest >= 24) {
+                            return (
+                              <Alert 
+                                severity="warning" 
+                                sx={{ mt: 2, backgroundColor: '#FFF4E6' }}
+                                action={
+                                  <Button
+                                    size="small"
+                                    color="inherit"
+                                    onClick={() => setShowRevisionDisputeModal(true)}
+                                    sx={{ 
+                                      fontWeight: 600,
+                                      textTransform: 'none'
+                                    }}
+                                  >
+                                    Open Dispute
+                                  </Button>
+                                }
+                              >
+                                <AlertTitle sx={{ fontWeight: 600 }}>Revision Pending ({hoursSinceRequest}+ hours)</AlertTitle>
+                                Worker has not responded to your revision request. You can open a dispute.
+                              </Alert>
+                            )
+                          }
+                          return null
+                        })()}
+                      </>
                     )}
                     <div 
                       className="text-sm pt-2"
@@ -2166,6 +2441,17 @@ export default function JobDetailPage() {
                       {formatDistanceToNow(new Date(submission.submitted_at), { addSuffix: true })}
                     </span>
                   </div>
+                  
+                  {/* Revision Counter - Shows revision status for submitted work */}
+                  {job.assigned_to && job.status === 'submitted' && (
+                    <div className="mb-6">
+                      <RevisionCounter
+                        application={applications.find(a => a.applicant_wallet === job.assigned_to) || null}
+                        size="medium"
+                        isWorkerView={isAssignedWorker}
+                      />
+                    </div>
+                  )}
 
                   {/* Delivery Message */}
                   <div className="mb-6">
@@ -2310,41 +2596,62 @@ export default function JobDetailPage() {
 
                   {/* Poster Actions */}
                   {job.status === 'submitted' && isPoster && (
-                    <div className="flex gap-3">
+                    <div className="space-y-3">
+                      {/* Primary Actions Row */}
+                      <div className="flex gap-3">
+                        <Button
+                          variant="contained"
+                          onClick={() => setShowReleaseConfirm(true)}
+                          sx={{
+                            flex: 1,
+                            backgroundColor: '#7C4DFF',
+                            color: '#fff',
+                            textTransform: 'none',
+                            fontSize: '16px',
+                            py: 1.5,
+                            '&:hover': {
+                              backgroundColor: '#6B3FEE'
+                            }
+                          }}
+                        >
+                          ✓ Release Payment
+                        </Button>
+                        <Button
+                          variant="outlined"
+                          onClick={() => setShowRevisionModal(true)}
+                          startIcon={<LoopIcon />}
+                          sx={{
+                            flex: 1,
+                            color: '#FB923C',
+                            borderColor: '#FB923C',
+                            textTransform: 'none',
+                            fontSize: '16px',
+                            py: 1.5,
+                            '&:hover': {
+                              borderColor: '#F97316',
+                              backgroundColor: '#FFF7ED'
+                            }
+                          }}
+                        >
+                          Request Revision
+                        </Button>
+                      </div>
+                      {/* Dispute Link - Secondary */}
                       <Button
-                        variant="contained"
-                        onClick={() => setShowReleaseConfirm(true)}
-                        sx={{
-                          flex: 1,
-                          backgroundColor: '#7C4DFF',
-                          color: '#fff',
-                          textTransform: 'none',
-                          fontSize: '16px',
-                          py: 1.5,
-                          '&:hover': {
-                            backgroundColor: '#6B3FEE'
-                          }
-                        }}
-                      >
-                        Release Payment
-                      </Button>
-                      <Button
-                        variant="outlined"
+                        variant="text"
                         onClick={handleOpenDispute}
+                        fullWidth
                         sx={{
-                          flex: 1,
-                          color: '#EF4444',
-                          borderColor: '#EF4444',
+                          color: '#6F7280',
                           textTransform: 'none',
-                          fontSize: '16px',
-                          py: 1.5,
+                          fontSize: '14px',
                           '&:hover': {
-                            borderColor: '#DC2626',
+                            color: '#EF4444',
                             backgroundColor: '#FEF2F2'
                           }
                         }}
                       >
-                        Open Dispute
+                        Not satisfied? Open a Dispute
                       </Button>
                     </div>
                   )}
@@ -2702,70 +3009,168 @@ export default function JobDetailPage() {
               </div>
             )}
 
-            {/* Sort Controls - NEW */}
+            {/* Sort & Filter Controls */}
             {job.status === 'open' && applications.length > 1 && (
-              <div className="mb-6 flex items-center gap-3">
-                <span 
-                  className="text-sm font-semibold uppercase tracking-wide"
-                  style={{ color: '#6F7280' }}
-                >
-                  SORT BY:
-                </span>
-                <div className="flex gap-2">
-                  <Button
-                    variant={sortBy === 'votes' ? 'contained' : 'outlined'}
-                    size="small"
-                    onClick={() => setSortBy('votes')}
-                    sx={{
-                      textTransform: 'none',
-                      fontSize: '14px',
-                      height: '32px',
-                      backgroundColor: sortBy === 'votes' ? '#7C4DFF' : 'transparent',
-                      color: sortBy === 'votes' ? '#fff' : '#7C4DFF',
-                      borderColor: '#7C4DFF',
-                      '&:hover': {
-                        backgroundColor: sortBy === 'votes' ? '#6B3FEE' : '#F8F5FF'
-                      }
-                    }}
+              <div className="mb-6 space-y-3">
+                {/* Sort Controls */}
+                <div className="flex flex-wrap items-center gap-3">
+                  <span 
+                    className="text-sm font-semibold uppercase tracking-wide"
+                    style={{ color: '#6F7280' }}
                   >
-                    Community Votes
-                  </Button>
-                  <Button
-                    variant={sortBy === 'karma' ? 'contained' : 'outlined'}
-                    size="small"
-                    onClick={() => setSortBy('karma')}
-                    sx={{
-                      textTransform: 'none',
-                      fontSize: '14px',
-                      height: '32px',
-                      backgroundColor: sortBy === 'karma' ? '#7C4DFF' : 'transparent',
-                      color: sortBy === 'karma' ? '#fff' : '#7C4DFF',
-                      borderColor: '#7C4DFF',
-                      '&:hover': {
-                        backgroundColor: sortBy === 'karma' ? '#6B3FEE' : '#F8F5FF'
-                      }
-                    }}
+                    SORT BY:
+                  </span>
+                  <div className="flex flex-wrap gap-2">
+                    <Button
+                      variant={sortBy === 'votes' ? 'contained' : 'outlined'}
+                      size="small"
+                      onClick={() => setSortBy('votes')}
+                      sx={{
+                        textTransform: 'none',
+                        fontSize: '14px',
+                        height: '32px',
+                        backgroundColor: sortBy === 'votes' ? '#7C4DFF' : 'transparent',
+                        color: sortBy === 'votes' ? '#fff' : '#7C4DFF',
+                        borderColor: '#7C4DFF',
+                        '&:hover': {
+                          backgroundColor: sortBy === 'votes' ? '#6B3FEE' : '#F8F5FF'
+                        }
+                      }}
+                    >
+                      Community Votes
+                    </Button>
+                    <Button
+                      variant={sortBy === 'karma' ? 'contained' : 'outlined'}
+                      size="small"
+                      onClick={() => setSortBy('karma')}
+                      sx={{
+                        textTransform: 'none',
+                        fontSize: '14px',
+                        height: '32px',
+                        backgroundColor: sortBy === 'karma' ? '#7C4DFF' : 'transparent',
+                        color: sortBy === 'karma' ? '#fff' : '#7C4DFF',
+                        borderColor: '#7C4DFF',
+                        '&:hover': {
+                          backgroundColor: sortBy === 'karma' ? '#6B3FEE' : '#F8F5FF'
+                        }
+                      }}
+                    >
+                      Karma
+                    </Button>
+                    <Button
+                      variant={sortBy === 'revisions' ? 'contained' : 'outlined'}
+                      size="small"
+                      onClick={() => setSortBy('revisions')}
+                      startIcon={<LoopIcon sx={{ fontSize: 16 }} />}
+                      sx={{
+                        textTransform: 'none',
+                        fontSize: '14px',
+                        height: '32px',
+                        backgroundColor: sortBy === 'revisions' ? '#7C4DFF' : 'transparent',
+                        color: sortBy === 'revisions' ? '#fff' : '#7C4DFF',
+                        borderColor: '#7C4DFF',
+                        '&:hover': {
+                          backgroundColor: sortBy === 'revisions' ? '#6B3FEE' : '#F8F5FF'
+                        }
+                      }}
+                    >
+                      Most Revisions
+                    </Button>
+                    <Button
+                      variant={sortBy === 'recent' ? 'contained' : 'outlined'}
+                      size="small"
+                      onClick={() => setSortBy('recent')}
+                      sx={{
+                        textTransform: 'none',
+                        fontSize: '14px',
+                        height: '32px',
+                        backgroundColor: sortBy === 'recent' ? '#7C4DFF' : 'transparent',
+                        color: sortBy === 'recent' ? '#fff' : '#7C4DFF',
+                        borderColor: '#7C4DFF',
+                        '&:hover': {
+                          backgroundColor: sortBy === 'recent' ? '#6B3FEE' : '#F8F5FF'
+                        }
+                      }}
+                    >
+                      Most Recent
+                    </Button>
+                  </div>
+                </div>
+
+                {/* Revision Filter */}
+                <div className="flex flex-wrap items-center gap-3">
+                  <span 
+                    className="text-sm font-semibold uppercase tracking-wide"
+                    style={{ color: '#6F7280' }}
                   >
-                    Karma
-                  </Button>
-                  <Button
-                    variant={sortBy === 'recent' ? 'contained' : 'outlined'}
-                    size="small"
-                    onClick={() => setSortBy('recent')}
-                    sx={{
-                      textTransform: 'none',
-                      fontSize: '14px',
-                      height: '32px',
-                      backgroundColor: sortBy === 'recent' ? '#7C4DFF' : 'transparent',
-                      color: sortBy === 'recent' ? '#fff' : '#7C4DFF',
-                      borderColor: '#7C4DFF',
-                      '&:hover': {
-                        backgroundColor: sortBy === 'recent' ? '#6B3FEE' : '#F8F5FF'
-                      }
-                    }}
-                  >
-                    Most Recent
-                  </Button>
+                    FILTER REVISIONS:
+                  </span>
+                  <div className="flex flex-wrap gap-2">
+                    <Chip
+                      label="All"
+                      onClick={() => setRevisionFilter('all')}
+                      variant={revisionFilter === 'all' ? 'filled' : 'outlined'}
+                      sx={{
+                        cursor: 'pointer',
+                        backgroundColor: revisionFilter === 'all' ? '#7C4DFF' : 'transparent',
+                        color: revisionFilter === 'all' ? '#fff' : '#7C4DFF',
+                        borderColor: '#7C4DFF',
+                        fontWeight: 500,
+                        '&:hover': {
+                          backgroundColor: revisionFilter === 'all' ? '#6B3FEE' : '#F8F5FF'
+                        }
+                      }}
+                    />
+                    <Chip
+                      label="3+ revisions"
+                      onClick={() => setRevisionFilter('3+')}
+                      variant={revisionFilter === '3+' ? 'filled' : 'outlined'}
+                      sx={{
+                        cursor: 'pointer',
+                        backgroundColor: revisionFilter === '3+' ? '#7C4DFF' : 'transparent',
+                        color: revisionFilter === '3+' ? '#fff' : '#7C4DFF',
+                        borderColor: '#7C4DFF',
+                        fontWeight: 500,
+                        '&:hover': {
+                          backgroundColor: revisionFilter === '3+' ? '#6B3FEE' : '#F8F5FF'
+                        }
+                      }}
+                    />
+                    <Chip
+                      label="5+ revisions"
+                      onClick={() => setRevisionFilter('5+')}
+                      variant={revisionFilter === '5+' ? 'filled' : 'outlined'}
+                      sx={{
+                        cursor: 'pointer',
+                        backgroundColor: revisionFilter === '5+' ? '#7C4DFF' : 'transparent',
+                        color: revisionFilter === '5+' ? '#fff' : '#7C4DFF',
+                        borderColor: '#7C4DFF',
+                        fontWeight: 500,
+                        '&:hover': {
+                          backgroundColor: revisionFilter === '5+' ? '#6B3FEE' : '#F8F5FF'
+                        }
+                      }}
+                    />
+                    <Chip
+                      icon={<AllInclusiveIcon sx={{ fontSize: 14 }} />}
+                      label="Unlimited only"
+                      onClick={() => setRevisionFilter('unlimited')}
+                      variant={revisionFilter === 'unlimited' ? 'filled' : 'outlined'}
+                      sx={{
+                        cursor: 'pointer',
+                        backgroundColor: revisionFilter === 'unlimited' ? '#FB923C' : 'transparent',
+                        color: revisionFilter === 'unlimited' ? '#fff' : '#FB923C',
+                        borderColor: '#FB923C',
+                        fontWeight: 500,
+                        '&:hover': {
+                          backgroundColor: revisionFilter === 'unlimited' ? '#EA7C1F' : '#FFF4E6'
+                        },
+                        '& .MuiChip-icon': {
+                          color: revisionFilter === 'unlimited' ? '#fff' : '#FB923C'
+                        }
+                      }}
+                    />
+                  </div>
                 </div>
               </div>
             )}
@@ -2891,6 +3296,35 @@ export default function JobDetailPage() {
                                 {app.estimated_completion}
                               </span>
                             </div>
+                            {/* Revision Offering Badge */}
+                            {app.revisions_offered && (
+                              <Chip
+                                icon={app.revisions_offered === 'unlimited' 
+                                  ? <AllInclusiveIcon sx={{ fontSize: 14 }} />
+                                  : <LoopIcon sx={{ fontSize: 14 }} />
+                                }
+                                label={`Offers ${formatRevisionOffering(app.revisions_offered)}`}
+                                size="small"
+                                sx={{
+                                  backgroundColor: app.revisions_offered === 'unlimited' 
+                                    ? '#FFF4E6' 
+                                    : '#EEE7FF',
+                                  color: app.revisions_offered === 'unlimited' 
+                                    ? '#FB923C' 
+                                    : '#7C4DFF',
+                                  fontWeight: 600,
+                                  fontSize: '12px',
+                                  border: app.revisions_offered === 'unlimited' 
+                                    ? '1px solid #FB923C' 
+                                    : '1px solid #7C4DFF',
+                                  '& .MuiChip-icon': {
+                                    color: app.revisions_offered === 'unlimited' 
+                                      ? '#FB923C' 
+                                      : '#7C4DFF'
+                                  }
+                                }}
+                              />
+                            )}
                           </div>
                         </div>
 
@@ -3012,33 +3446,154 @@ export default function JobDetailPage() {
                 style={{ borderColor: '#7C4DFF', backgroundColor: '#F8F5FF' }}
               >
                 <div className="text-center">
-                  <h3 
-                    className="text-xl font-bold mb-2"
-                    style={{ color: '#7C4DFF' }}
-                  >
-                    🎯 Time to Deliver!
-                  </h3>
-                  {job.assigned_at && applications.find(a => a.applicant_wallet === job.assigned_to) && (
-                    <p 
-                      className="text-sm mb-4"
-                      style={{ color: '#6F7280' }}
-                    >
-                      Expected completion: {format(
-                        getExpectedCompletionDate(
-                          applications.find(a => a.applicant_wallet === job.assigned_to)!.estimated_completion
-                        ),
-                        'MMM dd, yyyy'
+                  {/* Check if there's a pending revision request */}
+                  {latestRevisionRequest ? (
+                    <>
+                      {/* Revision Request Alert */}
+                      <div 
+                        className="p-4 rounded-lg mb-4 text-left"
+                        style={{ 
+                          backgroundColor: latestRevisionRequest.isVoluntary ? '#FFF7ED' : '#F8F5FF',
+                          border: `2px solid ${latestRevisionRequest.isVoluntary ? '#FB923C' : '#7C4DFF'}`
+                        }}
+                      >
+                        <div className="flex items-center gap-2 mb-2">
+                          <LoopIcon sx={{ fontSize: 20, color: latestRevisionRequest.isVoluntary ? '#FB923C' : '#7C4DFF' }} />
+                          <span 
+                            className="font-bold"
+                            style={{ color: latestRevisionRequest.isVoluntary ? '#FB923C' : '#7C4DFF' }}
+                          >
+                            {latestRevisionRequest.isVoluntary 
+                              ? 'Voluntary Revision Requested' 
+                              : `Revision #${latestRevisionRequest.revisionNumber} Requested`
+                            }
+                          </span>
+                        </div>
+                        <p 
+                          className="text-sm mb-3 whitespace-pre-wrap"
+                          style={{ color: '#1A1A1E' }}
+                        >
+                          {latestRevisionRequest.notes.length > 200 
+                            ? latestRevisionRequest.notes.slice(0, 200) + '...' 
+                            : latestRevisionRequest.notes
+                          }
+                        </p>
+                        {latestRevisionRequest.images && latestRevisionRequest.images.length > 0 && (
+                          <div className="flex gap-2 mb-3">
+                            {latestRevisionRequest.images.slice(0, 3).map((url, idx) => (
+                              <a 
+                                key={idx} 
+                                href={url} 
+                                target="_blank" 
+                                rel="noopener noreferrer"
+                                className="w-12 h-12 rounded-lg overflow-hidden border-2 border-gray-200 hover:border-purple-400"
+                              >
+                                <img src={url} alt={`Ref ${idx + 1}`} className="w-full h-full object-cover" />
+                              </a>
+                            ))}
+                          </div>
+                        )}
+                        <p className="text-xs" style={{ color: '#6F7280' }}>
+                          Requested {formatDistanceToNow(new Date(latestRevisionRequest.requestedAt), { addSuffix: true })}
+                        </p>
+                      </div>
+
+                      {/* Revision Counter */}
+                      <div className="mb-4 w-full max-w-md mx-auto">
+                        <RevisionCounter
+                          application={applications.find(a => a.applicant_wallet === job.assigned_to) || null}
+                          size="small"
+                          isWorkerView={true}
+                        />
+                      </div>
+
+                      {/* Submit Revision Button */}
+                      <Button
+                        variant="primary"
+                        size="lg"
+                        onClick={() => setShowSubmitRevisionModal(true)}
+                        className="shadow-lg"
+                        style={{ 
+                          backgroundColor: latestRevisionRequest.isVoluntary ? '#FB923C' : '#7C4DFF'
+                        }}
+                      >
+                        <LoopIcon sx={{ mr: 1, fontSize: 20 }} />
+                        Submit Revised Work
+                      </Button>
+
+                      {/* Abuse Dispute Option - Only show for unlimited revisions with high usage */}
+                      {(() => {
+                        const workerApp = applications.find(a => a.applicant_wallet === job.assigned_to)
+                        const offered = parseRevisionOffering(workerApp?.revisions_offered ?? null)
+                        const used = workerApp?.revisions_used ?? 0
+                        const isUnlimited = offered === 'unlimited'
+                        const abuseThreshold = 10
+                        
+                        if (isUnlimited && used >= abuseThreshold) {
+                          return (
+                            <Button
+                              variant="text"
+                              onClick={() => setShowRevisionDisputeModal(true)}
+                              fullWidth
+                              sx={{
+                                mt: 2,
+                                color: '#EF4444',
+                                textTransform: 'none',
+                                fontSize: '14px',
+                                '&:hover': {
+                                  backgroundColor: '#FEF2F2'
+                                }
+                              }}
+                            >
+                              ⚠️ Dispute Unreasonable Revision Requests
+                            </Button>
+                          )
+                        }
+                        return null
+                      })()}
+                    </>
+                  ) : (
+                    <>
+                      {/* Normal delivery flow */}
+                      <h3 
+                        className="text-xl font-bold mb-2"
+                        style={{ color: '#7C4DFF' }}
+                      >
+                        🎯 Time to Deliver!
+                      </h3>
+                      {job.assigned_at && applications.find(a => a.applicant_wallet === job.assigned_to) && (
+                        <>
+                          <p 
+                            className="text-sm mb-2"
+                            style={{ color: '#6F7280' }}
+                          >
+                            Expected completion: {format(
+                              getExpectedCompletionDate(
+                                applications.find(a => a.applicant_wallet === job.assigned_to)!.estimated_completion
+                              ),
+                              'MMM dd, yyyy'
+                            )}
+                          </p>
+                          {/* Revision Counter - Worker View */}
+                          <div className="mb-4 w-full max-w-md mx-auto">
+                            <RevisionCounter
+                              application={applications.find(a => a.applicant_wallet === job.assigned_to) || null}
+                              size="small"
+                              isWorkerView={true}
+                            />
+                          </div>
+                        </>
                       )}
-                    </p>
+                      <Button
+                        variant="primary"
+                        size="lg"
+                        onClick={handleSubmitWork}
+                        className="shadow-lg"
+                      >
+                        📤 Submit Your Completed Work
+                      </Button>
+                    </>
                   )}
-                  <Button
-                    variant="primary"
-                    size="lg"
-                    onClick={handleSubmitWork}
-                    className="shadow-lg"
-                  >
-                    📤 Submit Your Completed Work
-                  </Button>
                 </div>
               </div>
             )}
@@ -3056,6 +3611,19 @@ export default function JobDetailPage() {
                 isPoster={isPoster}
                 userWallet={publicKey?.toString()}
                 tokenSymbol={project.token_symbol}
+              />
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Activity Timeline - Shows revision requests and key events */}
+        {(job.status === 'assigned' || job.status === 'submitted' || job.status === 'completed' || job.status === 'disputed') && (
+          <Card className="mt-6">
+            <CardContent className="p-6">
+              <JobActivityTimeline 
+                job={job} 
+                applications={applications}
+                maxEvents={10}
               />
             </CardContent>
           </Card>
@@ -3135,6 +3703,88 @@ export default function JobDetailPage() {
                 </div>
               </div>
 
+              {/* Worker Commitment Section */}
+              <div 
+                className="p-4 rounded-lg border-2"
+                style={{ borderColor: '#7C4DFF', backgroundColor: '#EEE7FF' }}
+              >
+                <div className="flex items-center gap-2 mb-3">
+                  <LoopIcon sx={{ fontSize: 20, color: '#7C4DFF' }} />
+                  <p 
+                    className="text-sm font-semibold uppercase tracking-wide"
+                    style={{ color: '#7C4DFF' }}
+                  >
+                    Worker Commitment
+                  </p>
+                </div>
+                
+                <div className="space-y-2">
+                  {/* Deadline Commitment */}
+                  {selectedApplication.committed_completion_date && (
+                    <div className="flex items-center gap-2">
+                      <span style={{ color: '#6F7280', fontSize: '13px' }}>📅 Deadline:</span>
+                      <span 
+                        className="font-semibold"
+                        style={{ color: '#1A1A1E', fontSize: '13px' }}
+                      >
+                        {format(new Date(selectedApplication.committed_completion_date), 'MMM dd, yyyy')}
+                      </span>
+                    </div>
+                  )}
+                  
+                  {/* Revisions Offered */}
+                  <div className="flex items-center gap-2">
+                    <span style={{ color: '#6F7280', fontSize: '13px' }}>🔄 Revisions offered:</span>
+                    <span 
+                      className="font-semibold flex items-center gap-1"
+                      style={{ 
+                        color: selectedApplication.revisions_offered === 'unlimited' 
+                          ? '#FB923C' 
+                          : '#7C4DFF',
+                        fontSize: '13px'
+                      }}
+                    >
+                      {selectedApplication.revisions_offered === 'unlimited' && (
+                        <AllInclusiveIcon sx={{ fontSize: 14 }} />
+                      )}
+                      {selectedApplication.revisions_offered 
+                        ? formatRevisionOffering(selectedApplication.revisions_offered)
+                        : 'None specified'
+                      }
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Information about revision tracking */}
+              <div 
+                className="p-4 rounded-lg"
+                style={{ backgroundColor: '#E8F4FF' }}
+              >
+                <div className="flex gap-2">
+                  <InfoIcon sx={{ fontSize: 20, color: '#2563EB', mt: '2px' }} />
+                  <div>
+                    <p 
+                      className="text-sm font-semibold mb-1"
+                      style={{ color: '#1A1A1E' }}
+                    >
+                      Revision Tracking
+                    </p>
+                    <p 
+                      className="text-sm"
+                      style={{ color: '#6F7280' }}
+                    >
+                      {selectedApplication.revisions_offered === 'unlimited'
+                        ? 'This worker committed to unlimited revisions. You can request changes until satisfied.'
+                        : selectedApplication.revisions_offered
+                          ? `This worker committed to ${formatRevisionOffering(selectedApplication.revisions_offered)}. You can request changes within this limit after delivery.`
+                          : 'This worker did not specify a revision commitment. Any revisions would be voluntary.'
+                      }
+                    </p>
+                  </div>
+                </div>
+              </div>
+
               <div 
                 className="p-4 rounded-lg"
                 style={{ backgroundColor: '#FFF4E6' }}
@@ -3152,7 +3802,7 @@ export default function JobDetailPage() {
                       className="text-sm"
                       style={{ color: '#1A1A1E' }}
                     >
-                      Other applications will remain visible but cannot be selected unless this worker fails to deliver.
+                      Once assigned, this worker must deliver by their committed deadline. Other applications remain as backups if the worker fails to deliver.
                     </p>
                   </div>
                 </div>
@@ -3500,6 +4150,58 @@ export default function JobDetailPage() {
         />
       )}
 
+      {/* Open Revision Dispute Modal */}
+      {job && publicKey && (
+        <OpenRevisionDisputeModal
+          isOpen={showRevisionDisputeModal}
+          onClose={() => setShowRevisionDisputeModal(false)}
+          jobId={job.id}
+          jobTitle={job.title}
+          jobKpis={job.kpis}
+          openedBy={isPoster ? 'poster' : 'worker'}
+          workerApplication={applications.find(a => a.applicant_wallet === job.assigned_to) || null}
+          revisionHistory={revisionHistory}
+          unansweredSince={latestRevisionRequest?.requestedAt}
+          onDisputeOpened={() => {
+            fetchJobData() // Refresh to show dispute status
+          }}
+        />
+      )}
+
+      {/* Request Revision Modal (Poster) */}
+      {job && publicKey && isPoster && (
+        <RequestRevisionModal
+          isOpen={showRevisionModal}
+          onClose={() => setShowRevisionModal(false)}
+          jobId={job.id}
+          jobTitle={job.title}
+          posterWallet={publicKey.toString()}
+          application={applications.find(a => a.applicant_wallet === job.assigned_to) || null}
+          onRevisionRequested={() => {
+            setShowRevisionModal(false)
+            fetchJobData() // Refresh to show updated status
+            toast.success('Revision request sent! The worker has been notified.', { duration: 4000 })
+          }}
+        />
+      )}
+
+      {/* Submit Revision Modal (Worker) */}
+      {job && publicKey && isAssignedWorker && (
+        <SubmitRevisionModal
+          isOpen={showSubmitRevisionModal}
+          onClose={() => setShowSubmitRevisionModal(false)}
+          jobId={job.id}
+          jobTitle={job.title}
+          workerWallet={publicKey.toString()}
+          revisionRequest={latestRevisionRequest}
+          application={applications.find(a => a.applicant_wallet === job.assigned_to) || null}
+          onRevisionSubmitted={() => {
+            setShowSubmitRevisionModal(false)
+            fetchJobData() // Refresh to show updated status
+          }}
+        />
+      )}
+
       {/* Reassign Job Dialog */}
       <Dialog
         open={showReassignDialog}
@@ -3588,6 +4290,11 @@ export default function JobDetailPage() {
                           </div>
                           <p className="text-xs" style={{ color: '#6F7280' }}>
                             {app.applicant_karma.toLocaleString()} karma • {app.applicant_completed_jobs} jobs completed
+                            {app.revisions_offered && (
+                              <> • <span style={{ color: app.revisions_offered === 'unlimited' ? '#FB923C' : '#7C4DFF' }}>
+                                {formatRevisionOffering(app.revisions_offered)}
+                              </span></>
+                            )}
                           </p>
                           <p className="text-xs" style={{ color: '#7C4DFF' }}>
                             Est: {app.estimated_completion}
@@ -3654,6 +4361,76 @@ export default function JobDetailPage() {
             fetchJobData()
           }}
         />
+      )}
+
+      {/* Winner Selection and Payout Modals (Poster Only) */}
+      {job.is_contest && isPoster && contestSubmissions.length > 0 && (
+        <>
+          <WinnerSelectionModal
+            open={winnerSelectionOpen}
+            onClose={() => setWinnerSelectionOpen(false)}
+            job={job}
+            submissions={contestSubmissions}
+            onWinnersSelected={async () => {
+              setWinnerSelectionOpen(false)
+              
+              // Refresh contest submissions to get the updated winner data
+              try {
+                const { data: updatedSubmissions, error } = await supabase
+                  .from('job_submissions')
+                  .select('*')
+                  .eq('job_id', job.id)
+                  .order('submitted_at', { ascending: true })
+                
+                if (error) {
+                  console.error('Error refreshing submissions:', error)
+                  toast.error('Failed to load winner data. Please refresh the page.')
+                  return
+                }
+                
+                if (updatedSubmissions) {
+                  setContestSubmissions(updatedSubmissions)
+                  const winners = updatedSubmissions.filter(s => s.is_selected_winner)
+                  console.log('Updated winners:', winners.length, winners)
+                  setSelectedWinners(winners)
+                  
+                  // Only open payout modal if we have winners
+                  if (winners.length > 0) {
+                    // Set winners for payout BEFORE opening modal to avoid timing issues
+                    setWinnersForPayout(winners)
+                    // Small delay to ensure state is set
+                    setTimeout(() => setPayoutModalOpen(true), 100)
+                  } else {
+                    toast.error('No winners found. Please try again.')
+                  }
+                }
+                
+                // Also refresh job data for the header
+                await fetchJobData()
+              } catch (err) {
+                console.error('Error in onWinnersSelected:', err)
+                toast.error('An error occurred. Please refresh the page.')
+              }
+            }}
+          />
+
+          <ContestPayoutModal
+            open={payoutModalOpen}
+            onClose={() => {
+              setPayoutModalOpen(false)
+              setWinnersForPayout([]) // Clear payout winners when closing
+            }}
+            job={job}
+            winners={winnersForPayout}
+            onPayoutComplete={() => {
+              // Reload everything to show completed state
+              setPayoutModalOpen(false)
+              setWinnersForPayout([])
+              fetchJobData()
+              toast.success('Contest completed successfully! 🎉')
+            }}
+          />
+        </>
       )}
     </div>
   )

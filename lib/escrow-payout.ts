@@ -1,7 +1,11 @@
 import { Connection, PublicKey, Transaction, SystemProgram } from '@solana/web3.js'
 import { WalletContextState } from '@solana/wallet-adapter-react'
+import { getAssociatedTokenAddress, getAccount, TOKEN_PROGRAM_ID } from '@solana/spl-token'
 import { supabase } from './supabase'
 import { notificationService } from './services/notificationService'
+
+// Native SOL mint address
+const NATIVE_SOL_MINT = 'So11111111111111111111111111111111111111112'
 
 /**
  * Winner information for contest payout
@@ -341,24 +345,53 @@ export function estimatePayoutFees(numWinners: number): number {
  * @param escrowWallet - Public key of escrow wallet
  * @param requiredAmount - Required amount in tokens
  * @param tokenDecimals - Token decimal places
+ * @param tokenMint - Optional SPL token mint address (if null, checks SOL balance)
  * @returns Object with balance status and actual balance
  */
 export async function verifyEscrowBalance(
   connection: Connection,
   escrowWallet: PublicKey,
   requiredAmount: number,
-  tokenDecimals: number = 9
+  tokenDecimals: number = 9,
+  tokenMint?: string | null
 ): Promise<{ sufficient: boolean; actualBalance: number }> {
   try {
     console.log(`[Escrow Balance] Checking balance for ${escrowWallet.toString()}`)
     console.log(`[Escrow Balance] Required: ${requiredAmount} tokens`)
+    console.log(`[Escrow Balance] Token mint: ${tokenMint || 'SOL (native)'}`)
 
-    const balance = await connection.getBalance(escrowWallet)
-    const balanceInTokens = balance / Math.pow(10, tokenDecimals)
-    
-    console.log(`[Escrow Balance] Actual: ${balanceInTokens} tokens`)
+    let balanceInTokens: number
+
+    // Check if we're dealing with native SOL or SPL tokens
+    if (!tokenMint || tokenMint === NATIVE_SOL_MINT) {
+      // Native SOL balance
+      const balance = await connection.getBalance(escrowWallet)
+      balanceInTokens = balance / Math.pow(10, tokenDecimals)
+      console.log(`[Escrow Balance] SOL balance: ${balanceInTokens}`)
+    } else {
+      // SPL Token balance - need to find the Associated Token Account
+      const mintPubkey = new PublicKey(tokenMint)
+      const ata = await getAssociatedTokenAddress(mintPubkey, escrowWallet)
+      
+      console.log(`[Escrow Balance] Checking ATA: ${ata.toString()}`)
+      
+      try {
+        const tokenAccount = await getAccount(connection, ata)
+        balanceInTokens = Number(tokenAccount.amount) / Math.pow(10, tokenDecimals)
+        console.log(`[Escrow Balance] SPL token balance: ${balanceInTokens}`)
+      } catch (ataError: any) {
+        // Token account might not exist
+        if (ataError.name === 'TokenAccountNotFoundError') {
+          console.log(`[Escrow Balance] No token account found - balance is 0`)
+          balanceInTokens = 0
+        } else {
+          throw ataError
+        }
+      }
+    }
     
     const sufficient = balanceInTokens >= requiredAmount
+    console.log(`[Escrow Balance] Actual: ${balanceInTokens} tokens`)
     console.log(`[Escrow Balance] Sufficient: ${sufficient}`)
 
     return {

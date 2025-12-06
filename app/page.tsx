@@ -251,27 +251,12 @@ export default function Home() {
       </footer>
 
       <style jsx global>{`
-        /* Fix Badge Positions on Homepage Only */
-        /* The page-wrapper can interfere with header badge positioning */
-        
-        /* Notification Bell Badge (2nd IconButton) */
-        .page-wrapper header .flex.items-center.gap-2 > .MuiIconButton-root:nth-of-type(2) .MuiBadge-badge:not(.MuiBadge-invisible) {
-          position: absolute !important;
-          top: -8px !important;
-          right: -8px !important;
-          transform: scale(1) !important;
-        }
-        
-        /* Messaging Badge (3rd IconButton, inside Tooltip) */
-        .page-wrapper header .flex.items-center.gap-2 > .MuiTooltip-root .MuiBadge-badge:not(.MuiBadge-invisible),
-        .page-wrapper header .flex.items-center.gap-2 .MuiIconButton-root:nth-of-type(3) .MuiBadge-badge:not(.MuiBadge-invisible) {
-          position: absolute !important;
-          top: -4px !important;
-          right: -4px !important;
-          transform: scale(1) !important;
+        /* Ensure badge styling matches project page - only for visible badges */
+        .page-wrapper header .MuiBadge-badge:not(.MuiBadge-invisible) {
+          transform: scale(1) translate(50%, -50%) !important;
+          transform-origin: 100% 0% !important;
         }
       `}</style>
-      
       <style jsx>{`
         /* Page Wrapper with Pattern */
         .page-wrapper {
@@ -306,6 +291,7 @@ export default function Home() {
         .page-wrapper > header {
           position: sticky;
           z-index: 50;
+          overflow: visible !important;
         }
 
         /* Main Content Grid Layout */

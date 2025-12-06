@@ -172,6 +172,13 @@ export default function ProjectsPage() {
 
   return (
     <div className="min-h-screen bg-page-bg">
+      <style jsx global>{`
+        /* Ensure badge styling matches project page - only for visible badges */
+        header .MuiBadge-badge:not(.MuiBadge-invisible) {
+          transform: scale(1) translate(50%, -50%) !important;
+          transform-origin: 100% 0% !important;
+        }
+      `}</style>
       <AppHeader />
 
       {/* Main Content */}

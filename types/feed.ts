@@ -31,6 +31,9 @@ export type ActivityType =
   | 'job_completed'
   | 'job_disputed'
   | 'job_comment'
+  // Revision Activities
+  | 'job_revision_requested'
+  | 'job_revision_submitted'
   // Contest Activities
   | 'submission_comment'
   // Asset Activities
