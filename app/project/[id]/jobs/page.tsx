@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/Button'
 import { AppHeader } from '@/components/AppHeader'
 import { CreateJobModal } from '@/components/CreateJobModal'
 import CreateSocialMediaJobModal from '@/components/jobs/CreateSocialMediaJobModal'
+import { DraftRecoveryBanner } from '@/components/DraftRecoveryBanner'
 import JobCard from '@/components/JobCard'
 import Dialog from '@mui/material/Dialog'
 import DialogTitle from '@mui/material/DialogTitle'
@@ -402,6 +403,14 @@ export default function ProjectJobsPage() {
             Post Work
           </Button>
         </div>
+
+        {/* Draft Recovery Banner - Shows when escrow succeeded but job creation failed */}
+        {publicKey && (
+          <DraftRecoveryBanner 
+            walletAddress={publicKey.toString()} 
+            projectId={params.id as string}
+          />
+        )}
 
         {/* Tabs Navigation & Content */}
         <Card>

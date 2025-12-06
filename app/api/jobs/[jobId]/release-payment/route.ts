@@ -64,7 +64,12 @@ export async function POST(
     
     const { data: job, error: jobError } = await supabaseAdmin
       .from('jobs')
-      .select('*')
+      .select(`
+        *,
+        projects:project_id (
+          token_symbol
+        )
+      `)
       .eq('id', jobId)
       .single()
     
@@ -76,9 +81,13 @@ export async function POST(
       )
     }
 
+    // Extract token_symbol from joined project data
+    const tokenSymbol = (job.projects as any)?.token_symbol || 'tokens'
+
     console.log(`[Release Payment] Job found: ${job.title}`)
     console.log(`[Release Payment] Status: ${job.status}`)
     console.log(`[Release Payment] Assigned to: ${job.assigned_to}`)
+    console.log(`[Release Payment] Token symbol: ${tokenSymbol}`)
     
     // ==================== AUTHORIZATION CHECKS ====================
     
@@ -266,7 +275,7 @@ export async function POST(
           metadata: {
             job_title: job.title,
             amount: result.workerReceived,
-            token: job.token_symbol || 'tokens'
+            token: tokenSymbol
           }
         })
         console.log('[Release Payment] ✅ Worker notification sent')

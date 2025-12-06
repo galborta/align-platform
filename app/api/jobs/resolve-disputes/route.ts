@@ -9,7 +9,12 @@ export async function POST(request: NextRequest) {
       .from('job_disputes')
       .select(`
         *,
-        job:jobs(*)
+        job:jobs(
+          *,
+          projects:project_id (
+            token_symbol
+          )
+        )
       `)
       .eq('status', 'active')
       .lt('ends_at', new Date().toISOString())
@@ -69,6 +74,8 @@ export async function POST(request: NextRequest) {
         if (updateDisputeError) throw updateDisputeError
 
         const job = Array.isArray(dispute.job) ? dispute.job[0] : dispute.job
+        // Extract token_symbol from joined project data
+        const tokenSymbol = (job?.projects as any)?.token_symbol || 'tokens'
 
         if (outcome === 'release_to_worker') {
           // Release to Worker outcome
@@ -164,7 +171,7 @@ export async function POST(request: NextRequest) {
               referenceType: 'payment',
               metadata: {
                 amount: job.payment_amount,
-                token: job.payment_token || job.token_symbol || 'tokens',
+                token: tokenSymbol,
                 job_title: job.title
               }
             })

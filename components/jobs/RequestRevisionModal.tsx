@@ -29,7 +29,6 @@ import CheckCircleIcon from '@mui/icons-material/CheckCircle'
 import InfoIcon from '@mui/icons-material/Info'
 import CameraAltIcon from '@mui/icons-material/CameraAlt'
 import { toast } from 'react-hot-toast'
-import { requestRevision } from '@/lib/revisions'
 import { parseRevisionOffering, formatRevisionOffering, canRequestRevision, isVoluntaryRevision } from '@/lib/revisions'
 import { supabase } from '@/lib/supabase'
 import type { JobApplication } from '@/types/database'
@@ -238,20 +237,22 @@ export function RequestRevisionModal({
         imageUrls = await uploadImages()
       }
 
-      // Request the revision
-      const result = await requestRevision(
-        jobId,
-        {
+      // Call the revision request API endpoint
+      const response = await fetch(`/api/jobs/${jobId}/request-revision`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          poster_wallet: posterWallet,
           notes: notes.trim(),
           images: imageUrls,
-          isVoluntary
-        },
-        posterWallet,
-        application.applicant_wallet
-      )
+          is_voluntary: isVoluntary
+        })
+      })
 
-      if (!result.success) {
-        throw new Error(result.error || 'Failed to request revision')
+      const data = await response.json()
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to request revision')
       }
 
       toast.success(

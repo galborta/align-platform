@@ -720,49 +720,74 @@ export async function submitRevision(
     }
 
     // 2. Check if there's an existing submission to update
-    const { data: existingSubmission } = await supabase
+    // Use maybeSingle() to handle 0 rows gracefully (single() throws error on 0 rows)
+    const { data: existingSubmission, error: fetchError } = await supabase
       .from('job_submissions')
-      .select('id')
+      .select('id, message, image_urls, external_links')
       .eq('job_id', jobId)
       .eq('worker_wallet', workerWallet)
-      .single()
+      .order('submitted_at', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+
+    if (fetchError) {
+      console.error('[submitRevision] Error fetching existing submission:', fetchError)
+      // Continue anyway - will try to create new submission
+    }
+
+    console.log('[submitRevision] Existing submission check:', { 
+      jobId, 
+      workerWallet, 
+      found: !!existingSubmission,
+      existingId: existingSubmission?.id 
+    })
 
     // Build submission message combining revision notes with metadata
     const submissionMessage = `📝 **Revision #${revisionData.revisionNumber} Submitted**\n\n${revisionData.notes}`
 
+    // Merge existing images/links with new ones (keep old, add new)
+    const existingImageUrls = existingSubmission?.image_urls || []
+    const existingLinks = existingSubmission?.external_links || []
+    const mergedImages = [...existingImageUrls, ...(revisionData.images || [])]
+    const mergedLinks = [...existingLinks, ...(revisionData.links || [])].filter(l => l.trim())
+
     if (existingSubmission) {
       // Update existing submission
+      console.log('[submitRevision] Updating existing submission:', existingSubmission.id)
       const { error: updateError } = await supabase
         .from('job_submissions')
         .update({
           message: submissionMessage,
-          image_urls: revisionData.images,
-          external_links: revisionData.links || [],
+          image_urls: mergedImages,
+          external_links: mergedLinks,
           submitted_at: new Date().toISOString()
         })
         .eq('id', existingSubmission.id)
 
       if (updateError) {
-        console.error('Error updating submission:', updateError)
+        console.error('[submitRevision] Error updating submission:', updateError)
         return { success: false, error: 'Failed to update submission' }
       }
+      console.log('[submitRevision] Submission updated successfully')
     } else {
       // Create new submission
+      console.log('[submitRevision] Creating new submission')
       const { error: insertError } = await supabase
         .from('job_submissions')
         .insert({
           job_id: jobId,
           worker_wallet: workerWallet,
           message: submissionMessage,
-          image_urls: revisionData.images,
+          image_urls: revisionData.images || [],
           external_links: revisionData.links || [],
           submitted_at: new Date().toISOString()
         })
 
       if (insertError) {
-        console.error('Error creating submission:', insertError)
+        console.error('[submitRevision] Error creating submission:', insertError)
         return { success: false, error: 'Failed to create submission' }
       }
+      console.log('[submitRevision] Submission created successfully')
     }
 
     // 3. Create job_comment for timeline tracking

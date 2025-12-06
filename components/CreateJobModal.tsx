@@ -666,6 +666,21 @@ export function CreateJobModal({
           return
         }
 
+        // Validate token balance BEFORE attempting transfer
+        const balanceValidation = await validateEscrowTransfer(
+          connection,
+          publicKey,
+          new PublicKey(tokenMint),
+          totalEscrowAmount,
+          9 // Assuming 9 decimals - TODO: Get actual decimals from token metadata
+        )
+
+        if (!balanceValidation.valid) {
+          setLockError(balanceValidation.error || `Insufficient token balance. You need ${totalEscrowAmount.toFixed(2)} ${tokenSymbol} (payment + ${feePercentage}% platform fee)`)
+          setIsLocking(false)
+          return
+        }
+
         // Step 1: Transfer tokens to escrow
         toast.loading('Locking tokens in escrow...', { id: 'escrow-lock' })
         

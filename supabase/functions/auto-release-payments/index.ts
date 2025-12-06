@@ -12,10 +12,12 @@ interface EligibleJob {
   title: string
   escrow_amount_tokens: number
   escrow_token_mint: string
-  token_symbol: string
   decimals: number
   fee_percentage_at_creation: number
   release_scheduled_at: string
+  projects?: {
+    token_symbol: string
+  }
 }
 
 interface ProcessResult {
@@ -67,7 +69,12 @@ serve(async (req) => {
     
     const { data: jobs, error: jobsError } = await supabase
       .from('jobs')
-      .select('*')
+      .select(`
+        *,
+        projects:project_id (
+          token_symbol
+        )
+      `)
       .eq('status', 'submitted')
       .eq('release_paused', false)
       .eq('escrow_locked', true)
@@ -191,8 +198,11 @@ async function processJobRelease(
     }
     
     const result = await response.json()
+    // Extract token_symbol from joined project data
+    const tokenSymbol = job.projects?.token_symbol || 'tokens'
+    
     console.log(`[Auto-Release] ✅ Payment released for job ${job.id}`)
-    console.log(`[Auto-Release]    Worker received: ${result.workerReceived} ${job.token_symbol || 'tokens'}`)
+    console.log(`[Auto-Release]    Worker received: ${result.workerReceived} ${tokenSymbol}`)
     console.log(`[Auto-Release]    Fee collected: ${result.feeCollected}`)
     
     // ==================== SEND SUCCESS NOTIFICATION ====================
@@ -202,7 +212,7 @@ async function processJobRelease(
         wallet_address: job.assigned_to,
         type: 'job_auto_released',
         title: 'Payment Auto-Released',
-        message: `Your payment of ${result.workerReceived} ${job.token_symbol || 'tokens'} for "${job.title}" has been automatically released!`,
+        message: `Your payment of ${result.workerReceived} ${tokenSymbol} for "${job.title}" has been automatically released!`,
         job_id: job.id,
         project_id: job.project_id,
         created_at: new Date().toISOString()

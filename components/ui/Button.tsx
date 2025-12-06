@@ -32,13 +32,14 @@ export interface ButtonProps
   asChild?: boolean
   startIcon?: React.ReactNode
   endIcon?: React.ReactNode
+  fullWidth?: boolean
 }
 
 const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
-  ({ className, variant, size, startIcon, endIcon, children, ...props }, ref) => {
+  ({ className, variant, size, startIcon, endIcon, children, fullWidth, ...props }, ref) => {
     return (
       <button
-        className={buttonVariants({ variant, size, className })}
+        className={buttonVariants({ variant, size, className: `${className || ''} ${fullWidth ? 'w-full' : ''}`.trim() })}
         ref={ref}
         {...props}
       >

@@ -43,6 +43,7 @@ import ContentCopyIcon from '@mui/icons-material/ContentCopy'
 import MessageIcon from '@mui/icons-material/Message'
 import LocalAtmIcon from '@mui/icons-material/LocalAtm'
 import IconButton from '@mui/material/IconButton'
+import MuiButton from '@mui/material/Button'
 import Tooltip from '@mui/material/Tooltip'
 import SearchIcon from '@mui/icons-material/Search'
 import FlashOnIcon from '@mui/icons-material/FlashOn'
@@ -390,20 +391,29 @@ export default function JobDetailPage() {
         setApplications(appsWithStats)
       }
 
-      // Fetch submission if job is submitted, completed, or disputed
-      if (jobData.status === 'submitted' || jobData.status === 'completed' || jobData.status === 'disputed') {
-        const { data: submissionData, error: submissionError } = await supabase
+      // Fetch latest submission if job is assigned (for revisions), submitted, completed, or disputed
+      if (jobData.status === 'assigned' || jobData.status === 'submitted' || jobData.status === 'completed' || jobData.status === 'disputed') {
+        // Build query - filter by assigned worker if job has one
+        let submissionQuery = supabase
           .from('job_submissions')
           .select('*')
           .eq('job_id', params.jobId as string)
+        
+        // Filter by assigned worker to get their specific submissions
+        if (jobData.assigned_to) {
+          submissionQuery = submissionQuery.eq('worker_wallet', jobData.assigned_to)
+        }
+        
+        const { data: submissions, error: submissionError } = await submissionQuery
           .order('submitted_at', { ascending: false })
-          .limit(1)
-          .maybeSingle()
 
         if (submissionError) {
           console.error('Error fetching submission:', submissionError)
         } else {
-          setSubmission(submissionData)
+          // Get the most recent submission (first in descending order)
+          const latestSubmission = submissions && submissions.length > 0 ? submissions[0] : null
+          console.log('[fetchJobData] Setting submission to:', latestSubmission ? { id: latestSubmission.id, submitted_at: latestSubmission.submitted_at } : null)
+          setSubmission(latestSubmission)
         }
       }
 
@@ -1083,44 +1093,42 @@ export default function JobDetailPage() {
   }
 
   const handleReassign = async () => {
-    if (!selectedReassignApplicant || !job) {
+    if (!selectedReassignApplicant || !job || !publicKey) {
       toast.error('Please select an applicant')
+      return
+    }
+
+    if (!job.assigned_to) {
+      toast.error('No worker currently assigned to this job')
       return
     }
 
     setReassigning(true)
 
     try {
-      // Create job failure record
-      const { error: failureError } = await supabase
-        .from('job_failures')
-        .insert({
-          job_id: job.id,
-          worker_wallet: job.assigned_to!,
-          failure_type: 'reassigned'
+      // Get the new worker's application to update committed completion date
+      const selectedApplication = applications.find(
+        app => app.applicant_wallet === selectedReassignApplicant
+      )
+
+      // Call the reassign API endpoint
+      const response = await fetch(`/api/jobs/${job.id}/reassign`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          poster_wallet: publicKey.toString(),
+          new_worker_wallet: selectedReassignApplicant,
+          committed_completion_date: selectedApplication?.committed_completion_date || null
         })
+      })
 
-      if (failureError) throw failureError
+      const data = await response.json()
 
-      // TODO: Apply karma penalty to current worker (-50 × tier multiplier)
-      // await penalizeKarma(job.assigned_to!, job.project_id, -50 * tierMultiplier)
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to reassign job')
+      }
 
-      // Update job assignment
-      const { error: updateError } = await supabase
-        .from('jobs')
-        .update({
-          assigned_to: selectedReassignApplicant,
-          assigned_at: new Date().toISOString(),
-          updated_at: new Date().toISOString()
-        })
-        .eq('id', job.id)
-
-      if (updateError) throw updateError
-
-      // TODO: Notify both workers (Sprint 2.3)
-      // await notifyReassignment(job.id, job.assigned_to!, selectedReassignApplicant)
-
-      toast.success('Job reassigned. Previous worker penalized.', {
+      toast.success('Job reassigned. Previous worker penalized -50 karma.', {
         duration: 4000,
         icon: '🔄'
       })
@@ -1130,9 +1138,9 @@ export default function JobDetailPage() {
 
       // Refresh job data
       await fetchJobData()
-    } catch (err) {
+    } catch (err: any) {
       console.error('Error reassigning job:', err)
-      toast.error('Failed to reassign job')
+      toast.error(err.message || 'Failed to reassign job')
     } finally {
       setReassigning(false)
     }
@@ -1506,7 +1514,7 @@ export default function JobDetailPage() {
                 Worker Received:
               </Typography>
               <Typography variant="body2" sx={{ color: '#4caf50', fontWeight: 'bold' }}>
-                {(job.escrow_amount_tokens * 0.95).toFixed(2)} {job.token_symbol || 'SOL'}
+                {(job.escrow_amount_tokens * 0.95).toFixed(2)} {project?.token_symbol || 'SOL'}
               </Typography>
             </Box>
             
@@ -1515,7 +1523,7 @@ export default function JobDetailPage() {
                 Platform Fee (5%):
               </Typography>
               <Typography variant="body2" sx={{ color: '#a5d6a7' }}>
-                {(job.escrow_amount_tokens * 0.05).toFixed(2)} {job.token_symbol || 'SOL'}
+                {(job.escrow_amount_tokens * 0.05).toFixed(2)} {project?.token_symbol || 'SOL'}
               </Typography>
             </Box>
             
@@ -2147,46 +2155,53 @@ export default function JobDetailPage() {
                   )}
                 </div>
 
-                {/* Deadline Information */}
-                {job.hard_deadline && job.status === 'assigned' && (
-                  <Box 
-                    sx={{ 
-                      display: 'flex', 
-                      alignItems: 'center', 
-                      mt: 3,
-                      p: 2,
-                      borderRadius: 2,
-                      backgroundColor: getDaysUntilDeadline(job.hard_deadline) < 3 ? '#FEE' : '#F8F5FF'
-                    }}
-                  >
-                    <CalendarTodayIcon 
-                      sx={{ 
-                        mr: 1.5, 
-                        color: getDaysUntilDeadline(job.hard_deadline) < 3 ? '#DC2626' : '#7C4DFF',
-                        fontSize: 20
-                      }} 
-                    />
-                    <Box>
-                      <Typography 
-                        variant="body2" 
+                {/* Deadline Information - Show worker's committed completion or hard deadline */}
+                {(job.worker_committed_completion || job.hard_deadline) && job.status === 'assigned' && (
+                  (() => {
+                    const effectiveDeadline = job.worker_committed_completion || job.hard_deadline
+                    const daysUntil = getDaysUntilDeadline(effectiveDeadline!)
+                    
+                    return (
+                      <Box 
                         sx={{ 
-                          fontWeight: 600, 
-                          color: '#1A1A1E',
-                          mb: 0.25
+                          display: 'flex', 
+                          alignItems: 'center', 
+                          mt: 3,
+                          p: 2,
+                          borderRadius: 2,
+                          backgroundColor: daysUntil < 3 ? '#FEE' : '#F8F5FF'
                         }}
                       >
-                        {getDaysUntilDeadline(job.hard_deadline) < 0 ? '🚨 Deadline Passed' : '⏰ Hard Deadline'}
-                      </Typography>
-                      <Typography 
-                        variant="body2" 
-                        sx={{ 
-                          color: getDaysUntilDeadline(job.hard_deadline) < 3 ? '#DC2626' : '#6F7280'
-                        }}
-                      >
-                        {formatDeadline(job.hard_deadline)}
-                      </Typography>
-                    </Box>
-                  </Box>
+                        <CalendarTodayIcon 
+                          sx={{ 
+                            mr: 1.5, 
+                            color: daysUntil < 3 ? '#DC2626' : '#7C4DFF',
+                            fontSize: 20
+                          }} 
+                        />
+                        <Box>
+                          <Typography 
+                            variant="body2" 
+                            sx={{ 
+                              fontWeight: 600, 
+                              color: '#1A1A1E',
+                              mb: 0.25
+                            }}
+                          >
+                            {daysUntil < 0 ? '🚨 Deadline Passed' : '📅 Expected Completion'}
+                          </Typography>
+                          <Typography 
+                            variant="body2" 
+                            sx={{ 
+                              color: daysUntil < 3 ? '#DC2626' : '#6F7280'
+                            }}
+                          >
+                            {formatDeadline(effectiveDeadline!)}
+                          </Typography>
+                        </Box>
+                      </Box>
+                    )
+                  })()
                 )}
               </CardContent>
             </Card>
@@ -2307,51 +2322,59 @@ export default function JobDetailPage() {
               </Card>
             )}
 
-            {/* Deadline Reminder for Worker */}
+            {/* Deadline Reminder for Worker - Use worker_committed_completion if available */}
             {job.status === 'assigned' && 
              job.assigned_to === publicKey?.toString() && 
-             job.hard_deadline && (
-              <Alert 
-                severity={getDaysUntilDeadline(job.hard_deadline) < 3 ? 'error' : 'warning'}
-                sx={{ 
-                  mb: 3,
-                  backgroundColor: getDaysUntilDeadline(job.hard_deadline) < 3 ? '#FEE' : '#FFF4E6',
-                  '& .MuiAlert-icon': {
-                    color: getDaysUntilDeadline(job.hard_deadline) < 3 ? '#DC2626' : '#FB923C'
-                  }
-                }}
-              >
-                <AlertTitle sx={{ fontWeight: 700, color: '#1A1A1E' }}>
-                  {getDaysUntilDeadline(job.hard_deadline) < 3 ? '🚨 Urgent Deadline' : '⏰ Deadline Reminder'}
-                </AlertTitle>
-                <Typography variant="body2" sx={{ mb: 0.5 }}>
-                  <strong>Delivery deadline:</strong> {formatDeadline(job.hard_deadline)}
-                </Typography>
-                <Typography variant="body2" sx={{ mb: getDaysUntilDeadline(job.hard_deadline) < 3 ? 1 : 0 }}>
-                  {getDaysUntilDeadline(job.hard_deadline) > 0 
-                    ? `${getDaysUntilDeadline(job.hard_deadline)} ${getDaysUntilDeadline(job.hard_deadline) === 1 ? 'day' : 'days'} remaining to submit your work`
-                    : 'Deadline has passed - submit immediately to avoid penalties'}
-                </Typography>
-                {getDaysUntilDeadline(job.hard_deadline) < 3 && (
-                  <Typography 
-                    variant="body2" 
+             (job.worker_committed_completion || job.hard_deadline) && (
+              (() => {
+                // Use worker's committed completion date if available, otherwise fall back to hard_deadline
+                const effectiveDeadline = job.worker_committed_completion || job.hard_deadline
+                const daysUntil = getDaysUntilDeadline(effectiveDeadline!)
+                
+                return (
+                  <Alert 
+                    severity={daysUntil < 3 ? 'error' : 'warning'}
                     sx={{ 
-                      mt: 1, 
-                      fontWeight: 600,
-                      color: getDaysUntilDeadline(job.hard_deadline) < 0 ? '#DC2626' : '#1A1A1E'
+                      mb: 3,
+                      backgroundColor: daysUntil < 3 ? '#FEE' : '#FFF4E6',
+                      '& .MuiAlert-icon': {
+                        color: daysUntil < 3 ? '#DC2626' : '#FB923C'
+                      }
                     }}
                   >
-                    ⚠️ Missing this deadline without submission will result in job cancellation and karma penalties
-                  </Typography>
-                )}
-              </Alert>
+                    <AlertTitle sx={{ fontWeight: 700, color: '#1A1A1E' }}>
+                      {daysUntil < 3 ? '🚨 Urgent Deadline' : '⏰ Your Delivery Deadline'}
+                    </AlertTitle>
+                    <Typography variant="body2" sx={{ mb: 0.5 }}>
+                      <strong>Expected completion:</strong> {formatDeadline(effectiveDeadline!)}
+                    </Typography>
+                    <Typography variant="body2" sx={{ mb: daysUntil < 3 ? 1 : 0 }}>
+                      {daysUntil > 0 
+                        ? `${daysUntil} ${daysUntil === 1 ? 'day' : 'days'} remaining to submit your work`
+                        : 'Deadline has passed - submit immediately to avoid penalties'}
+                    </Typography>
+                    {daysUntil < 3 && (
+                      <Typography 
+                        variant="body2" 
+                        sx={{ 
+                          mt: 1, 
+                          fontWeight: 600,
+                          color: daysUntil < 0 ? '#DC2626' : '#1A1A1E'
+                        }}
+                      >
+                        ⚠️ Missing this deadline without submission will result in job cancellation and karma penalties
+                      </Typography>
+                    )}
+                  </Alert>
+                )
+              })()
             )}
 
-            {/* Missed Deadline Alert for Poster */}
+            {/* Missed Deadline Alert for Poster - Use worker_committed_completion if available */}
             {job.status === 'assigned' && 
              job.poster_wallet === publicKey?.toString() &&
-             job.hard_deadline &&
-             getDaysUntilDeadline(job.hard_deadline) < 0 &&
+             (job.worker_committed_completion || job.hard_deadline) &&
+             getDaysUntilDeadline(job.worker_committed_completion || job.hard_deadline!) < 0 &&
              !job.submitted_at && (
               <Alert 
                 severity="warning" 
@@ -2367,7 +2390,7 @@ export default function JobDetailPage() {
                   ⚠️ Worker Missed Deadline
                 </AlertTitle>
                 <Typography variant="body2" sx={{ mb: 2 }}>
-                  The worker has not submitted work by the committed deadline ({formatDeadline(job.hard_deadline)}).
+                  The worker has not submitted work by the committed deadline ({formatDeadline(job.worker_committed_completion || job.hard_deadline!)}).
                   You can now cancel this job and receive a full refund.
                 </Typography>
                 <Button 
@@ -2596,48 +2619,66 @@ export default function JobDetailPage() {
 
                   {/* Poster Actions */}
                   {job.status === 'submitted' && isPoster && (
-                    <div className="space-y-3">
-                      {/* Primary Actions Row */}
-                      <div className="flex gap-3">
-                        <Button
+                    <div className="space-y-4">
+                      {/* Primary Actions - Stack on mobile, row on desktop */}
+                      <div className="flex flex-col sm:flex-row gap-3">
+                        {/* Release Payment - Success Green */}
+                        <MuiButton
                           variant="contained"
                           onClick={() => setShowReleaseConfirm(true)}
+                          startIcon={<CheckCircleIcon />}
+                          fullWidth
                           sx={{
-                            flex: 1,
-                            backgroundColor: '#7C4DFF',
+                            flex: { sm: 1 },
+                            backgroundColor: '#36C170',
                             color: '#fff',
                             textTransform: 'none',
-                            fontSize: '16px',
-                            py: 1.5,
+                            fontSize: { xs: '16px', sm: '15px' },
+                            fontWeight: 600,
+                            py: { xs: 1.75, sm: 1.5 },
+                            px: 3,
+                            borderRadius: '12px',
+                            boxShadow: '0 8px 20px 0 rgba(54, 193, 112, 0.3)',
+                            minHeight: { xs: '52px', sm: 'auto' },
                             '&:hover': {
-                              backgroundColor: '#6B3FEE'
+                              backgroundColor: '#2DA862',
+                              boxShadow: '0 12px 24px 0 rgba(54, 193, 112, 0.4)',
                             }
                           }}
                         >
                           ✓ Release Payment
-                        </Button>
-                        <Button
-                          variant="outlined"
+                        </MuiButton>
+                        
+                        {/* Request Revision - Warning Yellow */}
+                        <MuiButton
+                          variant="contained"
                           onClick={() => setShowRevisionModal(true)}
                           startIcon={<LoopIcon />}
+                          fullWidth
                           sx={{
-                            flex: 1,
-                            color: '#FB923C',
-                            borderColor: '#FB923C',
+                            flex: { sm: 1 },
+                            backgroundColor: '#FFC857',
+                            color: '#1A1A1E',
                             textTransform: 'none',
-                            fontSize: '16px',
-                            py: 1.5,
+                            fontSize: { xs: '16px', sm: '15px' },
+                            fontWeight: 600,
+                            py: { xs: 1.75, sm: 1.5 },
+                            px: 3,
+                            borderRadius: '12px',
+                            boxShadow: '0 8px 20px 0 rgba(255, 200, 87, 0.3)',
+                            minHeight: { xs: '52px', sm: 'auto' },
                             '&:hover': {
-                              borderColor: '#F97316',
-                              backgroundColor: '#FFF7ED'
+                              backgroundColor: '#F5B83D',
+                              boxShadow: '0 12px 24px 0 rgba(255, 200, 87, 0.4)',
                             }
                           }}
                         >
                           Request Revision
-                        </Button>
+                        </MuiButton>
                       </div>
-                      {/* Dispute Link - Secondary */}
-                      <Button
+                      
+                      {/* Dispute Link - Subtle text button */}
+                      <MuiButton
                         variant="text"
                         onClick={handleOpenDispute}
                         fullWidth
@@ -2645,14 +2686,16 @@ export default function JobDetailPage() {
                           color: '#6F7280',
                           textTransform: 'none',
                           fontSize: '14px',
+                          fontWeight: 500,
+                          py: 1,
                           '&:hover': {
                             color: '#EF4444',
-                            backgroundColor: '#FEF2F2'
+                            backgroundColor: 'rgba(239, 68, 68, 0.08)',
                           }
                         }}
                       >
-                        Not satisfied? Open a Dispute
-                      </Button>
+                        Not satisfied? Open a Dispute →
+                      </MuiButton>
                     </div>
                   )}
 
@@ -2676,19 +2719,10 @@ export default function JobDetailPage() {
                       
                       {/* Add More Information Button */}
                       <Button
-                        variant="outlined"
-                        size="medium"
+                        variant="primary"
+                        size="lg"
                         onClick={handleSubmitWork}
-                        sx={{
-                          width: '100%',
-                          textTransform: 'none',
-                          color: '#7C4DFF',
-                          borderColor: '#7C4DFF',
-                          '&:hover': {
-                            borderColor: '#6B3FEE',
-                            backgroundColor: '#F8F5FF'
-                          }
-                        }}
+                        className="w-full shadow-lg"
                       >
                         📎 Add More Information
                       </Button>
@@ -2879,7 +2913,8 @@ export default function JobDetailPage() {
                 {/* If user is assigned worker */}
                 {isAssignedWorker && (job.status === 'assigned' || job.status === 'submitted') && (
                   <div className="space-y-3">
-                    {job.status === 'assigned' && (
+                    {/* Show Submit Work only for initial submission (no revision request pending) */}
+                    {job.status === 'assigned' && !latestRevisionRequest && (
                       <Button
                         variant="primary"
                         size="lg"
@@ -2887,6 +2922,17 @@ export default function JobDetailPage() {
                         className="w-full shadow-lg"
                       >
                         Submit Work
+                      </Button>
+                    )}
+                    {/* Show Upload Revised Work when revision is requested */}
+                    {job.status === 'assigned' && latestRevisionRequest && (
+                      <Button
+                        variant="primary"
+                        size="lg"
+                        onClick={handleSubmitWork}
+                        className="w-full shadow-lg"
+                      >
+                        🔄 Upload Revised Work
                       </Button>
                     )}
                     {job.status === 'submitted' && (
@@ -3439,62 +3485,90 @@ export default function JobDetailPage() {
               </div>
             )}
 
-            {/* Waiting for Submission Section (if assigned and NOT yet submitted) */}
-            {job.status === 'assigned' && job.assigned_to && isAssignedWorker && !submission && (
+            {/* Waiting for Submission Section (if assigned - includes initial submission OR revision needed) */}
+            {job.status === 'assigned' && job.assigned_to && isAssignedWorker && (
               <div 
-                className="mt-6 p-6 rounded-lg border-2"
-                style={{ borderColor: '#7C4DFF', backgroundColor: '#F8F5FF' }}
+                className="mt-6 p-6 rounded-xl border-2"
+                style={{ 
+                  borderColor: latestRevisionRequest ? '#FB923C' : '#7C4DFF', 
+                  backgroundColor: latestRevisionRequest ? '#FFF7ED' : '#F8F5FF' 
+                }}
               >
                 <div className="text-center">
                   {/* Check if there's a pending revision request */}
                   {latestRevisionRequest ? (
                     <>
-                      {/* Revision Request Alert */}
-                      <div 
-                        className="p-4 rounded-lg mb-4 text-left"
-                        style={{ 
-                          backgroundColor: latestRevisionRequest.isVoluntary ? '#FFF7ED' : '#F8F5FF',
-                          border: `2px solid ${latestRevisionRequest.isVoluntary ? '#FB923C' : '#7C4DFF'}`
-                        }}
-                      >
-                        <div className="flex items-center gap-2 mb-2">
-                          <LoopIcon sx={{ fontSize: 20, color: latestRevisionRequest.isVoluntary ? '#FB923C' : '#7C4DFF' }} />
-                          <span 
-                            className="font-bold"
-                            style={{ color: latestRevisionRequest.isVoluntary ? '#FB923C' : '#7C4DFF' }}
-                          >
+                      {/* Clear Header for Revision */}
+                      <div className="mb-4">
+                        <div 
+                          className="inline-flex items-center gap-2 px-4 py-2 rounded-full mb-3"
+                          style={{ backgroundColor: '#FB923C', color: 'white' }}
+                        >
+                          <LoopIcon sx={{ fontSize: 20 }} />
+                          <span className="font-bold">
                             {latestRevisionRequest.isVoluntary 
-                              ? 'Voluntary Revision Requested' 
-                              : `Revision #${latestRevisionRequest.revisionNumber} Requested`
+                              ? 'Revision Requested (Voluntary)' 
+                              : `Revision #${latestRevisionRequest.revisionNumber} Required`
                             }
                           </span>
                         </div>
                         <p 
-                          className="text-sm mb-3 whitespace-pre-wrap"
+                          className="text-sm font-medium"
                           style={{ color: '#1A1A1E' }}
                         >
-                          {latestRevisionRequest.notes.length > 200 
-                            ? latestRevisionRequest.notes.slice(0, 200) + '...' 
+                          The poster has requested changes to your submission
+                        </p>
+                      </div>
+
+                      {/* Poster's Feedback Box */}
+                      <div 
+                        className="p-4 rounded-lg mb-4 text-left"
+                        style={{ 
+                          backgroundColor: 'white',
+                          border: '1px solid #E5E7F0'
+                        }}
+                      >
+                        <p className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: '#6F7280' }}>
+                          📝 Poster's Feedback:
+                        </p>
+                        <p 
+                          className="text-sm whitespace-pre-wrap"
+                          style={{ color: '#1A1A1E' }}
+                        >
+                          {latestRevisionRequest.notes.length > 300 
+                            ? latestRevisionRequest.notes.slice(0, 300) + '...' 
                             : latestRevisionRequest.notes
                           }
                         </p>
                         {latestRevisionRequest.images && latestRevisionRequest.images.length > 0 && (
-                          <div className="flex gap-2 mb-3">
+                          <div className="flex gap-2 mt-3">
+                            <span className="text-xs" style={{ color: '#6F7280' }}>Reference images:</span>
                             {latestRevisionRequest.images.slice(0, 3).map((url, idx) => (
                               <a 
                                 key={idx} 
                                 href={url} 
                                 target="_blank" 
                                 rel="noopener noreferrer"
-                                className="w-12 h-12 rounded-lg overflow-hidden border-2 border-gray-200 hover:border-purple-400"
+                                className="w-10 h-10 rounded-lg overflow-hidden border-2 border-gray-200 hover:border-orange-400 transition-colors"
                               >
                                 <img src={url} alt={`Ref ${idx + 1}`} className="w-full h-full object-cover" />
                               </a>
                             ))}
                           </div>
                         )}
-                        <p className="text-xs" style={{ color: '#6F7280' }}>
+                        <p className="text-xs mt-2" style={{ color: '#A3A7B5' }}>
                           Requested {formatDistanceToNow(new Date(latestRevisionRequest.requestedAt), { addSuffix: true })}
+                        </p>
+                      </div>
+
+                      {/* Instructions */}
+                      <div 
+                        className="p-3 rounded-lg mb-4 text-left"
+                        style={{ backgroundColor: '#EEE7FF' }}
+                      >
+                        <p className="text-sm" style={{ color: '#7C4DFF' }}>
+                          <strong>What to do:</strong> Address the feedback above and submit your updated work. 
+                          Your submission will replace the previous one.
                         </p>
                       </div>
 
@@ -3507,18 +3581,14 @@ export default function JobDetailPage() {
                         />
                       </div>
 
-                      {/* Submit Revision Button */}
+                      {/* Submit Revision Button - Prominent */}
                       <Button
                         variant="primary"
                         size="lg"
-                        onClick={() => setShowSubmitRevisionModal(true)}
+                        onClick={handleSubmitWork}
                         className="shadow-lg"
-                        style={{ 
-                          backgroundColor: latestRevisionRequest.isVoluntary ? '#FB923C' : '#7C4DFF'
-                        }}
                       >
-                        <LoopIcon sx={{ mr: 1, fontSize: 20 }} />
-                        Submit Revised Work
+                        🔄 Upload Revised Work
                       </Button>
 
                       {/* Abuse Dispute Option - Only show for unlimited revisions with high usage */}
@@ -3531,22 +3601,15 @@ export default function JobDetailPage() {
                         
                         if (isUnlimited && used >= abuseThreshold) {
                           return (
-                            <Button
-                              variant="text"
+                            <button
                               onClick={() => setShowRevisionDisputeModal(true)}
-                              fullWidth
-                              sx={{
-                                mt: 2,
-                                color: '#EF4444',
-                                textTransform: 'none',
-                                fontSize: '14px',
-                                '&:hover': {
-                                  backgroundColor: '#FEF2F2'
-                                }
-                              }}
+                              className="w-full text-center mt-4 py-2 text-sm transition-colors"
+                              style={{ color: '#6F7280' }}
+                              onMouseEnter={(e) => e.currentTarget.style.color = '#EF4444'}
+                              onMouseLeave={(e) => e.currentTarget.style.color = '#6F7280'}
                             >
                               ⚠️ Dispute Unreasonable Revision Requests
-                            </Button>
+                            </button>
                           )
                         }
                         return null
@@ -3867,13 +3930,13 @@ export default function JobDetailPage() {
                 <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 0.5 }}>
                   <Typography variant="body2">Locked Amount:</Typography>
                   <Typography variant="body2" fontWeight={500}>
-                    {job.escrow_amount_tokens} {job.token_symbol || 'SOL'}
+                    {job.escrow_amount_tokens} {project?.token_symbol || 'SOL'}
                   </Typography>
                 </Box>
                 <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 0.5 }}>
                   <Typography variant="body2">Platform Fee (5%):</Typography>
                   <Typography variant="body2">
-                    {(job.escrow_amount_tokens * 0.05).toFixed(2)} {job.token_symbol || 'SOL'}
+                    {(job.escrow_amount_tokens * 0.05).toFixed(2)} {project?.token_symbol || 'SOL'}
                   </Typography>
                 </Box>
                 <Box 
@@ -3893,7 +3956,7 @@ export default function JobDetailPage() {
                     fontWeight="bold" 
                     sx={{ color: '#36C170' }}
                   >
-                    {(job.escrow_amount_tokens * 0.95).toFixed(2)} {job.token_symbol || 'SOL'}
+                    {(job.escrow_amount_tokens * 0.95).toFixed(2)} {project?.token_symbol || 'SOL'}
                   </Typography>
                 </Box>
               </Alert>
@@ -4032,7 +4095,7 @@ export default function JobDetailPage() {
             // Modal will close itself after successful submission
           }}
           escrowAmountTokens={job.escrow_amount_tokens}
-          tokenSymbol={job.token_symbol || 'SOL'}
+          tokenSymbol={project?.token_symbol || 'SOL'}
           existingSubmission={submission ? {
             message: submission.message,
             image_urls: submission.image_urls || [],

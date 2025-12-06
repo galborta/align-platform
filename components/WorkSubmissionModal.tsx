@@ -53,6 +53,11 @@ interface ImagePreview {
   url: string | null
 }
 
+interface ExistingImage {
+  url: string
+  isExisting: true
+}
+
 export function WorkSubmissionModal({
   isOpen,
   onClose,
@@ -68,6 +73,7 @@ export function WorkSubmissionModal({
   const [loading, setLoading] = useState(false)
   const [deliveryMessage, setDeliveryMessage] = useState('')
   const [images, setImages] = useState<ImagePreview[]>([])
+  const [existingImages, setExistingImages] = useState<ExistingImage[]>([])
   const [externalLinks, setExternalLinks] = useState<string[]>([''])
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [completionKarma, setCompletionKarma] = useState<number>(0)
@@ -82,7 +88,12 @@ export function WorkSubmissionModal({
       setExternalLinks(existingSubmission.external_links && existingSubmission.external_links.length > 0 
         ? existingSubmission.external_links 
         : [''])
-      // Note: existing images are just URLs, can't re-upload them but user can add more
+      // Load existing images as read-only previews
+      if (existingSubmission.image_urls && existingSubmission.image_urls.length > 0) {
+        setExistingImages(existingSubmission.image_urls.map(url => ({ url, isExisting: true })))
+      } else {
+        setExistingImages([])
+      }
     }
   }, [isOpen, existingSubmission])
 
@@ -97,6 +108,7 @@ export function WorkSubmissionModal({
   const resetForm = () => {
     setDeliveryMessage('')
     setImages([])
+    setExistingImages([])
     setExternalLinks([''])
     setErrors({})
   }
@@ -105,8 +117,9 @@ export function WorkSubmissionModal({
     const files = event.target.files
     if (!files || files.length === 0) return
 
-    // Check total image count
-    if (images.length + files.length > 5) {
+    // Check total image count (existing + new)
+    const totalImages = existingImages.length + images.length + files.length
+    if (totalImages > 5) {
       toast.error('Maximum 5 images allowed')
       return
     }
@@ -146,6 +159,10 @@ export function WorkSubmissionModal({
       newImages.splice(index, 1)
       return newImages
     })
+  }
+
+  const handleRemoveExistingImage = (index: number) => {
+    setExistingImages(prev => prev.filter((_, i) => i !== index))
   }
 
   const uploadImages = async (): Promise<string[]> => {
@@ -270,11 +287,15 @@ export function WorkSubmissionModal({
     setLoading(true)
 
     try {
-      // Upload images first
-      let imageUrls: string[] = []
+      // Upload new images first
+      let newImageUrls: string[] = []
       if (images.length > 0) {
-        imageUrls = await uploadImages()
+        newImageUrls = await uploadImages()
       }
+
+      // Combine existing images with newly uploaded ones
+      const existingImageUrls = existingImages.map(img => img.url)
+      const allImageUrls = [...existingImageUrls, ...newImageUrls]
 
       // Filter out empty links
       const validLinks = externalLinks.filter(link => link.trim())
@@ -282,7 +303,7 @@ export function WorkSubmissionModal({
       // Submit work using the centralized function
       const result = await submitWork(jobId, workerWallet, {
         message: deliveryMessage.trim(),
-        image_urls: imageUrls,
+        image_urls: allImageUrls,
         external_links: validLinks
       })
 
@@ -388,11 +409,17 @@ export function WorkSubmissionModal({
 
         {/* Payment Amount Breakdown */}
         {escrowAmountTokens && (
-          <Box sx={{ p: 2, bgcolor: '#0a0a0a', borderRadius: 1, mb: 2 }}>
-            <Typography variant="subtitle2" sx={{ mb: 1, color: '#E5E7F0' }}>
+          <Box sx={{ 
+            p: 3, 
+            bgcolor: '#EEE7FF', 
+            borderRadius: '16px', 
+            mb: 2,
+            border: '1px solid rgba(124, 77, 255, 0.1)'
+          }}>
+            <Typography variant="subtitle2" sx={{ mb: 1, color: '#6F7280', fontWeight: 500 }}>
               You will receive:
             </Typography>
-            <Typography variant="h5" sx={{ color: '#E3F06F', fontWeight: 700 }}>
+            <Typography variant="h5" sx={{ color: '#7C4DFF', fontWeight: 700 }}>
               {(escrowAmountTokens * 0.95).toFixed(2)} {tokenSymbol}
             </Typography>
             <Typography variant="caption" sx={{ color: '#6F7280' }}>
@@ -435,7 +462,7 @@ export function WorkSubmissionModal({
               Deliverable Images (Optional)
             </label>
             <span className="text-sm" style={{ color: '#6F7280' }}>
-              {images.length} / 5 images
+              {existingImages.length + images.length} / 5 images
             </span>
           </div>
 
@@ -446,7 +473,7 @@ export function WorkSubmissionModal({
             multiple
             onChange={handleImageSelect}
             style={{ display: 'none' }}
-            disabled={images.length >= 5 || loading}
+            disabled={existingImages.length + images.length >= 5 || loading}
           />
 
           <label htmlFor="deliverable-upload">
@@ -454,7 +481,7 @@ export function WorkSubmissionModal({
               component="span"
               variant="outlined"
               startIcon={<CloudUploadIcon />}
-              disabled={images.length >= 5 || loading}
+              disabled={existingImages.length + images.length >= 5 || loading}
               sx={{
                 color: '#7C4DFF',
                 borderColor: '#7C4DFF',
@@ -474,18 +501,58 @@ export function WorkSubmissionModal({
             Upload images of your completed work (optional, max 5 images)
           </p>
 
-          {/* Image Previews */}
-          {images.length > 0 && (
+          {/* Image Previews - Existing + New */}
+          {(existingImages.length > 0 || images.length > 0) && (
             <div className="grid grid-cols-5 gap-3">
+              {/* Existing Images (from previous submission) */}
+              {existingImages.map((image, index) => (
+                <div 
+                  key={`existing-${index}`}
+                  className="relative aspect-square rounded-lg overflow-hidden border-2"
+                  style={{ borderColor: '#7C4DFF' }}
+                >
+                  <img
+                    src={image.url}
+                    alt={`Existing ${index + 1}`}
+                    className="w-full h-full object-cover"
+                  />
+                  <div 
+                    className="absolute top-0 left-0 px-1.5 py-0.5 text-xs font-medium rounded-br"
+                    style={{ backgroundColor: '#7C4DFF', color: '#fff' }}
+                  >
+                    Saved
+                  </div>
+                  {!loading && (
+                    <IconButton
+                      size="small"
+                      onClick={() => handleRemoveExistingImage(index)}
+                      sx={{
+                        position: 'absolute',
+                        top: 4,
+                        right: 4,
+                        backgroundColor: 'rgba(0, 0, 0, 0.6)',
+                        color: '#fff',
+                        '&:hover': {
+                          backgroundColor: 'rgba(0, 0, 0, 0.8)'
+                        }
+                      }}
+                    >
+                      <DeleteIcon sx={{ fontSize: 16 }} />
+                    </IconButton>
+                  )}
+                </div>
+              ))}
+
+              {/* New Images (to be uploaded) */}
               {images.map((image, index) => (
                 <div 
-                  key={index}
+                  key={`new-${index}`}
                   className="relative aspect-square rounded-lg overflow-hidden border-2"
                   style={{ borderColor: image.uploaded ? '#36C170' : '#E5E7F0' }}
                 >
                   <img
                     src={image.preview}
-                    alt={`Deliverable ${index + 1}`}
+                    alt={`New ${index + 1}`}
                     className="w-full h-full object-cover"
                   />
                   {image.uploading && (

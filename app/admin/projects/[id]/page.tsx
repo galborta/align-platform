@@ -69,7 +69,9 @@ interface OverviewStats {
   bannedWalletsCount: number
 }
 
-type TabValue = 'overview' | 'profile' | 'chat' | 'pending-assets' | 'verified-assets' | 'karma' | 'team' | 'activity' | 'danger'
+type TabValue = 'overview' | 'profile' | 'chat' | 'pending-assets' | 'verified-assets' | 'karma' | 'team' | 'jobs' | 'activity' | 'danger'
+
+type Job = Database['public']['Tables']['jobs']['Row']
 
 type AdminLog = Database['public']['Tables']['admin_logs']['Row']
 
@@ -214,6 +216,18 @@ export default function AdminProjectPage() {
   const [viewingLogDetails, setViewingLogDetails] = useState<AdminLogWithProject | null>(null)
   const [logStats, setLogStats] = useState<any>(null)
   const [loadingLogs, setLoadingLogs] = useState(false)
+
+  // Jobs tab state
+  const [jobs, setJobs] = useState<Job[]>([])
+  const [filteredJobs, setFilteredJobs] = useState<Job[]>([])
+  const [jobStatusFilter, setJobStatusFilter] = useState<string>('all')
+  const [jobCategoryFilter, setJobCategoryFilter] = useState<string>('all')
+  const [jobSearch, setJobSearch] = useState('')
+  const [editingJob, setEditingJob] = useState<Job | null>(null)
+  const [deletingJob, setDeletingJob] = useState<Job | null>(null)
+  const [jobFormData, setJobFormData] = useState<Partial<Job>>({})
+  const [processingJobAction, setProcessingJobAction] = useState(false)
+  const [loadingJobs, setLoadingJobs] = useState(false)
 
   // Danger Zone tab state
   const [resetConfirmDialog, setResetConfirmDialog] = useState<string | null>(null)
@@ -373,6 +387,9 @@ export default function AdminProjectPage() {
           break
         case 'activity':
           await loadActivityLogs()
+          break
+        case 'jobs':
+          await loadJobs()
           break
         default:
           // Other tabs use data already loaded in project
@@ -644,6 +661,146 @@ export default function AdminProjectPage() {
       toast.error('Failed to load activity logs')
     } finally {
       setLoadingLogs(false)
+    }
+  }
+
+  // Load jobs for this project
+  const loadJobs = async () => {
+    if (!project) return
+
+    try {
+      setLoadingJobs(true)
+      
+      const { data: jobsData, error } = await supabase
+        .from('jobs')
+        .select('*')
+        .eq('project_id', project.id)
+        .order('created_at', { ascending: false })
+
+      if (error) throw error
+
+      setJobs(jobsData || [])
+      setFilteredJobs(jobsData || [])
+    } catch (error) {
+      console.error('Error loading jobs:', error)
+      toast.error('Failed to load jobs')
+    } finally {
+      setLoadingJobs(false)
+    }
+  }
+
+  // Filter jobs based on search and filters
+  const filterJobs = () => {
+    let filtered = [...jobs]
+
+    // Status filter
+    if (jobStatusFilter !== 'all') {
+      filtered = filtered.filter(job => job.status === jobStatusFilter)
+    }
+
+    // Category filter
+    if (jobCategoryFilter !== 'all') {
+      filtered = filtered.filter(job => job.category === jobCategoryFilter)
+    }
+
+    // Search filter (title or poster wallet)
+    if (jobSearch.trim()) {
+      const search = jobSearch.toLowerCase()
+      filtered = filtered.filter(job => 
+        job.title?.toLowerCase().includes(search) ||
+        job.poster_wallet?.toLowerCase().includes(search)
+      )
+    }
+
+    setFilteredJobs(filtered)
+  }
+
+  // Update filtered jobs when filters change
+  useEffect(() => {
+    filterJobs()
+  }, [jobs, jobStatusFilter, jobCategoryFilter, jobSearch])
+
+  // Handle job edit
+  const handleEditJob = async () => {
+    if (!editingJob || !publicKey) return
+
+    try {
+      setProcessingJobAction(true)
+
+      const { error } = await supabase
+        .from('jobs')
+        .update({
+          title: jobFormData.title,
+          description: jobFormData.description,
+          kpis: jobFormData.kpis,
+          category: jobFormData.category,
+          status: jobFormData.status,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', editingJob.id)
+
+      if (error) throw error
+
+      toast.success('Job updated successfully')
+      setEditingJob(null)
+      setJobFormData({})
+      await loadJobs()
+    } catch (error) {
+      console.error('Error updating job:', error)
+      toast.error('Failed to update job')
+    } finally {
+      setProcessingJobAction(false)
+    }
+  }
+
+  // Handle job delete
+  const handleDeleteJob = async () => {
+    if (!deletingJob || !publicKey) return
+
+    try {
+      setProcessingJobAction(true)
+
+      // If job has escrow locked, we need to handle refund first
+      if (deletingJob.escrow_locked && deletingJob.escrow_amount_tokens) {
+        // Call the refund API
+        const refundResponse = await fetch(`/api/jobs/${deletingJob.id}/refund-escrow`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            poster_wallet: deletingJob.poster_wallet
+          })
+        })
+
+        if (!refundResponse.ok) {
+          const refundError = await refundResponse.json()
+          throw new Error(refundError.error || 'Failed to refund escrow')
+        }
+
+        toast.success('Escrow refunded to poster')
+      }
+
+      // Delete associated records first
+      await supabase.from('job_applications').delete().eq('job_id', deletingJob.id)
+      await supabase.from('job_submissions').delete().eq('job_id', deletingJob.id)
+      await supabase.from('job_escrow_transactions').delete().eq('job_id', deletingJob.id)
+      await supabase.from('job_comments').delete().eq('job_id', deletingJob.id)
+
+      // Delete the job
+      const { error } = await supabase
+        .from('jobs')
+        .delete()
+        .eq('id', deletingJob.id)
+
+      if (error) throw error
+
+      toast.success('Job deleted successfully')
+      setDeletingJob(null)
+      await loadJobs()
+    } catch (error) {
+      console.error('Error deleting job:', error)
+      toast.error(error instanceof Error ? error.message : 'Failed to delete job')
+    } finally {
+      setProcessingJobAction(false)
     }
   }
 
@@ -3754,6 +3911,7 @@ export default function AdminProjectPage() {
               <Tab label="Verified Assets" value="verified-assets" />
               <Tab label="Karma & Votes" value="karma" />
               <Tab label="Team & Wallets" value="team" />
+              <Tab label="Jobs" value="jobs" />
               <Tab label="Activity Log" value="activity" />
               <Tab label="Danger Zone" value="danger" />
             </Tabs>
@@ -5791,6 +5949,296 @@ export default function AdminProjectPage() {
                         ))}
                       </div>
                     )}
+                  </div>
+                )}
+
+                {/* Jobs Tab */}
+                {currentTab === 'jobs' && (
+                  <div className="space-y-6">
+                    {/* Filters */}
+                    <Card className="p-4">
+                      <div className="flex flex-wrap gap-4 items-center">
+                        <TextField
+                          label="Search jobs"
+                          value={jobSearch}
+                          onChange={(e) => setJobSearch(e.target.value)}
+                          placeholder="Title or wallet..."
+                          size="small"
+                          sx={{ minWidth: 200 }}
+                        />
+                        <FormControl size="small" sx={{ minWidth: 150 }}>
+                          <InputLabel>Status</InputLabel>
+                          <Select
+                            value={jobStatusFilter}
+                            label="Status"
+                            onChange={(e) => setJobStatusFilter(e.target.value)}
+                          >
+                            <MenuItem value="all">All Statuses</MenuItem>
+                            <MenuItem value="open">Open</MenuItem>
+                            <MenuItem value="assigned">Assigned</MenuItem>
+                            <MenuItem value="submitted">Submitted</MenuItem>
+                            <MenuItem value="completed">Completed</MenuItem>
+                            <MenuItem value="disputed">Disputed</MenuItem>
+                            <MenuItem value="cancelled">Cancelled</MenuItem>
+                          </Select>
+                        </FormControl>
+                        <FormControl size="small" sx={{ minWidth: 150 }}>
+                          <InputLabel>Category</InputLabel>
+                          <Select
+                            value={jobCategoryFilter}
+                            label="Category"
+                            onChange={(e) => setJobCategoryFilter(e.target.value)}
+                          >
+                            <MenuItem value="all">All Categories</MenuItem>
+                            <MenuItem value="design">Design</MenuItem>
+                            <MenuItem value="marketing">Marketing</MenuItem>
+                            <MenuItem value="development">Development</MenuItem>
+                            <MenuItem value="content">Content</MenuItem>
+                            <MenuItem value="community">Community</MenuItem>
+                            <MenuItem value="other">Other</MenuItem>
+                          </Select>
+                        </FormControl>
+                        <Chip 
+                          label={`${filteredJobs.length} job${filteredJobs.length !== 1 ? 's' : ''}`}
+                          color="primary"
+                          variant="outlined"
+                        />
+                      </div>
+                    </Card>
+
+                    {/* Jobs Table */}
+                    {loadingJobs ? (
+                      <div className="flex justify-center py-8">
+                        <CircularProgress />
+                      </div>
+                    ) : filteredJobs.length === 0 ? (
+                      <Card className="p-8 text-center">
+                        <p className="text-gray-500">No jobs found</p>
+                      </Card>
+                    ) : (
+                      <Card className="overflow-hidden">
+                        <div className="overflow-x-auto">
+                          <table className="w-full">
+                            <thead className="bg-gray-50">
+                              <tr>
+                                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Title</th>
+                                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Poster</th>
+                                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+                                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Category</th>
+                                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Payment</th>
+                                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Escrow</th>
+                                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Created</th>
+                                <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
+                              </tr>
+                            </thead>
+                            <tbody className="bg-white divide-y divide-gray-200">
+                              {filteredJobs.map((job) => (
+                                <tr key={job.id} className="hover:bg-gray-50">
+                                  <td className="px-4 py-4">
+                                    <div className="flex flex-col">
+                                      <span className="font-medium text-gray-900 truncate max-w-[200px]" title={job.title || ''}>
+                                        {job.title}
+                                      </span>
+                                      {job.is_contest && (
+                                        <Chip label="Contest" size="small" sx={{ mt: 0.5, width: 'fit-content' }} color="secondary" />
+                                      )}
+                                    </div>
+                                  </td>
+                                  <td className="px-4 py-4">
+                                    <span className="font-mono text-xs text-gray-500">
+                                      {job.poster_wallet?.slice(0, 4)}...{job.poster_wallet?.slice(-4)}
+                                    </span>
+                                  </td>
+                                  <td className="px-4 py-4">
+                                    <Chip 
+                                      label={job.status}
+                                      size="small"
+                                      sx={{
+                                        bgcolor: 
+                                          job.status === 'open' ? '#E8F5E9' :
+                                          job.status === 'assigned' ? '#FFF3E0' :
+                                          job.status === 'submitted' ? '#E3F2FD' :
+                                          job.status === 'completed' ? '#E8F5E9' :
+                                          job.status === 'disputed' ? '#FFEBEE' :
+                                          job.status === 'cancelled' ? '#FAFAFA' : '#FAFAFA',
+                                        color:
+                                          job.status === 'open' ? '#2E7D32' :
+                                          job.status === 'assigned' ? '#EF6C00' :
+                                          job.status === 'submitted' ? '#1565C0' :
+                                          job.status === 'completed' ? '#2E7D32' :
+                                          job.status === 'disputed' ? '#C62828' :
+                                          job.status === 'cancelled' ? '#757575' : '#757575'
+                                      }}
+                                    />
+                                  </td>
+                                  <td className="px-4 py-4 text-sm text-gray-500 capitalize">
+                                    {job.category}
+                                  </td>
+                                  <td className="px-4 py-4 text-sm">
+                                    <span className="font-medium">{job.payment_amount_tokens}</span>
+                                    <span className="text-gray-400 ml-1">{project?.token_symbol}</span>
+                                  </td>
+                                  <td className="px-4 py-4 text-sm">
+                                    {job.escrow_locked ? (
+                                      <Chip label={`${job.escrow_amount_tokens} 🔒`} size="small" color="success" variant="outlined" />
+                                    ) : (
+                                      <Chip label="Released" size="small" variant="outlined" />
+                                    )}
+                                  </td>
+                                  <td className="px-4 py-4 text-sm text-gray-500">
+                                    {job.created_at ? formatDistanceToNow(new Date(job.created_at), { addSuffix: true }) : '-'}
+                                  </td>
+                                  <td className="px-4 py-4 text-right">
+                                    <div className="flex gap-2 justify-end">
+                                      <MuiButton
+                                        size="small"
+                                        variant="outlined"
+                                        startIcon={<EditIcon />}
+                                        onClick={() => {
+                                          setEditingJob(job)
+                                          setJobFormData({
+                                            title: job.title,
+                                            description: job.description,
+                                            kpis: job.kpis,
+                                            category: job.category,
+                                            status: job.status
+                                          })
+                                        }}
+                                      >
+                                        Edit
+                                      </MuiButton>
+                                      <MuiButton
+                                        size="small"
+                                        variant="outlined"
+                                        color="error"
+                                        startIcon={<DeleteIcon />}
+                                        onClick={() => setDeletingJob(job)}
+                                      >
+                                        Delete
+                                      </MuiButton>
+                                    </div>
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </Card>
+                    )}
+
+                    {/* Edit Job Dialog */}
+                    <Dialog open={!!editingJob} onClose={() => setEditingJob(null)} maxWidth="md" fullWidth>
+                      <DialogTitle>Edit Job</DialogTitle>
+                      <DialogContent>
+                        <div className="space-y-4 pt-4">
+                          <TextField
+                            fullWidth
+                            label="Title"
+                            value={jobFormData.title || ''}
+                            onChange={(e) => setJobFormData({ ...jobFormData, title: e.target.value })}
+                          />
+                          <TextField
+                            fullWidth
+                            label="Description"
+                            multiline
+                            rows={4}
+                            value={jobFormData.description || ''}
+                            onChange={(e) => setJobFormData({ ...jobFormData, description: e.target.value })}
+                          />
+                          <TextField
+                            fullWidth
+                            label="KPIs / Success Criteria"
+                            multiline
+                            rows={2}
+                            value={jobFormData.kpis || ''}
+                            onChange={(e) => setJobFormData({ ...jobFormData, kpis: e.target.value })}
+                          />
+                          <FormControl fullWidth>
+                            <InputLabel>Category</InputLabel>
+                            <Select
+                              value={jobFormData.category || ''}
+                              label="Category"
+                              onChange={(e) => setJobFormData({ ...jobFormData, category: e.target.value })}
+                            >
+                              <MenuItem value="design">Design</MenuItem>
+                              <MenuItem value="marketing">Marketing</MenuItem>
+                              <MenuItem value="development">Development</MenuItem>
+                              <MenuItem value="content">Content</MenuItem>
+                              <MenuItem value="community">Community</MenuItem>
+                              <MenuItem value="other">Other</MenuItem>
+                            </Select>
+                          </FormControl>
+                          <FormControl fullWidth>
+                            <InputLabel>Status</InputLabel>
+                            <Select
+                              value={jobFormData.status || ''}
+                              label="Status"
+                              onChange={(e) => setJobFormData({ ...jobFormData, status: e.target.value })}
+                            >
+                              <MenuItem value="open">Open</MenuItem>
+                              <MenuItem value="assigned">Assigned</MenuItem>
+                              <MenuItem value="submitted">Submitted</MenuItem>
+                              <MenuItem value="completed">Completed</MenuItem>
+                              <MenuItem value="disputed">Disputed</MenuItem>
+                              <MenuItem value="cancelled">Cancelled</MenuItem>
+                            </Select>
+                          </FormControl>
+                          {editingJob && (
+                            <Alert severity="info" sx={{ mt: 2 }}>
+                              <strong>Payment:</strong> {editingJob.payment_amount_tokens} {project?.token_symbol} | 
+                              <strong> Escrow:</strong> {editingJob.escrow_amount_tokens} {project?.token_symbol} |
+                              <strong> Posted by:</strong> {editingJob.poster_wallet?.slice(0, 8)}...
+                            </Alert>
+                          )}
+                        </div>
+                      </DialogContent>
+                      <DialogActions>
+                        <MuiButton onClick={() => setEditingJob(null)} disabled={processingJobAction}>Cancel</MuiButton>
+                        <MuiButton 
+                          variant="contained" 
+                          onClick={handleEditJob}
+                          disabled={processingJobAction}
+                        >
+                          {processingJobAction ? <CircularProgress size={20} /> : 'Save Changes'}
+                        </MuiButton>
+                      </DialogActions>
+                    </Dialog>
+
+                    {/* Delete Job Dialog */}
+                    <Dialog open={!!deletingJob} onClose={() => setDeletingJob(null)} maxWidth="sm" fullWidth>
+                      <DialogTitle sx={{ color: 'error.main' }}>Delete Job</DialogTitle>
+                      <DialogContent>
+                        <Alert severity="error" sx={{ mb: 2 }}>
+                          <AlertTitle>Warning</AlertTitle>
+                          This action cannot be undone. The job and all associated data will be permanently deleted.
+                        </Alert>
+                        {deletingJob && (
+                          <div className="space-y-2">
+                            <p><strong>Title:</strong> {deletingJob.title}</p>
+                            <p><strong>Status:</strong> {deletingJob.status}</p>
+                            <p><strong>Payment:</strong> {deletingJob.payment_amount_tokens} {project?.token_symbol}</p>
+                            {deletingJob.escrow_locked && (
+                              <Alert severity="warning" sx={{ mt: 2 }}>
+                                <AlertTitle>Escrow Locked</AlertTitle>
+                                This job has {deletingJob.escrow_amount_tokens} {project?.token_symbol} locked in escrow. 
+                                Deleting will refund the tokens to the poster.
+                              </Alert>
+                            )}
+                          </div>
+                        )}
+                      </DialogContent>
+                      <DialogActions>
+                        <MuiButton onClick={() => setDeletingJob(null)} disabled={processingJobAction}>Cancel</MuiButton>
+                        <MuiButton 
+                          variant="contained" 
+                          color="error"
+                          onClick={handleDeleteJob}
+                          disabled={processingJobAction}
+                        >
+                          {processingJobAction ? <CircularProgress size={20} /> : 'Delete Job'}
+                        </MuiButton>
+                      </DialogActions>
+                    </Dialog>
                   </div>
                 )}
 

@@ -202,9 +202,28 @@ export async function transferToEscrow(
     )
     
     if (confirmation.value.err) {
+      // Parse common SPL Token error codes for user-friendly messages
+      const errStr = JSON.stringify(confirmation.value.err)
+      let userFriendlyError = 'Transaction failed on-chain'
+      
+      // Custom:1 = InsufficientFunds in SPL Token program
+      if (errStr.includes('"Custom":1') || errStr.includes('"Custom": 1')) {
+        userFriendlyError = 'Insufficient token balance. Please check that you have enough tokens in your wallet.'
+      }
+      // Custom:0 = NotRentExempt
+      else if (errStr.includes('"Custom":0') || errStr.includes('"Custom": 0')) {
+        userFriendlyError = 'Insufficient SOL for account rent. Please add more SOL to your wallet.'
+      }
+      // Custom:4 = OwnerMismatch
+      else if (errStr.includes('"Custom":4') || errStr.includes('"Custom": 4')) {
+        userFriendlyError = 'Token account owner mismatch. Please try again or contact support.'
+      }
+      
+      console.error('Transaction failed with error:', confirmation.value.err)
+      
       return {
         success: false,
-        error: `Transaction failed on-chain: ${JSON.stringify(confirmation.value.err)}`,
+        error: userFriendlyError,
         escrowWallet: escrowWalletAddress
       }
     }
