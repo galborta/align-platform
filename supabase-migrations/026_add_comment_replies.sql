@@ -21,3 +21,4 @@ COMMENT ON COLUMN job_comments.parent_comment_id IS 'Reference to parent comment
 
 
 
+

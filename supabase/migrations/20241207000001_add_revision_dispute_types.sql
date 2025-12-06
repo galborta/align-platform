@@ -31,3 +31,4 @@ ALTER TABLE job_disputes ADD COLUMN IF NOT EXISTS revision_context JSONB;
 COMMENT ON COLUMN job_disputes.dispute_type IS 'Categorized dispute type. Includes revision types: revision_refusal (worker refused committed revision), unlimited_revisions_abuse (poster abusing unlimited revisions)';
 COMMENT ON COLUMN job_disputes.revision_context IS 'JSON object containing revision-related dispute context: revisions_offered, revisions_used, revisions_remaining, revision_history, unanswered_since';
 
+

@@ -31,15 +31,7 @@ const supabaseAdmin = createClient<Database>(
  * - Uses service role for elevated database access
  * 
  * **Setup (Vercel Cron):**
- * 1. Add to vercel.json:
- *    ```json
- *    {
- *      "crons": [{
- *        "path": "/api/cron/contest-judging-notifications",
- *        "schedule": "*/15 * * * *"
- *      }]
- *    }
- *    ```
+ * 1. Add to vercel.json with path and schedule (every 15 minutes)
  * 2. Add CRON_SECRET to environment variables
  * 
  * @param request - Incoming request with Authorization header
@@ -227,4 +219,5 @@ export async function POST(request: NextRequest) {
   // Delegate to GET handler
   return GET(request)
 }
+
 

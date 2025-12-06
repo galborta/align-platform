@@ -18,3 +18,4 @@ COMMENT ON COLUMN chat_messages.reply_to_id IS 'ID of the message being replied 
 
 
 
+

@@ -69,3 +69,4 @@ ALTER TABLE notifications ADD CONSTRAINT valid_reference_type CHECK (reference_t
 COMMENT ON CONSTRAINT valid_notification_type ON notifications IS 'Allowed notification types including contest notifications';
 COMMENT ON CONSTRAINT valid_reference_type ON notifications IS 'Allowed reference types including contest';
 
+
