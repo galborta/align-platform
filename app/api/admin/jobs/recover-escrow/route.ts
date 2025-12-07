@@ -15,14 +15,75 @@ const supabaseAdmin = createClient<Database>(
  * Recovery endpoint for jobs where escrow was locked but job creation failed.
  * This creates the job record using the verified on-chain transaction.
  * 
- * ADMIN ONLY - requires admin wallet verification
+ * Security:
+ * - CRITICAL: Requires Supabase JWT authentication
+ * - ADMIN ONLY - user must be in admin_wallets table
  */
 export async function POST(request: Request) {
   try {
+    // ==================== ADMIN AUTHENTICATION ====================
+    
+    // Authenticate as admin
+    const authHeader = request.headers.get('authorization')
+    if (!authHeader?.startsWith('Bearer ')) {
+      console.error('[Recover Escrow] No auth header')
+      return NextResponse.json(
+        { error: 'Unauthorized - Authentication required' },
+        { status: 401 }
+      )
+    }
+
+    const token = authHeader.substring(7)
+
+    // Verify token
+    const { data: { user }, error: authError } = await supabaseAdmin.auth.getUser(token)
+
+    if (authError || !user) {
+      console.error('[Recover Escrow] Auth failed:', authError)
+      return NextResponse.json(
+        { error: 'Invalid authentication token' },
+        { status: 401 }
+      )
+    }
+
+    // Get user's wallet from profile
+    const { data: profile, error: profileError } = await supabaseAdmin
+      .from('profiles')
+      .select('wallet_address')
+      .eq('id', user.id)
+      .single()
+
+    if (profileError || !profile?.wallet_address) {
+      console.error('[Recover Escrow] No wallet for user:', profileError)
+      return NextResponse.json(
+        { error: 'No wallet address linked to account' },
+        { status: 403 }
+      )
+    }
+
+    // Verify admin status by checking wallet in admin_wallets table
+    const { data: adminCheck, error: adminError } = await supabaseAdmin
+      .from('admin_wallets')
+      .select('wallet_address')
+      .eq('wallet_address', profile.wallet_address)
+      .single()
+
+    if (adminError || !adminCheck) {
+      console.error('[Recover Escrow] Not an admin:', adminError)
+      return NextResponse.json(
+        { error: 'Admin access required' },
+        { status: 403 }
+      )
+    }
+
+    const adminWallet = profile.wallet_address
+    console.log(`[Recover Escrow] Admin authenticated: ${adminWallet}`)
+
+    // ==================== PARSE REQUEST BODY ====================
+
     const body = await request.json()
     
     const {
-      admin_wallet,
       escrow_tx_signature,
       project_id,
       poster_wallet,
@@ -45,20 +106,6 @@ export async function POST(request: Request) {
       contest_winner_selection_deadline,
       contest_submissions_visible
     } = body
-
-    // Verify admin wallet
-    const { data: adminCheck } = await supabaseAdmin
-      .from('admin_wallets')
-      .select('wallet_address')
-      .eq('wallet_address', admin_wallet)
-      .single()
-
-    if (!adminCheck) {
-      return NextResponse.json(
-        { error: 'Unauthorized - admin wallet required' },
-        { status: 401 }
-      )
-    }
 
     // Validate required fields
     if (!escrow_tx_signature) {
@@ -205,7 +252,7 @@ export async function POST(request: Request) {
     console.log('[Recovery] Success:', {
       job_id: job.id,
       tx_signature: escrow_tx_signature,
-      recovered_by: admin_wallet
+      recovered_by: adminWallet
     })
 
     return NextResponse.json({ 

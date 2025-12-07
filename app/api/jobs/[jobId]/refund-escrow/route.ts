@@ -1,33 +1,43 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { createClient } from '@supabase/supabase-js'
 import { Connection, clusterApiUrl } from '@solana/web3.js'
 import { refundEscrowToPoster } from '@/lib/solana/escrow-refund'
-import { supabase } from '@/lib/supabase'
+import { Database } from '@/types/database'
+
+// Create Supabase client with service role for server-side operations
+const supabaseAdmin = createClient<Database>(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+)
 
 /**
  * POST /api/jobs/[jobId]/refund-escrow
  * 
  * Refunds all tokens locked in escrow back to the job poster when a job is cancelled.
  * 
- * Request body:
- * - poster_wallet: string (required) - Wallet address of the job poster
+ * Authentication:
+ * - Requires Supabase JWT token in Authorization header
+ * - User's wallet must match the job poster's wallet
  * 
  * Returns:
  * - 200: { success: true, txSignature: string, amountRefunded: number }
  * - 400: { error: string } - Invalid request
- * - 403: { error: string } - Unauthorized (not the poster)
+ * - 401: { error: string } - Unauthorized (missing/invalid token)
+ * - 403: { error: string } - Forbidden (not the poster)
  * - 404: { error: string } - Job not found
  * - 500: { error: string } - Internal server error
  * 
  * Process:
- * 1. Validates poster_wallet is provided
+ * 1. Authenticates user via Supabase JWT
  * 2. Fetches job details from database
- * 3. Verifies caller is the job poster
+ * 3. Verifies authenticated user's wallet matches job poster
  * 4. Verifies escrow is locked
  * 5. Processes full refund (payment + fee) back to poster
  * 6. Logs transaction to job_escrow_transactions table
  * 
  * Security:
- * - Only the job poster can request a refund
+ * - CRITICAL: Uses Supabase JWT authentication
+ * - Only the authenticated job poster can request a refund
  * - Requires escrow to be locked (escrow_locked = true)
  * - Uses secure escrow wallet private key from environment
  */
@@ -38,15 +48,6 @@ export async function POST(
   try {
     // Await params in Next.js 15+
     const { jobId } = await params
-    const { poster_wallet } = await request.json()
-
-    // Validate required fields
-    if (!poster_wallet) {
-      return NextResponse.json(
-        { error: 'Poster wallet required' },
-        { status: 400 }
-      )
-    }
 
     // Validate jobId is provided
     if (!jobId) {
@@ -57,16 +58,59 @@ export async function POST(
     }
 
     console.log(`[Refund API] Processing refund for job ${jobId}`)
-    console.log(`[Refund API] Requested by: ${poster_wallet}`)
+
+    // ==================== AUTHENTICATION ====================
+    
+    // Get authenticated user via Supabase JWT
+    const authHeader = request.headers.get('authorization')
+    if (!authHeader?.startsWith('Bearer ')) {
+      console.error('[Refund API] Missing authorization header')
+      return NextResponse.json(
+        { error: 'Unauthorized - Authentication required' },
+        { status: 401 }
+      )
+    }
+
+    const token = authHeader.substring(7)
+    const { data: { user }, error: authError } = await supabaseAdmin.auth.getUser(token)
+
+    if (authError || !user) {
+      console.error('[Refund API] Invalid auth token:', authError)
+      return NextResponse.json(
+        { error: 'Invalid authentication token' },
+        { status: 401 }
+      )
+    }
+
+    // Get user's wallet from profile
+    const { data: profile, error: profileError } = await supabaseAdmin
+      .from('profiles')
+      .select('wallet_address')
+      .eq('id', user.id)
+      .single()
+
+    if (profileError || !profile?.wallet_address) {
+      console.error('[Refund API] No wallet found for user:', profileError)
+      return NextResponse.json(
+        { error: 'No wallet address linked to account' },
+        { status: 403 }
+      )
+    }
+
+    const authenticatedWallet = profile.wallet_address
+    console.log(`[Refund API] Authenticated user: ${user.id}`)
+    console.log(`[Refund API] User wallet: ${authenticatedWallet}`)
+
+    // ==================== GET JOB DETAILS ====================
 
     // Fetch job details
-    const { data: job, error: jobError } = await supabase
+    const { data: job, error: jobError } = await supabaseAdmin
       .from('jobs')
       .select('*')
       .eq('id', jobId)
       .single()
 
-    if (jobError) {
+    if (jobError || !job) {
       console.error('[Refund API] Job fetch error:', jobError)
       return NextResponse.json(
         { error: 'Job not found' },
@@ -74,21 +118,18 @@ export async function POST(
       )
     }
 
-    if (!job) {
-      return NextResponse.json(
-        { error: 'Job not found' },
-        { status: 404 }
-      )
-    }
+    // ==================== AUTHORIZATION ====================
 
-    // Verify poster
-    if (job.poster_wallet !== poster_wallet) {
-      console.warn(`[Refund API] Unauthorized refund attempt by ${poster_wallet}`)
+    // Verify authenticated user is the job poster
+    if (job.poster_wallet !== authenticatedWallet) {
+      console.warn(`[Refund API] Unauthorized refund attempt by ${authenticatedWallet}`)
       return NextResponse.json(
         { error: 'Only the job poster can request a refund' },
         { status: 403 }
       )
     }
+
+    console.log('[Refund API] ✅ Poster verified via Supabase auth')
 
     // Verify escrow is locked
     if (!job.escrow_locked) {

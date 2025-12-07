@@ -24,15 +24,15 @@ interface Winner {
   submission_id: string
 }
 
-interface ContestPayoutRequest {
-  posterWallet: string
-}
-
 /**
  * POST /api/jobs/[jobId]/contest-payout
  * 
  * Executes payout for a contest job - transfers SPL tokens from escrow to all winners.
  * Uses server-side escrow keypair for signing (ESCROW_WALLET_PRIVATE_KEY).
+ * 
+ * Security:
+ * - CRITICAL: Requires Supabase JWT authentication
+ * - Only the authenticated job poster can execute payout
  */
 export async function POST(
   request: NextRequest,
@@ -42,19 +42,54 @@ export async function POST(
   
   try {
     const { jobId } = await params
-    const body: ContestPayoutRequest = await request.json()
-    const { posterWallet } = body
 
     console.log(`[Contest Payout API] Starting payout for job ${jobId}`)
 
-    // ==================== VALIDATION ====================
+    // ==================== AUTHENTICATION ====================
 
-    if (!posterWallet) {
+    // Authenticate request
+    const authHeader = request.headers.get('authorization')
+    if (!authHeader?.startsWith('Bearer ')) {
+      console.error('[Contest Payout] Missing authorization')
       return NextResponse.json(
-        { error: 'Poster wallet is required' },
-        { status: 400 }
+        { error: 'Unauthorized - Authentication required' },
+        { status: 401 }
       )
     }
+
+    const token = authHeader.substring(7)
+
+    // Verify token
+    const { data: { user }, error: authError } = await supabaseAdmin.auth.getUser(token)
+
+    if (authError || !user) {
+      console.error('[Contest Payout] Auth failed:', authError)
+      return NextResponse.json(
+        { error: 'Invalid authentication token' },
+        { status: 401 }
+      )
+    }
+
+    // Get authenticated user's wallet
+    const { data: profile, error: profileError } = await supabaseAdmin
+      .from('profiles')
+      .select('wallet_address')
+      .eq('id', user.id)
+      .single()
+
+    if (profileError || !profile?.wallet_address) {
+      console.error('[Contest Payout] No wallet for user:', profileError)
+      return NextResponse.json(
+        { error: 'No wallet address linked to account' },
+        { status: 403 }
+      )
+    }
+
+    const authenticatedWallet = profile.wallet_address
+    console.log(`[Contest Payout] Authenticated user: ${user.id}`)
+    console.log(`[Contest Payout] User wallet: ${authenticatedWallet}`)
+
+    // ==================== VALIDATION ====================
 
     // Validate escrow keypair is configured
     const escrowPrivateKey = process.env.ESCROW_WALLET_PRIVATE_KEY
@@ -107,12 +142,16 @@ export async function POST(
       )
     }
 
-    if (job.poster_wallet !== posterWallet) {
+    // Verify poster authorization
+    if (authenticatedWallet !== job.poster_wallet) {
+      console.error('[Contest Payout] Not authorized - wallet mismatch')
       return NextResponse.json(
-        { error: 'Only the job poster can execute payout' },
+        { error: 'Only job poster can execute contest payout' },
         { status: 403 }
       )
     }
+
+    console.log('[Contest Payout] ✅ Authorization verified')
 
     if (job.status === 'completed') {
       return NextResponse.json(
@@ -369,5 +408,7 @@ export async function POST(
     )
   }
 }
+
+
 
 

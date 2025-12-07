@@ -18,7 +18,7 @@ const supabaseAdmin = createClient<Database>(
  * Manually release payment from escrow to worker
  * 
  * This endpoint:
- * 1. Validates poster authorization
+ * 1. Validates poster authorization via Supabase JWT or service token
  * 2. Checks job status and escrow balance
  * 3. Executes blockchain transfers (worker payment + platform fee)
  * 4. Updates job status to 'completed'
@@ -26,12 +26,14 @@ const supabaseAdmin = createClient<Database>(
  * 6. Awards karma to all parties
  * 
  * Security:
+ * - CRITICAL: Uses Supabase JWT authentication for manual releases
+ * - Service token authentication for automated releases
  * - Requires escrow wallet private key (server-side only)
- * - Only poster can trigger release
+ * - Only poster can trigger release (verified via authenticated user's wallet)
  * - Validates escrow balance before transfer
  * - Atomic updates with transaction logging
  * 
- * @param request - Request body containing poster_wallet
+ * @param request - Request with Authorization header (Bearer token)
  * @param params - URL params containing jobId
  * @returns Success response with transaction signatures or error
  */
@@ -47,17 +49,9 @@ export async function POST(
     console.log(`[Release Payment] Starting for job ${jobId}`)
     
     // Parse request body
-    const { poster_wallet, auto_release } = await request.json()
+    const body = await request.json()
+    const { auto_release } = body
     
-    if (!poster_wallet) {
-      console.error('[Release Payment] Missing poster_wallet in request')
-      return NextResponse.json(
-        { error: 'Poster wallet required' },
-        { status: 400 }
-      )
-    }
-
-    console.log(`[Release Payment] Poster: ${poster_wallet}`)
     console.log(`[Release Payment] Auto-release: ${auto_release || false}`)
     
     // ==================== GET JOB DETAILS ====================
@@ -91,10 +85,18 @@ export async function POST(
     
     // ==================== AUTHORIZATION CHECKS ====================
     
-    // For auto-release, verify service token instead of poster wallet
     if (auto_release) {
+      // Service token auth for automated releases
       const authHeader = request.headers.get('authorization')
-      const serviceToken = process.env.SERVICE_AUTH_TOKEN || 'auto-release-internal'
+      const serviceToken = process.env.SERVICE_AUTH_TOKEN
+      
+      if (!serviceToken) {
+        console.error('[Release Payment] SERVICE_AUTH_TOKEN not configured')
+        return NextResponse.json(
+          { error: 'Server configuration error' },
+          { status: 500 }
+        )
+      }
       
       if (authHeader !== `Bearer ${serviceToken}`) {
         console.error('[Release Payment] Invalid service token for auto-release')
@@ -106,14 +108,58 @@ export async function POST(
       
       console.log('[Release Payment] ✅ Service token validated for auto-release')
     } else {
-      // Manual release: verify poster
-      if (job.poster_wallet !== poster_wallet) {
-        console.error('[Release Payment] Unauthorized: wallet does not match poster')
+      // Manual release: Require Supabase authentication
+      const authHeader = request.headers.get('authorization')
+      if (!authHeader?.startsWith('Bearer ')) {
+        console.error('[Release Payment] Missing or invalid authorization header')
         return NextResponse.json(
-          { error: 'Only poster can release payment' },
+          { error: 'Unauthorized - Authentication required' },
+          { status: 401 }
+        )
+      }
+
+      const token = authHeader.substring(7)
+      
+      // Verify JWT and get authenticated user
+      const { data: { user }, error: authError } = await supabaseAdmin.auth.getUser(token)
+
+      if (authError || !user) {
+        console.error('[Release Payment] Invalid auth token:', authError)
+        return NextResponse.json(
+          { error: 'Invalid authentication token' },
+          { status: 401 }
+        )
+      }
+
+      console.log(`[Release Payment] Authenticated user: ${user.id}`)
+
+      // Get user's wallet from their profile
+      const { data: profile, error: profileError } = await supabaseAdmin
+        .from('profiles')
+        .select('wallet_address')
+        .eq('id', user.id)
+        .single()
+
+      if (profileError || !profile?.wallet_address) {
+        console.error('[Release Payment] No wallet found for user:', profileError)
+        return NextResponse.json(
+          { error: 'No wallet address linked to account' },
           { status: 403 }
         )
       }
+
+      console.log(`[Release Payment] User wallet: ${profile.wallet_address}`)
+
+      // Verify wallet matches job poster
+      if (profile.wallet_address !== job.poster_wallet) {
+        console.error('[Release Payment] Wallet mismatch - not job poster')
+        return NextResponse.json(
+          { error: 'Only the job poster can release payment' },
+          { status: 403 }
+        )
+      }
+
+      console.log('[Release Payment] ✅ Poster wallet verified via Supabase auth')
     }
     
     // ==================== STATUS VALIDATION ====================
