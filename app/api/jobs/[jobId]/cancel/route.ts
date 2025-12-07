@@ -14,22 +14,24 @@ const supabaseAdmin = createClient<Database>(
  * 
  * Cancel a job (after refund has been processed)
  * 
- * Request body:
- * - poster_wallet: string (required) - Wallet address of the job poster
+ * Security:
+ * - CRITICAL: Requires Supabase JWT authentication
+ * - Only the authenticated job poster can cancel
  * 
  * Returns:
  * - 200: { success: true }
- * - 400: { error: string } - Invalid request
- * - 403: { error: string } - Unauthorized
+ * - 401: { error: string } - Unauthorized (missing/invalid token)
+ * - 403: { error: string } - Forbidden (not the poster)
  * - 500: { error: string } - Internal server error
  * 
  * Process:
- * 1. Validates poster_wallet matches job poster
- * 2. Checks cancellation limit (max 10 per week)
- * 3. Updates job status to 'cancelled'
- * 4. Unlocks escrow
- * 5. Invalidates all applications
- * 6. Applies karma penalty
+ * 1. Authenticates user via Supabase JWT
+ * 2. Validates authenticated wallet matches job poster
+ * 3. Checks cancellation limit (max 10 per week)
+ * 4. Updates job status to 'cancelled'
+ * 5. Unlocks escrow
+ * 6. Invalidates all applications
+ * 7. Applies karma penalty
  */
 export async function POST(
   request: NextRequest,
@@ -38,15 +40,6 @@ export async function POST(
   try {
     // Await params in Next.js 15+
     const { jobId } = await params
-    const { poster_wallet } = await request.json()
-
-    // Validate required fields
-    if (!poster_wallet) {
-      return NextResponse.json(
-        { error: 'Poster wallet required' },
-        { status: 400 }
-      )
-    }
 
     if (!jobId) {
       return NextResponse.json(
@@ -55,8 +48,51 @@ export async function POST(
       )
     }
 
+    // ==================== AUTHENTICATION ====================
+
+    const authHeader = request.headers.get('authorization')
+    if (!authHeader?.startsWith('Bearer ')) {
+      console.error('[Cancel Job] Missing authorization header')
+      return NextResponse.json(
+        { error: 'Unauthorized - Authentication required' },
+        { status: 401 }
+      )
+    }
+
+    const token = authHeader.substring(7)
+
+    const { data: { user }, error: authError } = await supabaseAdmin.auth.getUser(token)
+
+    if (authError || !user) {
+      console.error('[Cancel Job] Invalid auth token:', authError)
+      return NextResponse.json(
+        { error: 'Invalid authentication token' },
+        { status: 401 }
+      )
+    }
+
+    console.log(`[Cancel Job] Authenticated user: ${user.id}`)
+
+    const { data: profile, error: profileError } = await supabaseAdmin
+      .from('profiles')
+      .select('wallet_address')
+      .eq('id', user.id)
+      .single()
+
+    if (profileError || !profile?.wallet_address) {
+      console.error('[Cancel Job] No wallet found for user:', profileError)
+      return NextResponse.json(
+        { error: 'No wallet address linked to account' },
+        { status: 403 }
+      )
+    }
+
+    const authenticatedWallet = profile.wallet_address
+    console.log(`[Cancel Job] User wallet: ${authenticatedWallet}`)
+
+    // ==================== FETCH AND VALIDATE JOB ====================
+
     console.log(`[Cancel Job API] Cancelling job ${jobId}`)
-    console.log(`[Cancel Job API] Requested by: ${poster_wallet}`)
 
     // Fetch job details
     const { data: job, error: jobError } = await supabaseAdmin
@@ -73,14 +109,18 @@ export async function POST(
       )
     }
 
-    // Verify poster
-    if (job.poster_wallet !== poster_wallet) {
-      console.warn(`[Cancel Job API] Unauthorized cancel attempt by ${poster_wallet}`)
+    // ==================== AUTHORIZATION ====================
+
+    // Verify user is the job poster
+    if (authenticatedWallet !== job.poster_wallet) {
+      console.warn(`[Cancel Job API] Unauthorized cancel attempt`)
       return NextResponse.json(
         { error: 'Only the job poster can cancel this job' },
         { status: 403 }
       )
     }
+
+    console.log('[Cancel Job] ✅ Authorization verified')
 
     // Check cancellation limit (max 10 per week)
     const sevenDaysAgo = new Date()
@@ -89,7 +129,7 @@ export async function POST(
     const { count: cancellationCount, error: countError } = await supabaseAdmin
       .from('jobs')
       .select('id', { count: 'exact', head: true })
-      .eq('poster_wallet', poster_wallet)
+      .eq('poster_wallet', authenticatedWallet)
       .eq('status', 'cancelled')
       .gte('cancelled_at', sevenDaysAgo.toISOString())
 
@@ -99,7 +139,7 @@ export async function POST(
     }
 
     if (cancellationCount && cancellationCount >= 10) {
-      console.warn(`[Cancel Job API] Cancellation limit reached for ${poster_wallet}`)
+      console.warn(`[Cancel Job API] Cancellation limit reached for ${authenticatedWallet}`)
       return NextResponse.json(
         { error: "You've cancelled 10 jobs this week. Try again next week." },
         { status: 400 }
@@ -149,7 +189,7 @@ export async function POST(
     try {
       console.log('[Cancel Job API] Applying karma penalty...')
       await applyJobCancellationPenalty(
-        poster_wallet,
+        authenticatedWallet,
         job.project_id
       )
       console.log('[Cancel Job API] ✅ Karma penalty applied (-50 points)')

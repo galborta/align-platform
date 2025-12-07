@@ -13,8 +13,11 @@ const supabaseAdmin = createClient<Database>(
  * 
  * Update a job's details (poster only)
  * 
+ * Security:
+ * - CRITICAL: Requires Supabase JWT authentication
+ * - Only the authenticated job poster can update the job
+ * 
  * Request body:
- * - poster_wallet: string (required) - Wallet address of the job poster
  * - title: string (optional) - Job title
  * - description: string (optional) - Job description
  * - kpis: string (optional) - Success criteria/KPIs
@@ -26,15 +29,9 @@ const supabaseAdmin = createClient<Database>(
  * 
  * Returns:
  * - 200: { success: true, invalidated_applications: number }
- * - 400: { error: string } - Invalid request
- * - 403: { error: string } - Unauthorized or cannot change payment (has applications)
+ * - 401: { error: string } - Unauthorized (missing/invalid token)
+ * - 403: { error: string } - Forbidden (not poster or cannot change payment)
  * - 500: { error: string } - Internal server error
- * 
- * Process:
- * 1. Validates poster_wallet matches job poster
- * 2. Checks for existing applications
- * 3. Updates allowed fields
- * 4. Invalidates applications if changes affect them
  */
 export async function POST(
   request: NextRequest,
@@ -43,9 +40,17 @@ export async function POST(
   try {
     // Await params in Next.js 15+
     const { jobId } = await params
+
+    if (!jobId) {
+      return NextResponse.json(
+        { error: 'Job ID required' },
+        { status: 400 }
+      )
+    }
+
+    // Parse request body for update data
     const body = await request.json()
     const { 
-      poster_wallet,
       title,
       description,
       kpis,
@@ -56,23 +61,50 @@ export async function POST(
       payment_amount_usd
     } = body
 
-    // Validate required fields
-    if (!poster_wallet) {
+    // ==================== AUTHENTICATION ====================
+
+    const authHeader = request.headers.get('authorization')
+    if (!authHeader?.startsWith('Bearer ')) {
+      console.error('[Update Job] Missing authorization header')
       return NextResponse.json(
-        { error: 'Poster wallet required' },
-        { status: 400 }
+        { error: 'Unauthorized - Authentication required' },
+        { status: 401 }
       )
     }
 
-    if (!jobId) {
+    const token = authHeader.substring(7)
+
+    const { data: { user }, error: authError } = await supabaseAdmin.auth.getUser(token)
+
+    if (authError || !user) {
+      console.error('[Update Job] Invalid auth token:', authError)
       return NextResponse.json(
-        { error: 'Job ID required' },
-        { status: 400 }
+        { error: 'Invalid authentication token' },
+        { status: 401 }
       )
     }
+
+    console.log(`[Update Job] Authenticated user: ${user.id}`)
+
+    const { data: profile, error: profileError } = await supabaseAdmin
+      .from('profiles')
+      .select('wallet_address')
+      .eq('id', user.id)
+      .single()
+
+    if (profileError || !profile?.wallet_address) {
+      console.error('[Update Job] No wallet found for user:', profileError)
+      return NextResponse.json(
+        { error: 'No wallet address linked to account' },
+        { status: 403 }
+      )
+    }
+
+    console.log(`[Update Job] User wallet: ${profile.wallet_address}`)
+
+    // ==================== FETCH AND VALIDATE JOB ====================
 
     console.log(`[Update Job API] Updating job ${jobId}`)
-    console.log(`[Update Job API] Requested by: ${poster_wallet}`)
 
     // Fetch job details
     const { data: job, error: jobError } = await supabaseAdmin
@@ -89,14 +121,18 @@ export async function POST(
       )
     }
 
-    // Verify poster
-    if (job.poster_wallet !== poster_wallet) {
-      console.warn(`[Update Job API] Unauthorized update attempt by ${poster_wallet}`)
+    // ==================== AUTHORIZATION ====================
+
+    // Verify user is the job poster
+    if (profile.wallet_address !== job.poster_wallet) {
+      console.warn(`[Update Job API] Unauthorized update attempt`)
       return NextResponse.json(
         { error: 'Only the job poster can update this job' },
         { status: 403 }
       )
     }
+
+    console.log('[Update Job] ✅ Authorization verified')
 
     // Check for existing applications
     const { count: applicationCount, error: countError } = await supabaseAdmin

@@ -14,17 +14,21 @@ const supabaseAdmin = createClient<Database>(
  * Reassigns a job from the current worker to a new worker.
  * Only the job poster can reassign a job.
  * 
+ * Security:
+ * - CRITICAL: Requires Supabase JWT authentication
+ * - Only the authenticated job poster can reassign
+ * 
  * Request body:
- * - poster_wallet: string (required) - Wallet of the poster making the request
  * - new_worker_wallet: string (required) - Wallet of the new worker to assign
  * - committed_completion_date?: string - Optional new completion date
  * 
  * Actions:
- * 1. Verify caller is the job poster
- * 2. Record job failure for current worker
- * 3. Apply -50 karma penalty to current worker
- * 4. Update job assignment to new worker
- * 5. Send notifications to both workers
+ * 1. Authenticate user via Supabase JWT
+ * 2. Verify caller is the job poster
+ * 3. Record job failure for current worker
+ * 4. Apply -50 karma penalty to current worker
+ * 5. Update job assignment to new worker
+ * 6. Send notifications to both workers
  */
 export async function POST(
   request: NextRequest,
@@ -32,15 +36,10 @@ export async function POST(
 ) {
   try {
     const { jobId } = await params
-    const { poster_wallet, new_worker_wallet, committed_completion_date } = await request.json()
 
-    // Validate required fields
-    if (!poster_wallet) {
-      return NextResponse.json(
-        { error: 'Poster wallet is required' },
-        { status: 400 }
-      )
-    }
+    // Parse request body
+    const body = await request.json()
+    const { new_worker_wallet, committed_completion_date } = body
 
     if (!new_worker_wallet) {
       return NextResponse.json(
@@ -49,9 +48,51 @@ export async function POST(
       )
     }
 
+    // ==================== AUTHENTICATION ====================
+
+    const authHeader = request.headers.get('authorization')
+    if (!authHeader?.startsWith('Bearer ')) {
+      console.error('[Reassign API] Missing authorization header')
+      return NextResponse.json(
+        { error: 'Unauthorized - Authentication required' },
+        { status: 401 }
+      )
+    }
+
+    const token = authHeader.substring(7)
+
+    const { data: { user }, error: authError } = await supabaseAdmin.auth.getUser(token)
+
+    if (authError || !user) {
+      console.error('[Reassign API] Invalid auth token:', authError)
+      return NextResponse.json(
+        { error: 'Invalid authentication token' },
+        { status: 401 }
+      )
+    }
+
+    console.log(`[Reassign API] Authenticated user: ${user.id}`)
+
+    const { data: profile, error: profileError } = await supabaseAdmin
+      .from('profiles')
+      .select('wallet_address')
+      .eq('id', user.id)
+      .single()
+
+    if (profileError || !profile?.wallet_address) {
+      console.error('[Reassign API] No wallet found for user:', profileError)
+      return NextResponse.json(
+        { error: 'No wallet address linked to account' },
+        { status: 403 }
+      )
+    }
+
+    const authenticatedWallet = profile.wallet_address
+    console.log(`[Reassign API] User wallet: ${authenticatedWallet}`)
     console.log(`[Reassign API] Processing reassignment for job ${jobId}`)
-    console.log(`[Reassign API] Poster: ${poster_wallet.slice(0, 8)}...`)
     console.log(`[Reassign API] New worker: ${new_worker_wallet.slice(0, 8)}...`)
+
+    // ==================== FETCH AND VALIDATE JOB ====================
 
     // Fetch job details
     const { data: job, error: jobError } = await supabaseAdmin
@@ -68,14 +109,18 @@ export async function POST(
       )
     }
 
-    // Verify poster
-    if (job.poster_wallet !== poster_wallet) {
-      console.warn(`[Reassign API] Unauthorized: ${poster_wallet} is not the poster`)
+    // ==================== AUTHORIZATION ====================
+
+    // Verify user is the job poster
+    if (authenticatedWallet !== job.poster_wallet) {
+      console.warn(`[Reassign API] Unauthorized: not the poster`)
       return NextResponse.json(
         { error: 'Only the job poster can reassign the job' },
         { status: 403 }
       )
     }
+
+    console.log('[Reassign API] ✅ Authorization verified')
 
     // Check job status
     if (job.status !== 'assigned') {
@@ -165,7 +210,7 @@ export async function POST(
         user_wallet: new_worker_wallet,
         type: 'job_assigned',
         job_id: job.id,
-        actor_wallet: poster_wallet,
+        actor_wallet: authenticatedWallet,
         reference_id: job.id,
         reference_type: 'job',
         metadata: {
@@ -183,7 +228,7 @@ export async function POST(
         user_wallet: previousWorker,
         type: 'job_assigned',
         job_id: job.id,
-        actor_wallet: poster_wallet,
+        actor_wallet: authenticatedWallet,
         reference_id: job.id,
         reference_type: 'job',
         metadata: {
