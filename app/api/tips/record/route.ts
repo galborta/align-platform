@@ -158,53 +158,61 @@ export async function POST(request: NextRequest) {
       // Don't fail the tip if notification fails
     }
 
-    // Send DM if message provided (integrate with existing messaging system)
-    if (message?.trim()) {
-      try {
-        // Check if sender can message recipient
-        const messageCheck = await canMessageUser(fromWallet, toWallet, projectId)
+    // Always send DM for tips (with or without personal message)
+    try {
+      // Check if sender can message recipient
+      const messageCheck = await canMessageUser(fromWallet, toWallet, projectId)
+      
+      if (messageCheck.canMessage) {
+        // Get or create conversation
+        const conversation = await getOrCreateConversation(fromWallet, toWallet)
         
-        if (messageCheck.canMessage) {
-          // Get or create conversation
-          const conversation = await getOrCreateConversation(fromWallet, toWallet)
+        if (conversation) {
+          // Format tip message with tip details
+          const usdText = amountUsd ? ` ($${amountUsd.toFixed(2)})` : ''
+          const personalMessage = message?.trim()
           
-          if (conversation) {
-            // Format tip message with tip details
-            const usdText = amountUsd ? ` ($${amountUsd.toFixed(2)})` : ''
-            const tipDetails = `🎁 **Tip Received**: ${amountTokens} ${tokenSymbol}${usdText}\n\n${message}`
-            
-            // Insert message into messages table
-            const { error: messageError } = await supabase
-              .from('messages')
-              .insert({
-                conversation_id: conversation.id,
-                sender_wallet: fromWallet,
-                content: tipDetails,
-                is_read: false
-              })
-            
-            if (messageError) {
-              console.error('Error sending tip DM:', messageError)
-            } else {
-              // Update conversation's last_message_at
-              await supabase
-                .from('conversations')
-                .update({
-                  last_message_at: new Date().toISOString(),
-                  updated_at: new Date().toISOString()
-                })
-                .eq('id', conversation.id)
-              
-              console.log('📩 Tip DM sent successfully')
-            }
+          // Build the DM content
+          let tipDmContent: string
+          if (personalMessage) {
+            // Include personal message if provided
+            tipDmContent = `🎁 **Tip Received**: ${amountTokens} ${tokenSymbol}${usdText}\n\n${personalMessage}`
+          } else {
+            // Default message when no personal message
+            tipDmContent = `🎁 **Tip Received**: ${amountTokens} ${tokenSymbol}${usdText}\n\nYou received a tip! 💜`
           }
-        } else {
-          console.log('📩 Cannot send DM:', messageCheck.reason)
+          
+          // Insert message into messages table
+          const { error: messageError } = await supabase
+            .from('messages')
+            .insert({
+              conversation_id: conversation.id,
+              sender_wallet: fromWallet,
+              content: tipDmContent,
+              is_read: false
+            })
+          
+          if (messageError) {
+            console.error('Error sending tip DM:', messageError)
+          } else {
+            // Update conversation's last_message_at
+            await supabase
+              .from('conversations')
+              .update({
+                last_message_at: new Date().toISOString(),
+                updated_at: new Date().toISOString()
+              })
+              .eq('id', conversation.id)
+            
+            console.log('📩 Tip DM sent successfully')
+          }
         }
-      } catch (dmError) {
-        console.error('Error sending tip DM:', dmError)
-        // Don't fail the tip if DM fails
+      } else {
+        console.log('📩 Cannot send DM:', messageCheck.reason)
       }
+    } catch (dmError) {
+      console.error('Error sending tip DM:', dmError)
+      // Don't fail the tip if DM fails
     }
 
     // Create feed event only if in project context and public

@@ -222,6 +222,9 @@ export default function JobDetailPage() {
   // Display name hooks for poster and worker
   const { displayNameOrWallet: posterDisplayName, hasDisplayName: posterHasDisplayName } = usePosterDisplayName(job?.poster_wallet || '')
   const { displayNameOrWallet: workerDisplayName, hasDisplayName: workerHasDisplayName } = usePosterDisplayName(job?.assigned_to || '')
+  
+  // Display names map for applicants (batch fetched)
+  const [applicantDisplayNames, setApplicantDisplayNames] = useState<Map<string, string>>(new Map())
 
   useEffect(() => {
     if (params.jobId && params.id) {
@@ -389,6 +392,25 @@ export default function JobDetailPage() {
         setApplicationVotes(votesData)
 
         setApplications(appsWithStats)
+        
+        // Fetch display names for all applicants
+        const applicantWallets = appsWithStats.map(app => app.applicant_wallet)
+        if (applicantWallets.length > 0) {
+          const { data: profiles } = await supabase
+            .from('user_profiles')
+            .select('wallet_address, display_name')
+            .in('wallet_address', applicantWallets)
+          
+          if (profiles) {
+            const namesMap = new Map<string, string>()
+            profiles.forEach(p => {
+              if (p.display_name) {
+                namesMap.set(p.wallet_address, p.display_name)
+              }
+            })
+            setApplicantDisplayNames(namesMap)
+          }
+        }
       }
 
       // Fetch latest submission if job is assigned (for revisions), submitted, completed, or disputed
@@ -692,6 +714,15 @@ export default function JobDetailPage() {
 
   const formatWalletAddress = (address: string) => {
     return `${address.slice(0, 4)}...${address.slice(-4)}`
+  }
+  
+  // Get applicant display name or formatted wallet
+  const getApplicantDisplayName = (wallet: string) => {
+    return applicantDisplayNames.get(wallet) || formatWalletAddress(wallet)
+  }
+  
+  const applicantHasDisplayName = (wallet: string) => {
+    return applicantDisplayNames.has(wallet)
   }
 
   // Helper to render message and tip buttons
@@ -3259,10 +3290,15 @@ export default function JobDetailPage() {
                         <div className="flex-1">
                           <div className="flex items-center gap-2 mb-2">
                              <span 
-                               className="text-lg font-mono font-semibold"
-                               style={{ color: '#1A1A1E' }}
+                               className="text-lg font-semibold"
+                               style={{ 
+                                 color: '#1A1A1E',
+                                 fontFamily: applicantHasDisplayName(app.applicant_wallet) 
+                                   ? 'var(--font-display), Space Grotesk, sans-serif' 
+                                   : 'var(--font-mono), JetBrains Mono, monospace'
+                               }}
                              >
-                               {formatWalletAddress(app.applicant_wallet)}
+                               {getApplicantDisplayName(app.applicant_wallet)}
                              </span>
                              <Tooltip title="Copy address">
                                <IconButton
@@ -3453,7 +3489,7 @@ export default function JobDetailPage() {
                       {/* Portfolio Images */}
                       {app.image_urls && app.image_urls.length > 0 && (
                         <div>
-                          <h4 
+                          <h4
                             className="text-sm font-semibold mb-2"
                             style={{ color: '#6F7280' }}
                           >
@@ -3461,12 +3497,22 @@ export default function JobDetailPage() {
                           </h4>
                           <div className="flex gap-2 flex-wrap">
                             {app.image_urls.map((url, idx) => (
-                              <img
+                              <div
                                 key={idx}
-                                src={url}
-                                alt={`Portfolio ${idx + 1}`}
-                                className="w-24 h-24 object-cover rounded border border-gray-200"
-                              />
+                                className="relative w-24 h-24 rounded overflow-hidden border border-gray-200 cursor-pointer hover:border-purple-400 hover:shadow-md transition-all"
+                                onClick={() => setLightboxImage({ url, index: idx })}
+                              >
+                                <img
+                                  src={url}
+                                  alt={`Portfolio ${idx + 1}`}
+                                  className="w-full h-full object-cover"
+                                />
+                                <div className="absolute inset-0 bg-black bg-opacity-0 hover:bg-opacity-20 transition-all flex items-center justify-center">
+                                  <span className="text-white opacity-0 hover:opacity-100 text-xs font-medium">
+                                    Click to view
+                                  </span>
+                                </div>
+                              </div>
                             ))}
                           </div>
                         </div>

@@ -8,10 +8,6 @@ import {
   DialogActions,
   Button,
   TextField,
-  Select,
-  MenuItem,
-  FormControl,
-  InputLabel,
   Alert,
   AlertTitle,
   CircularProgress,
@@ -21,22 +17,19 @@ import {
   Typography,
   Tooltip
 } from '@mui/material'
-import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider'
-import { DatePicker } from '@mui/x-date-pickers/DatePicker'
-import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns'
+// Date picker no longer needed - using simple days input
 import { applyToJob } from '@/lib/jobs'
 import { supabase } from '@/lib/supabase'
 import { calculateJobKarma, calculateJobCompletionKarma } from '@/lib/karma'
 import { getWalletTokenData } from '@/lib/token-balance'
 import { toast } from 'react-hot-toast'
-import { addDays, isBefore, isAfter, format, differenceInDays } from 'date-fns'
+import { addDays, format } from 'date-fns'
 import CloseIcon from '@mui/icons-material/Close'
 import CloudUploadIcon from '@mui/icons-material/CloudUpload'
 import DeleteIcon from '@mui/icons-material/Delete'
 import WorkIcon from '@mui/icons-material/Work'
 import EmojiEventsIcon from '@mui/icons-material/EmojiEvents'
 import InfoIcon from '@mui/icons-material/Info'
-import WarningIcon from '@mui/icons-material/Warning'
 import { Database } from '@/types/database'
 import { RevisionSelector } from '@/components/jobs/RevisionSelector'
 
@@ -58,14 +51,8 @@ interface JobApplicationModalProps {
   onApplicationSubmitted?: () => void
 }
 
-const TIME_OPTIONS = [
-  { value: 'within_24_hours', label: 'Within 24 hours' },
-  { value: '1_3_days', label: '1-3 days' },
-  { value: '3_7_days', label: '3-7 days' },
-  { value: '1_2_weeks', label: '1-2 weeks' },
-  { value: '2_4_weeks', label: '2-4 weeks' },
-  { value: 'custom', label: 'Custom' }
-]
+// Quick select options for days needed
+const DAYS_OPTIONS = [3, 5, 7, 14, 21, 30]
 
 interface ImagePreview {
   file: File
@@ -92,17 +79,13 @@ export function JobApplicationModal({
 }: JobApplicationModalProps) {
   const [loading, setLoading] = useState(false)
   const [pitch, setPitch] = useState('')
-  const [estimatedCompletion, setEstimatedCompletion] = useState('')
-  const [customTime, setCustomTime] = useState('')
+  const [daysNeeded, setDaysNeeded] = useState<number | null>(null)
+  const [customDays, setCustomDays] = useState('')
   const [images, setImages] = useState<ImagePreview[]>([])
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [tokenPercentage, setTokenPercentage] = useState<number>(0)
   const [immediateKarma, setImmediateKarma] = useState<number>(0)
   const [delayedKarma, setDelayedKarma] = useState<number>(0)
-  
-  // Deadline commitment state
-  const [committedDeadline, setCommittedDeadline] = useState<Date | null>(null)
-  const [deadlineError, setDeadlineError] = useState<string | null>(null)
   
   // Revision offering state
   const [revisionsOffered, setRevisionsOffered] = useState<string | null>(null)
@@ -123,37 +106,34 @@ export function JobApplicationModal({
 
   const resetForm = () => {
     setPitch('')
-    setEstimatedCompletion('')
-    setCustomTime('')
+    setDaysNeeded(null)
+    setCustomDays('')
     setImages([])
     setErrors({})
-    setCommittedDeadline(null)
-    setDeadlineError(null)
     setRevisionsOffered(null)
   }
 
-  // Validate deadline
-  const validateDeadline = (date: Date | null): boolean => {
-    setDeadlineError(null)
-    
-    if (!date) {
-      setDeadlineError('Completion date is required')
-      return false
+  // Calculate committed deadline from days needed
+  const effectiveDays = daysNeeded || (customDays ? parseInt(customDays, 10) : null)
+  const committedDeadline = effectiveDays && !isNaN(effectiveDays) ? addDays(new Date(), effectiveDays) : null
+
+  // Validate days needed
+  const validateDaysNeeded = (): string | null => {
+    if (!daysNeeded && !customDays) {
+      return 'Please select or enter how many days you need'
     }
     
-    const tomorrow = addDays(new Date(), 1)
-    if (isBefore(date, tomorrow)) {
-      setDeadlineError('Deadline must be at least 1 day from now')
-      return false
+    const days = daysNeeded || parseInt(customDays, 10)
+    
+    if (isNaN(days) || days < 1) {
+      return 'Days must be at least 1'
     }
     
-    const maxDate = addDays(new Date(), 90)
-    if (isAfter(date, maxDate)) {
-      setDeadlineError('Deadline cannot be more than 90 days from now')
-      return false
+    if (days > 90) {
+      return 'Days cannot exceed 90'
     }
     
-    return true
+    return null
   }
 
   // Calculate deadline bonus karma
@@ -164,11 +144,11 @@ export function JobApplicationModal({
     return 0
   }
 
-  // Update karma calculation when deadline changes
+  // Update karma calculation when days needed changes
   useEffect(() => {
-    if (committedDeadline && tokenPercentage) {
-      const daysUntilDeadline = differenceInDays(committedDeadline, new Date())
-      const bonusPercent = getDeadlineBonus(daysUntilDeadline)
+    const days = daysNeeded || (customDays ? parseInt(customDays, 10) : null)
+    if (days && tokenPercentage) {
+      const bonusPercent = getDeadlineBonus(days)
       
       // Recalculate with bonus
       const baseImmediate = calculateJobKarma('APPLY_TO_JOB', tokenPercentage, true)
@@ -178,7 +158,7 @@ export function JobApplicationModal({
       setImmediateKarma(Math.round(baseImmediate * (1 + bonusPercent / 100)))
       setDelayedKarma(Math.round((baseDelayed + completionBonus) * (1 + bonusPercent / 100)))
     }
-  }, [committedDeadline, tokenPercentage, jobUsdValue])
+  }, [daysNeeded, customDays, tokenPercentage, jobUsdValue])
 
   const fetchTokenPercentageAndCalculateKarma = async () => {
     try {
@@ -314,16 +294,10 @@ export function JobApplicationModal({
       newErrors.pitch = 'Pitch must be 2000 characters or less'
     }
 
-    // Estimated completion validation
-    if (!estimatedCompletion) {
-      newErrors.estimatedCompletion = 'Estimated completion time is required'
-    } else if (estimatedCompletion === 'custom' && !customTime.trim()) {
-      newErrors.customTime = 'Please specify your custom timeline'
-    }
-
-    // Deadline validation
-    if (!validateDeadline(committedDeadline)) {
-      newErrors.deadline = deadlineError || 'Valid deadline is required'
+    // Days needed validation
+    const daysError = validateDaysNeeded()
+    if (daysError) {
+      newErrors.daysNeeded = daysError
     }
 
     // Revisions validation
@@ -355,10 +329,10 @@ export function JobApplicationModal({
         imageUrls = await uploadImages()
       }
 
-      // Prepare estimated completion text
-      const completionText = estimatedCompletion === 'custom'
-        ? customTime
-        : TIME_OPTIONS.find(opt => opt.value === estimatedCompletion)?.label || estimatedCompletion
+      // Calculate days and deadline
+      const days = daysNeeded || parseInt(customDays, 10)
+      const deadline = addDays(new Date(), days)
+      const completionText = `${days} day${days !== 1 ? 's' : ''}`
 
       // Submit application with deadline commitment and revision offering
       const applicationData = await applyToJob({
@@ -367,7 +341,7 @@ export function JobApplicationModal({
         pitch: pitch.trim(),
         image_urls: imageUrls,
         estimated_completion: completionText,
-        committed_completion_date: committedDeadline!.toISOString(),
+        committed_completion_date: deadline.toISOString(),
         revisions_offered: revisionsOffered
       })
 
@@ -590,41 +564,7 @@ export function JobApplicationModal({
           )}
         </div>
 
-        {/* Estimated Completion */}
-        <FormControl fullWidth required error={!!errors.estimatedCompletion} sx={{ mb: 3 }}>
-          <InputLabel>Estimated Completion Time</InputLabel>
-          <Select
-            value={estimatedCompletion}
-            label="Estimated Completion Time"
-            onChange={(e) => setEstimatedCompletion(e.target.value)}
-          >
-            {TIME_OPTIONS.map((option) => (
-              <MenuItem key={option.value} value={option.value}>
-                {option.label}
-              </MenuItem>
-            ))}
-          </Select>
-          {errors.estimatedCompletion && (
-            <Alert severity="error" sx={{ mt: 1 }}>{errors.estimatedCompletion}</Alert>
-          )}
-        </FormControl>
-
-        {/* Custom Time Input */}
-        {estimatedCompletion === 'custom' && (
-          <TextField
-            label="Custom Timeline"
-            value={customTime}
-            onChange={(e) => setCustomTime(e.target.value)}
-            placeholder="e.g., 6 weeks, 3 months"
-            fullWidth
-            required
-            error={!!errors.customTime}
-            helperText={errors.customTime}
-            sx={{ mb: 3 }}
-          />
-        )}
-
-        {/* Committed Completion Date */}
+        {/* Days Needed */}
         <Box sx={{ mb: 3 }}>
           <Typography 
             variant="subtitle2" 
@@ -637,45 +577,96 @@ export function JobApplicationModal({
               fontFamily: 'var(--font-display), Space Grotesk, sans-serif'
             }}
           >
-            Committed Completion Date *
+            How many days do you need? *
             <Tooltip 
-              title="You MUST deliver by this date. Missing it will result in karma penalties and job cancellation."
+              title="This becomes your HARD deadline. You MUST deliver by this date."
               arrow
               placement="top"
             >
               <InfoIcon sx={{ ml: 0.5, fontSize: '1rem', color: '#7C4DFF', cursor: 'help' }} />
             </Tooltip>
           </Typography>
-          
-          <LocalizationProvider dateAdapter={AdapterDateFns}>
-            <DatePicker
-              value={committedDeadline}
-              onChange={(date) => {
-                setCommittedDeadline(date)
-                validateDeadline(date)
-              }}
-              minDate={addDays(new Date(), 1)}
-              maxDate={addDays(new Date(), 90)}
-              slotProps={{
-                textField: {
-                  fullWidth: true,
-                  helperText: deadlineError || 'This becomes a HARD deadline after assignment',
-                  error: !!deadlineError,
-                  placeholder: 'Select completion date',
-                  sx: {
-                    '& .MuiOutlinedInput-root': {
-                      '&:hover fieldset': {
-                        borderColor: '#7C4DFF',
-                      },
-                      '&.Mui-focused fieldset': {
-                        borderColor: '#7C4DFF',
-                      }
-                    }
+
+          {/* Quick Select Buttons */}
+          <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1, mb: 2 }}>
+            {DAYS_OPTIONS.map((days) => (
+              <Button
+                key={days}
+                variant={daysNeeded === days ? 'contained' : 'outlined'}
+                onClick={() => {
+                  setDaysNeeded(days)
+                  setCustomDays('')
+                }}
+                sx={{
+                  minWidth: '70px',
+                  backgroundColor: daysNeeded === days ? '#7C4DFF' : 'transparent',
+                  color: daysNeeded === days ? '#fff' : '#7C4DFF',
+                  borderColor: '#7C4DFF',
+                  textTransform: 'none',
+                  fontWeight: 600,
+                  '&:hover': {
+                    backgroundColor: daysNeeded === days ? '#6B3FEE' : '#F8F5FF',
+                    borderColor: '#7C4DFF'
                   }
+                }}
+              >
+                {days} {days === 1 ? 'day' : 'days'}
+              </Button>
+            ))}
+          </Box>
+
+          {/* Custom Days Input */}
+          <TextField
+            label="Or enter custom days"
+            type="number"
+            value={customDays}
+            onChange={(e) => {
+              setCustomDays(e.target.value)
+              setDaysNeeded(null)
+            }}
+            placeholder="e.g., 45"
+            fullWidth
+            inputProps={{ min: 1, max: 90 }}
+            error={!!errors.daysNeeded}
+            helperText={errors.daysNeeded || 'Enter 1-90 days'}
+            sx={{
+              '& .MuiOutlinedInput-root': {
+                '&:hover fieldset': {
+                  borderColor: '#7C4DFF',
+                },
+                '&.Mui-focused fieldset': {
+                  borderColor: '#7C4DFF',
                 }
+              }
+            }}
+          />
+
+          {/* Show calculated deadline */}
+          {committedDeadline && (
+            <Box 
+              sx={{ 
+                mt: 2, 
+                p: 2, 
+                borderRadius: '8px',
+                backgroundColor: '#F8F5FF',
+                border: '1px solid #E8E0FF'
               }}
-            />
-          </LocalizationProvider>
+            >
+              <Typography variant="body2" sx={{ color: '#6F7280', mb: 0.5 }}>
+                Your deadline will be:
+              </Typography>
+              <Typography 
+                variant="h6" 
+                sx={{ 
+                  color: '#7C4DFF', 
+                  fontWeight: 700,
+                  fontFamily: 'var(--font-display), Space Grotesk, sans-serif'
+                }}
+              >
+                {format(committedDeadline, 'EEEE, MMMM dd, yyyy')}
+              </Typography>
+            </Box>
+          )}
           
           {/* Show poster's desired deadline if available */}
           {job?.poster_desired_completion && (
@@ -697,8 +688,8 @@ export function JobApplicationModal({
 
           {/* Show deadline bonus if applicable */}
           {committedDeadline && (() => {
-            const daysUntilDeadline = differenceInDays(committedDeadline, new Date())
-            const bonusPercent = getDeadlineBonus(daysUntilDeadline)
+            const days = daysNeeded || parseInt(customDays, 10)
+            const bonusPercent = getDeadlineBonus(days)
             return bonusPercent > 0 ? (
               <Alert 
                 severity="success" 
@@ -711,7 +702,7 @@ export function JobApplicationModal({
                   }
                 }}
               >
-                <strong>🎉 Fast delivery bonus:</strong> +{bonusPercent}% karma for {daysUntilDeadline}-day completion!
+                <strong>🎉 Fast delivery bonus:</strong> +{bonusPercent}% karma for {days}-day completion!
               </Alert>
             ) : null
           })()}
@@ -821,9 +812,10 @@ export function JobApplicationModal({
             </div>
             
             {/* Show deadline bonus indicator */}
-            {committedDeadline && (() => {
-              const daysUntilDeadline = differenceInDays(committedDeadline, new Date())
-              const bonusPercent = getDeadlineBonus(daysUntilDeadline)
+            {(daysNeeded || customDays) && (() => {
+              const days = daysNeeded || parseInt(customDays, 10)
+              if (isNaN(days)) return null
+              const bonusPercent = getDeadlineBonus(days)
               return bonusPercent > 0 ? (
                 <div 
                   className="mt-2 pt-2 border-t"
