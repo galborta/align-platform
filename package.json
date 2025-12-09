@@ -11,7 +11,10 @@
     "test:ui": "playwright test --ui",
     "test:headed": "playwright test --headed",
     "test:debug": "playwright test --debug",
-    "test:report": "playwright show-report"
+    "test:report": "playwright show-report",
+    "test:unit": "vitest run",
+    "test:unit:watch": "vitest",
+    "test:unit:coverage": "vitest run --coverage"
   },
   "dependencies": {
     "@emotion/react": "^11.11.1",
@@ -33,11 +36,13 @@
     "bs58": "^6.0.0",
     "class-variance-authority": "^0.7.1",
     "date-fns": "^4.1.0",
+    "focus-trap-react": "^11.0.4",
     "next": "^16.0.3",
     "pino-pretty": "^13.1.2",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
-    "react-hot-toast": "^2.6.0"
+    "react-hot-toast": "^2.6.0",
+    "tweetnacl": "^1.0.3"
   },
   "devDependencies": {
     "@playwright/test": "^1.56.1",
@@ -50,6 +55,7 @@
     "eslint-config-next": "14.2.15",
     "postcss": "^8.4.32",
     "tailwindcss": "^3.3.6",
-    "typescript": "^5.3.3"
+    "typescript": "^5.3.3",
+    "vitest": "^4.0.15"
   }
 }

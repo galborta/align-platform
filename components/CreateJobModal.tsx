@@ -210,7 +210,7 @@ export function CreateJobModal({
     }
   }
 
-  // Check USD value when payment amount changes
+  // Check USD value when payment amount changes (for regular jobs)
   useEffect(() => {
     const amount = parseFloat(paymentAmount)
     if (paymentAmount && !isNaN(amount) && amount > 0) {
@@ -220,6 +220,33 @@ export function CreateJobModal({
       setPriceError(false)
     }
   }, [paymentAmount, tokenMint])
+
+  // Fetch token price when modal opens (needed for contest prize USD calculations)
+  useEffect(() => {
+    const fetchTokenPrice = async () => {
+      if (!isOpen || !tokenMint) return
+      
+      try {
+        const price = await getTokenPriceUsd(tokenMint)
+        setTokenPrice(price)
+      } catch (error) {
+        console.error('Error fetching token price:', error)
+      }
+    }
+    
+    fetchTokenPrice()
+  }, [isOpen, tokenMint])
+
+  // Recalculate contest prize USD values when token price is fetched
+  useEffect(() => {
+    if (tokenPrice !== null && jobType === 'contest' && contestPrizes.length > 0) {
+      const updatedPrizes = contestPrizes.map(prize => ({
+        ...prize,
+        amount_usd: prize.amount_tokens * tokenPrice
+      }))
+      setContestPrizes(updatedPrizes)
+    }
+  }, [tokenPrice, jobType])
 
   const resetForm = () => {
     setJobType('regular')

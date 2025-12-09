@@ -435,7 +435,7 @@ export function showTestNotification(): void {
     return
   }
 
-  const notification = new Notification('Align - Test Notification', {
+  const notification = new Notification('Orggly - Test Notification', {
     body: 'Notifications are working correctly! 🎉',
     icon: '/icons/message-icon.png',
     badge: '/icons/badge-icon.png',
@@ -454,6 +454,8 @@ export function showTestNotification(): void {
     playNotificationSound()
   }
 }
+
+
 
 
 

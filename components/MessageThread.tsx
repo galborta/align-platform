@@ -4,6 +4,7 @@ import { useState, useEffect, useRef, useCallback } from 'react'
 import { supabase } from '@/lib/supabase'
 import { Database } from '@/types/database'
 import { markConversationAsRead, blockUser, unblockUser, isBlocked } from '@/lib/messaging'
+import { useMessaging } from '@/lib/MessagingContext'
 import { canSeeOnlineStatus } from '@/lib/privacy'
 import { UserProfileView } from '@/components/UserProfileView'
 import { BlockUserModal } from '@/components/BlockUserModal'
@@ -54,6 +55,7 @@ export function MessageThread({
   currentWallet,
   recipientWallet
 }: MessageThreadProps) {
+  const { refreshUnreadCount } = useMessaging()
   const [messages, setMessages] = useState<Message[]>([])
   const [recipientProfile, setRecipientProfile] = useState<UserProfile | null>(null)
   const [loading, setLoading] = useState(true)
@@ -159,17 +161,7 @@ export function MessageThread({
         query = query.lt('created_at', cursor)
       }
 
-      const { data, error } = await supabase.rpc('get_messages_with_cursor', {
-        p_conversation_id: conversationId,
-        p_cursor: cursor || null,
-        p_limit: MESSAGES_PER_PAGE + 1
-      }).then(({ data: rpcData, error: rpcError }) => {
-        // Fallback to regular query if RPC doesn't exist
-        if (rpcError) {
-          return query
-        }
-        return { data: rpcData, error: rpcError }
-      })
+      const { data, error } = await query
 
       if (error) {
         console.error('Error fetching messages:', error)
@@ -241,9 +233,15 @@ export function MessageThread({
   useEffect(() => {
     loadMessages()
     
-    // Mark conversation as read
-    markConversationAsRead(conversationId, currentWallet)
-  }, [conversationId, currentWallet, loadMessages])
+    // Mark conversation as read and refresh unread count
+    const markAsRead = async () => {
+      const success = await markConversationAsRead(conversationId, currentWallet)
+      if (success) {
+        await refreshUnreadCount()
+      }
+    }
+    markAsRead()
+  }, [conversationId, currentWallet, loadMessages, refreshUnreadCount])
 
   // Real-time subscription for new messages (only when conversation is active)
   useEffect(() => {
@@ -273,7 +271,9 @@ export function MessageThread({
           
           // Mark as read if not from current user
           if (newMessage.sender_wallet !== currentWallet) {
-            markConversationAsRead(conversationId, currentWallet)
+            markConversationAsRead(conversationId, currentWallet).then(success => {
+              if (success) refreshUnreadCount()
+            })
           }
           
           // Auto-scroll to bottom

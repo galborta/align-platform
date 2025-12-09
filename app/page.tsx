@@ -6,6 +6,7 @@ import { Hero } from '@/components/Hero'
 import { BackgroundShapes } from '@/components/BackgroundShapes'
 import ProjectCard from '@/components/ProjectCard'
 import LeaderboardWidget from '@/components/LeaderboardWidget'
+import Footer from '@/components/Footer'
 import { supabase } from '@/lib/supabase'
 import ErrorOutlineIcon from '@mui/icons-material/ErrorOutline'
 import AccountBalanceWalletIcon from '@mui/icons-material/AccountBalanceWallet'
@@ -219,36 +220,8 @@ export default function Home() {
         </div>
       </main>
 
-      {/* Footer */}
-      <footer className="border-t border-border-subtle mt-24">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-          <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
-            <p className="font-body text-text-secondary">
-              Built on Solana
-            </p>
-            <div className="flex gap-6">
-              <button 
-                disabled 
-                className="font-body text-text-muted cursor-not-allowed"
-              >
-                Docs
-              </button>
-              <button 
-                disabled 
-                className="font-body text-text-muted cursor-not-allowed"
-              >
-                Twitter
-              </button>
-              <button 
-                disabled 
-                className="font-body text-text-muted cursor-not-allowed"
-              >
-                Discord
-              </button>
-            </div>
-          </div>
-        </div>
-      </footer>
+      {/* Footer with Legal Links */}
+      <Footer />
 
       <style jsx global>{`
         /* Ensure badge styling matches project page - only for visible badges */

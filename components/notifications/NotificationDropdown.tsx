@@ -7,6 +7,7 @@ import { useRouter } from 'next/navigation'
 import { useNotifications } from '@/lib/hooks/useNotifications'
 import { notificationService } from '@/lib/services/notificationService'
 import { handleNotificationNavigation } from '@/lib/notifications/navigationHandler'
+import { useMessaging } from '@/lib/MessagingContext'
 import type { EnrichedNotification } from '@/lib/services/notificationService'
 
 interface NotificationDropdownProps {
@@ -30,6 +31,7 @@ interface NotificationDropdownProps {
  */
 export function NotificationDropdown({ anchorEl, open, onClose }: NotificationDropdownProps) {
   const router = useRouter()
+  const { openMessages } = useMessaging()
   const { 
     notifications, 
     loading, 
@@ -86,7 +88,25 @@ export function NotificationDropdown({ anchorEl, open, onClose }: NotificationDr
   }, [open, markAsRead]) // Only depend on 'open' changing - captures recentNotifications when dropdown opens
 
   const handleNotificationClick = (notification: EnrichedNotification) => {
-    // Navigate to the appropriate page
+    // Special handling for message/tip notifications - open messaging sidebar
+    if (notification.type === 'message_received' || notification.type === 'tip_received') {
+      const senderWallet = notification.actor_wallet || (notification.metadata as any)?.sender_wallet
+      if (senderWallet) {
+        console.log('[NotificationDropdown] Opening messages for wallet:', senderWallet)
+        openMessages(senderWallet)
+        
+        // Mark as read
+        if (!notification.is_read) {
+          markAsRead(notification.id)
+        }
+        
+        // Close dropdown
+        onClose()
+        return
+      }
+    }
+    
+    // Navigate to the appropriate page for other notification types
     handleNotificationNavigation(notification, router)
     
     // Mark as read

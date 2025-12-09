@@ -1,14 +1,25 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { supabase } from '@/lib/supabase'
+import { createClient } from '@supabase/supabase-js'
 import { releasePaymentWithRetry } from '@/lib/solana/escrow-release'
 import { Connection } from '@solana/web3.js'
-import { ADMIN_WALLET } from '@/lib/admin-auth'
+import { Database } from '@/types/database'
+import { rateLimit } from '@/lib/rate-limit'
+
+// Create Supabase client with service role for server-side operations
+const supabaseAdmin = createClient<Database>(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+)
 
 /**
  * POST /api/admin/jobs/[jobId]/manual-release
  * 
  * Manually release payment for a job (admin only)
  * Bypasses auto-release schedule and immediately processes payment
+ * 
+ * Security:
+ * - CRITICAL: Requires Supabase JWT authentication
+ * - ADMIN ONLY - user must be in admin_wallets table
  */
 export async function POST(
   request: NextRequest,
@@ -17,15 +28,85 @@ export async function POST(
   try {
     const { jobId } = await params
 
-    // Verify admin authorization
+    // Parse release details
+    const body = await request.json()
+    const { release_reason } = body
+
+    // ==================== ADMIN AUTHENTICATION ====================
+
     const authHeader = request.headers.get('authorization')
-    
-    // For now, accept any request from admin page
-    // In production, you might want to add a specific admin token check
+    if (!authHeader?.startsWith('Bearer ')) {
+      console.error('[Admin Manual Release] No auth header')
+      return NextResponse.json(
+        { error: 'Unauthorized - Authentication required' },
+        { status: 401 }
+      )
+    }
+
+    const token = authHeader.substring(7)
+
+    // Verify token
+    const { data: { user }, error: authError } = await supabaseAdmin.auth.getUser(token)
+
+    if (authError || !user) {
+      console.error('[Admin Manual Release] Auth failed:', authError)
+      return NextResponse.json(
+        { error: 'Invalid authentication token' },
+        { status: 401 }
+      )
+    }
+
+    console.log(`[Admin Manual Release] Authenticated user: ${user.id}`)
+
+    // Get user's wallet from profile
+    const { data: profile, error: profileError } = await supabaseAdmin
+      .from('profiles')
+      .select('wallet_address')
+      .eq('id', user.id)
+      .single()
+
+    if (profileError || !profile?.wallet_address) {
+      console.error('[Admin Manual Release] No wallet for user:', profileError)
+      return NextResponse.json(
+        { error: 'No wallet address linked to account' },
+        { status: 403 }
+      )
+    }
+
+    // Verify admin status by checking wallet in admin_wallets table
+    const { data: adminCheck, error: adminError } = await supabaseAdmin
+      .from('admin_wallets')
+      .select('wallet_address')
+      .eq('wallet_address', profile.wallet_address)
+      .single()
+
+    if (adminError || !adminCheck) {
+      console.error('[Admin Manual Release] Not an admin:', adminError)
+      return NextResponse.json(
+        { error: 'Admin access required' },
+        { status: 403 }
+      )
+    }
+
+    const adminWallet = profile.wallet_address
+    console.log(`[Admin Manual Release] Admin verified: ${adminWallet}`)
+
+    // ==================== RATE LIMITING ====================
+
+    const rateLimitResult = rateLimit(user.id, 'admin')
+    if (!rateLimitResult.success) {
+      return NextResponse.json(
+        { error: rateLimitResult.error },
+        { status: rateLimitResult.status }
+      )
+    }
+
+    // ==================== FETCH JOB ====================
+
     console.log('[Admin Manual Release] Request for job:', jobId)
 
     // Fetch job details
-    const { data: job, error: jobError } = await supabase
+    const { data: job, error: jobError } = await supabaseAdmin
       .from('jobs')
       .select('*')
       .eq('id', jobId)
@@ -68,7 +149,7 @@ export async function POST(
     console.log('[Admin Manual Release] Amount:', job.escrow_amount_tokens, (job as any).token_symbol || 'tokens')
 
     // Get current retry count from job_escrow_transactions
-    const { data: attempts } = await supabase
+    const { data: attempts } = await supabaseAdmin
       .from('job_escrow_transactions')
       .select('retry_count')
       .eq('job_id', jobId)
@@ -104,7 +185,7 @@ export async function POST(
       console.error('[Admin Manual Release] Failed:', result.error)
       
       // Update job with error
-      await supabase
+      await supabaseAdmin
         .from('jobs')
         .update({
           last_release_error: result.error,
@@ -128,7 +209,7 @@ export async function POST(
     console.log('[Admin Manual Release] Fee tx:', result.feeTxSignature)
 
     // Update job status to completed
-    const { error: updateError } = await supabase
+    const { error: updateError } = await supabaseAdmin
       .from('jobs')
       .update({
         status: 'completed',
@@ -149,7 +230,7 @@ export async function POST(
     const tokenSymbol = (job as any).token_symbol || 'tokens'
     
     // Send notification to worker
-    await supabase.from('notifications').insert({
+    await supabaseAdmin.from('notifications').insert({
       user_wallet: job.assigned_to || '',
       type: 'job_payment_released',
       title: 'Payment Released (Admin)',
@@ -159,7 +240,7 @@ export async function POST(
     })
 
     // Send notification to poster
-    await supabase.from('notifications').insert({
+    await supabaseAdmin.from('notifications').insert({
       user_wallet: job.poster_wallet,
       type: 'job_completed',
       title: 'Job Completed',
@@ -167,6 +248,29 @@ export async function POST(
       job_id: job.id,
       created_at: new Date().toISOString()
     })
+
+    // Log admin action for audit trail
+    try {
+      await supabaseAdmin
+        .from('admin_logs')
+        .insert({
+          admin_wallet: adminWallet,
+          action: 'manual_release',
+          entity_type: 'job',
+          entity_id: jobId,
+          details: {
+            reason: release_reason || 'Manual release via admin dashboard',
+            worker_received: result.workerReceived,
+            fee_collected: result.feeCollected,
+            worker_tx: result.workerTxSignature,
+            fee_tx: result.feeTxSignature
+          },
+          created_at: new Date().toISOString()
+        })
+    } catch (auditError) {
+      console.error('[Admin Manual Release] Failed to log admin action:', auditError)
+      // Non-critical, continue
+    }
 
     return NextResponse.json({
       success: true,

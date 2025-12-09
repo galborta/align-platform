@@ -3,6 +3,7 @@ import { Space_Grotesk } from 'next/font/google'
 import './globals.css'
 import ThemeProvider from '@/components/ThemeProvider'
 import { WalletConfigProvider } from '@/lib/wallet-config'
+import { VerificationProvider } from '@/contexts/VerificationContext'
 import { LayoutClient } from '@/components/LayoutClient'
 import { Toaster } from 'react-hot-toast'
 import { QueryProvider } from '@/components/providers/QueryProvider'
@@ -12,7 +13,7 @@ const spaceGrotesk = Space_Grotesk({ subsets: ['latin'], variable: '--font-displ
 // Satoshi is loaded via @font-face in globals.css for body text
 
 export const metadata: Metadata = {
-  title: 'Align - Modular infrastructure for token projects on Solana',
+  title: 'Orggly - Modular infrastructure for token projects on Solana',
   description: 'Modular infrastructure for token projects on Solana',
 }
 
@@ -32,32 +33,66 @@ export default function RootLayout({
         <QueryProvider>
           <ThemeProvider>
             <WalletConfigProvider>
-              <LayoutClient>
-                {children}
-              </LayoutClient>
+              <VerificationProvider>
+                <LayoutClient>
+                  {children}
+                </LayoutClient>
+              </VerificationProvider>
             </WalletConfigProvider>
           </ThemeProvider>
         </QueryProvider>
-        <Toaster 
-          position="top-right"
+        {/* Toast Notifications - Clean, unified design */}
+        <Toaster
+          position="top-center"
+          reverseOrder={false}
+          gutter={8}
+          containerStyle={{
+            top: 24,
+            zIndex: 9999,
+          }}
           toastOptions={{
-            duration: 4000,
+            duration: 3500,
             style: {
-              background: '#363636',
-              color: '#fff',
+              maxWidth: '360px',
+              minWidth: '200px',
+              background: '#1A1A1E',
+              color: '#FFFFFF',
+              fontFamily: 'Satoshi, -apple-system, BlinkMacSystemFont, sans-serif',
+              fontSize: '14px',
+              fontWeight: '500',
+              padding: '12px 16px',
+              borderRadius: '12px',
+              boxShadow: '0 8px 30px rgba(0, 0, 0, 0.3)',
+              gap: '10px',
             },
             success: {
-              duration: 3000,
+              style: {
+                background: '#1A1A1E',
+                color: '#FFFFFF',
+              },
               iconTheme: {
-                primary: '#7C4DFF',
-                secondary: '#fff',
+                primary: '#36C170',
+                secondary: '#1A1A1E',
               },
             },
             error: {
-              duration: 4000,
+              style: {
+                background: '#1A1A1E',
+                color: '#FFFFFF',
+              },
               iconTheme: {
                 primary: '#EF4444',
-                secondary: '#fff',
+                secondary: '#1A1A1E',
+              },
+            },
+            loading: {
+              style: {
+                background: '#1A1A1E',
+                color: '#FFFFFF',
+              },
+              iconTheme: {
+                primary: '#7C4DFF',
+                secondary: '#1A1A1E',
               },
             },
           }}

@@ -10,7 +10,6 @@ const supabaseAdmin = createClient<Database>(
 )
 
 interface RevisionRequestBody {
-  poster_wallet: string
   notes: string
   images?: string[]
   is_voluntary?: boolean
@@ -36,17 +35,12 @@ export async function POST(
 ) {
   try {
     const { jobId } = await params
+
+    // Parse revision request details
     const body: RevisionRequestBody = await request.json()
-    const { poster_wallet, notes, images = [], is_voluntary = false } = body
+    const { notes, images = [], is_voluntary = false } = body
 
     // Validate required fields
-    if (!poster_wallet) {
-      return NextResponse.json(
-        { error: 'Poster wallet is required' },
-        { status: 400 }
-      )
-    }
-
     if (!notes || notes.trim().length < 10) {
       return NextResponse.json(
         { error: 'Please provide detailed revision notes (at least 10 characters)' },
@@ -54,8 +48,52 @@ export async function POST(
       )
     }
 
+    // ==================== AUTHENTICATION ====================
+
+    const authHeader = request.headers.get('authorization')
+    if (!authHeader?.startsWith('Bearer ')) {
+      console.error('[Request Revision] Missing authorization header')
+      return NextResponse.json(
+        { error: 'Unauthorized - Authentication required' },
+        { status: 401 }
+      )
+    }
+
+    const token = authHeader.substring(7)
+
+    // Verify JWT token
+    const { data: { user }, error: authError } = await supabaseAdmin.auth.getUser(token)
+
+    if (authError || !user) {
+      console.error('[Request Revision] Invalid auth token:', authError)
+      return NextResponse.json(
+        { error: 'Invalid authentication token' },
+        { status: 401 }
+      )
+    }
+
+    console.log(`[Request Revision] Authenticated user: ${user.id}`)
+
+    // Get user's wallet from profile
+    const { data: profile, error: profileError } = await supabaseAdmin
+      .from('profiles')
+      .select('wallet_address')
+      .eq('id', user.id)
+      .single()
+
+    if (profileError || !profile?.wallet_address) {
+      console.error('[Request Revision] No wallet found for user:', profileError)
+      return NextResponse.json(
+        { error: 'No wallet address linked to account' },
+        { status: 403 }
+      )
+    }
+
+    console.log(`[Request Revision] User wallet: ${profile.wallet_address}`)
+
+    // ==================== FETCH AND VALIDATE JOB ====================
+
     console.log(`[Request Revision API] Processing for job ${jobId}`)
-    console.log(`[Request Revision API] Poster: ${poster_wallet.slice(0, 8)}...`)
     console.log(`[Request Revision API] Voluntary: ${is_voluntary}`)
 
     // Fetch job details
@@ -73,14 +111,18 @@ export async function POST(
       )
     }
 
-    // Verify poster
-    if (job.poster_wallet !== poster_wallet) {
-      console.warn(`[Request Revision API] Unauthorized: ${poster_wallet} is not the poster`)
+    // ==================== AUTHORIZATION ====================
+
+    // Verify user is the job poster
+    if (profile.wallet_address !== job.poster_wallet) {
+      console.error('[Request Revision] Unauthorized - not job poster')
       return NextResponse.json(
-        { error: 'Only the job poster can request revisions' },
+        { error: 'Only job poster can request revisions' },
         { status: 403 }
       )
     }
+
+    console.log('[Request Revision] ✅ Poster authorization verified')
 
     // Check job status
     if (job.status !== 'submitted') {
@@ -169,7 +211,7 @@ export async function POST(
       .from('job_comments')
       .insert({
         job_id: jobId,
-        wallet_address: poster_wallet,
+        wallet_address: profile.wallet_address,
         message: commentMessage
       })
 
@@ -206,7 +248,7 @@ export async function POST(
       await notificationService.createNotification({
         userWallet: workerWallet,
         type: notificationType,
-        actorWallet: poster_wallet,
+        actorWallet: profile.wallet_address,
         referenceId: jobId,
         referenceType: 'job',
         metadata: {

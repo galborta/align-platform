@@ -159,16 +159,13 @@ export function handleNotificationNavigation(
     
     case 'message_received':
     case 'tip_received':
-      // These use conversation_id from metadata instead of reference_id
-      if (metadata?.conversation_id) {
-        if (callbacks?.openMessagesPanel) {
-          console.log(`[Navigation] Opening messages panel: ${metadata.conversation_id}`)
-          callbacks.openMessagesPanel(metadata.conversation_id)
-        } else {
-          navigate(`/messages?conversation=${metadata.conversation_id}`)
-        }
+      // These use conversation_id from metadata or actor_wallet
+      if (callbacks?.openMessagesPanel && metadata?.conversation_id) {
+        console.log(`[Navigation] Opening messages panel: ${metadata.conversation_id}`)
+        callbacks.openMessagesPanel(metadata.conversation_id)
       } else {
-        console.warn('[Navigation] Missing conversation_id in metadata for message/tip notification')
+        // No route for messages - handled by NotificationItem using messaging context
+        console.log('[Navigation] Message notification handled by NotificationItem')
       }
       break
 
@@ -269,7 +266,8 @@ export function getNotificationPath(notification: EnrichedNotification): string 
 
     case 'message_received':
     case 'tip_received':
-      return metadata?.conversation_id ? `/messages?conversation=${metadata.conversation_id}` : null
+      // These open the messaging sidebar via NotificationItem, no URL navigation
+      return null
 
     case 'karma_milestone':
     case 'karma_warning':

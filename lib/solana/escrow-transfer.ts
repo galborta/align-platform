@@ -2,7 +2,8 @@ import {
   Connection, 
   PublicKey, 
   Transaction,
-  SystemProgram,
+  TransactionMessage,
+  VersionedTransaction,
   LAMPORTS_PER_SOL,
   TransactionInstruction
 } from '@solana/web3.js'
@@ -13,9 +14,6 @@ import {
   TOKEN_PROGRAM_ID
 } from '@solana/spl-token'
 import { getEscrowWallet } from '../platform-settings'
-
-// Memo Program ID (SPL Memo Program)
-const MEMO_PROGRAM_ID = new PublicKey('MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr')
 
 /**
  * Parameters for transferring tokens to escrow
@@ -89,10 +87,10 @@ export interface EscrowTransferResult {
  */
 export async function transferToEscrow(
   params: EscrowTransferParams,
-  sendTransaction: (tx: Transaction, connection: Connection) => Promise<string>
+  sendTransaction: (tx: Transaction | VersionedTransaction, connection: Connection) => Promise<string>
 ): Promise<EscrowTransferResult> {
   try {
-    const { connection, senderWallet, tokenMint, amount, decimals, tokenSymbol, jobTitle, workerPayment } = params
+    const { connection, senderWallet, tokenMint, amount, decimals, tokenSymbol, jobTitle } = params
     
     // Get escrow wallet from platform settings
     const escrowWalletAddress = await getEscrowWallet()
@@ -126,23 +124,6 @@ export async function transferToEscrow(
     // Check if escrow ATA exists
     const escrowAccountInfo = await connection.getAccountInfo(escrowTokenAccount)
     
-    // Build transaction
-    const transaction = new Transaction()
-    
-    // Add ATA creation if needed (sender pays rent ~0.002 SOL)
-    if (!escrowAccountInfo) {
-      console.log('Creating ATA for escrow wallet (one-time cost ~0.002 SOL)')
-      transaction.add(
-        createAssociatedTokenAccountInstruction(
-          senderWallet,        // payer (sender pays the rent)
-          escrowTokenAccount,  // ata address
-          escrowWallet,        // ata owner (escrow wallet)
-          tokenMint,           // token mint
-          TOKEN_PROGRAM_ID
-        )
-      )
-    }
-    
     // Calculate transfer amount with decimals
     const transferAmount = Math.floor(amount * Math.pow(10, decimals))
     
@@ -154,22 +135,25 @@ export async function transferToEscrow(
       }
     }
     
-    // Create descriptive memo for wallet display
-    const symbol = tokenSymbol || 'tokens'
-    const workerAmount = workerPayment || amount
-    const titleText = jobTitle ? ` for "${jobTitle.slice(0, 40)}${jobTitle.length > 40 ? '...' : ''}"` : ''
-    const memoText = `🔒 Lock ${amount.toFixed(2)} ${symbol} in escrow${titleText} (${workerAmount.toFixed(2)} ${symbol} to worker + fees)`
+    // Build instructions array
+    const instructions: TransactionInstruction[] = []
     
-    // Add memo instruction BEFORE transfer for better visibility in wallet
-    const memoInstruction = new TransactionInstruction({
-      keys: [],
-      programId: MEMO_PROGRAM_ID,
-      data: Buffer.from(memoText, 'utf-8')
-    })
-    transaction.add(memoInstruction)
+    // Add ATA creation if needed (sender pays rent ~0.002 SOL)
+    if (!escrowAccountInfo) {
+      console.log('Creating ATA for escrow wallet (one-time cost ~0.002 SOL)')
+      instructions.push(
+        createAssociatedTokenAccountInstruction(
+          senderWallet,        // payer (sender pays the rent)
+          escrowTokenAccount,  // ata address
+          escrowWallet,        // ata owner (escrow wallet)
+          tokenMint,           // token mint
+          TOKEN_PROGRAM_ID
+        )
+      )
+    }
     
-    // Add transfer instruction
-    transaction.add(
+    // Add transfer instruction - this is what Phantom should detect for balance changes
+    instructions.push(
       createTransferInstruction(
         senderTokenAccount,  // from
         escrowTokenAccount,  // to
@@ -182,12 +166,21 @@ export async function transferToEscrow(
     
     // Get recent blockhash
     const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash('confirmed')
-    transaction.recentBlockhash = blockhash
-    transaction.feePayer = senderWallet
     
-    // Send transaction using wallet adapter's sendTransaction
-    // This allows Phantom to simulate and show balance changes before signing
-    const signature = await sendTransaction(transaction, connection)
+    // Create a V0 versioned transaction for better wallet simulation support
+    const messageV0 = new TransactionMessage({
+      payerKey: senderWallet,
+      recentBlockhash: blockhash,
+      instructions,
+    }).compileToV0Message()
+    
+    const versionedTransaction = new VersionedTransaction(messageV0)
+    
+    console.log(`Escrow transfer: ${amount.toFixed(4)} ${tokenSymbol || 'tokens'} (${transferAmount} raw) to ${escrowWalletAddress.slice(0, 8)}...`)
+    
+    // Send versioned transaction using wallet adapter's sendTransaction
+    // Versioned transactions have better simulation support in Phantom
+    const signature = await sendTransaction(versionedTransaction, connection)
     
     console.log('Escrow transfer sent:', signature)
     

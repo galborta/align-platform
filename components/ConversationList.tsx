@@ -38,12 +38,14 @@ interface ConversationListProps {
   currentWallet: string
   onSelectConversation: (conversationId: string) => void
   filter?: 'all' | 'unread'
+  refreshTrigger?: number // Change this to force a refresh
 }
 
 export function ConversationList({ 
   currentWallet, 
   onSelectConversation,
-  filter = 'all'
+  filter = 'all',
+  refreshTrigger
 }: ConversationListProps) {
   const [conversations, setConversations] = useState<ConversationWithDetails[]>([])
   const [loading, setLoading] = useState(true)
@@ -204,10 +206,10 @@ export function ConversationList({
     }
   }, [currentWallet, conversations.length])
 
-  // Initial load
+  // Initial load and refresh on trigger change
   useEffect(() => {
     loadConversations()
-  }, [loadConversations])
+  }, [loadConversations, refreshTrigger])
 
   // Real-time subscription for new messages
   useEffect(() => {

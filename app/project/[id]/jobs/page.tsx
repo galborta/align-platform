@@ -19,6 +19,8 @@ import { supabase } from '@/lib/supabase'
 import { getProjectJobs, getJobsByApplicant } from '@/lib/jobs'
 import { Database } from '@/types/database'
 import { useWallet } from '@solana/wallet-adapter-react'
+import { useVerification } from '@/contexts/VerificationContext'
+import { VerifyToUnlockButton } from '@/components/VerifyToUnlockButton'
 import { formatDistanceToNow } from 'date-fns'
 import Tabs from '@mui/material/Tabs'
 import Tab from '@mui/material/Tab'
@@ -67,7 +69,8 @@ const statusColors: Record<string, string> = {
 export default function ProjectJobsPage() {
   const params = useParams()
   const router = useRouter()
-  const { publicKey } = useWallet()
+  const { publicKey, connected } = useWallet()
+  const { isVerified } = useVerification()
   const [project, setProject] = useState<Project | null>(null)
   const [jobs, setJobs] = useState<JobWithApplicationCount[]>([])
   const [loading, setLoading] = useState(true)
@@ -394,14 +397,19 @@ export default function ProjectJobsPage() {
             </div>
           </div>
           
-          <Button
-            variant="primary"
-            size="lg"
-            onClick={() => setShowJobTypeSelector(true)}
-            className="shadow-lg"
-          >
-            Post Work
-          </Button>
+          {/* Post Work Button - Requires verification */}
+          {connected && isVerified ? (
+            <Button
+              variant="primary"
+              size="lg"
+              onClick={() => setShowJobTypeSelector(true)}
+              className="shadow-lg"
+            >
+              Post Work
+            </Button>
+          ) : (
+            <VerifyToUnlockButton label="Post Work" size="large" />
+          )}
         </div>
 
         {/* Draft Recovery Banner - Shows when escrow succeeded but job creation failed */}
@@ -589,13 +597,17 @@ export default function ProjectJobsPage() {
                   {activeTab === 2 && 'Post work to commission from the community'}
                 </p>
                 {(activeTab === 0 || activeTab === 2) && (
-                  <Button
-                    variant="primary"
-                    size="lg"
-                    onClick={() => setShowJobTypeSelector(true)}
-                  >
-                    Post Work
-                  </Button>
+                  connected && isVerified ? (
+                    <Button
+                      variant="primary"
+                      size="lg"
+                      onClick={() => setShowJobTypeSelector(true)}
+                    >
+                      Post Work
+                    </Button>
+                  ) : (
+                    <VerifyToUnlockButton label="Post Work" size="large" />
+                  )
                 )}
                 {activeTab === 1 && (
                   <Button

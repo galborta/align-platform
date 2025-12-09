@@ -1,11 +1,22 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { supabase } from '@/lib/supabase'
+import { createClient } from '@supabase/supabase-js'
+import { Database } from '@/types/database'
+
+// Create Supabase client with service role for server-side operations
+const supabaseAdmin = createClient<Database>(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+)
 
 /**
  * POST /api/jobs/[jobId]/adjust-followers
  * 
  * Allows posters to adjust the verified follower count for a submission.
  * This affects payment calculations as payments are proportional to follower counts.
+ * 
+ * Security:
+ * - CRITICAL: Requires Supabase JWT authentication
+ * - Only the authenticated job poster can adjust follower counts
  * 
  * Request body:
  * - submission_id: string (required)
@@ -44,9 +55,52 @@ export async function POST(
       )
     }
 
+    // === AUTHENTICATION ===
+
+    const authHeader = request.headers.get('authorization')
+    if (!authHeader?.startsWith('Bearer ')) {
+      console.error('[Adjust Followers] Missing authorization header')
+      return NextResponse.json(
+        { error: 'Unauthorized - Authentication required' },
+        { status: 401 }
+      )
+    }
+
+    const token = authHeader.substring(7)
+
+    // Verify JWT token
+    const { data: { user }, error: authError } = await supabaseAdmin.auth.getUser(token)
+
+    if (authError || !user) {
+      console.error('[Adjust Followers] Invalid auth token:', authError)
+      return NextResponse.json(
+        { error: 'Invalid authentication token' },
+        { status: 401 }
+      )
+    }
+
+    console.log(`[Adjust Followers] Authenticated user: ${user.id}`)
+
+    // Get user's wallet from profile
+    const { data: profile, error: profileError } = await supabaseAdmin
+      .from('profiles')
+      .select('wallet_address')
+      .eq('id', user.id)
+      .single()
+
+    if (profileError || !profile?.wallet_address) {
+      console.error('[Adjust Followers] No wallet found for user:', profileError)
+      return NextResponse.json(
+        { error: 'No wallet address linked to account' },
+        { status: 403 }
+      )
+    }
+
+    console.log(`[Adjust Followers] User wallet: ${profile.wallet_address}`)
+
     // === GET JOB DETAILS ===
 
-    const { data: job, error: jobError } = await supabase
+    const { data: job, error: jobError } = await supabaseAdmin
       .from('jobs')
       .select('*')
       .eq('id', jobId)
@@ -54,12 +108,25 @@ export async function POST(
       .single()
 
     if (jobError || !job) {
-      console.error('Job fetch error:', jobError)
+      console.error('[Adjust Followers] Job fetch error:', jobError)
       return NextResponse.json(
         { error: 'Social media job not found' },
         { status: 404 }
       )
     }
+
+    // === AUTHORIZATION ===
+
+    // Verify user is the job poster
+    if (profile.wallet_address !== job.poster_wallet) {
+      console.error('[Adjust Followers] Unauthorized - not job poster')
+      return NextResponse.json(
+        { error: 'Only job poster can adjust follower counts' },
+        { status: 403 }
+      )
+    }
+
+    console.log('[Adjust Followers] ✅ Poster authorization verified')
 
     // Check if payments already distributed
     if (job.social_payments_distributed) {
@@ -71,7 +138,7 @@ export async function POST(
 
     // === GET SUBMISSION ===
 
-    const { data: submission, error: submissionError } = await supabase
+    const { data: submission, error: submissionError } = await supabaseAdmin
       .from('job_submissions')
       .select('*')
       .eq('id', submission_id)
@@ -79,7 +146,7 @@ export async function POST(
       .single()
 
     if (submissionError || !submission) {
-      console.error('Submission fetch error:', submissionError)
+      console.error('[Adjust Followers] Submission fetch error:', submissionError)
       return NextResponse.json(
         { error: 'Submission not found' },
         { status: 404 }
@@ -88,7 +155,7 @@ export async function POST(
 
     // === UPDATE VERIFIED FOLLOWER COUNT ===
 
-    const { error: updateError } = await supabase
+    const { error: updateError } = await supabaseAdmin
       .from('job_submissions')
       .update({
         social_follower_count_verified: verified_follower_count

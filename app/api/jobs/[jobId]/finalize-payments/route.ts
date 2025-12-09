@@ -15,6 +15,7 @@ import {
 import { getFeeWallet, getFeePercentage } from '@/lib/platform-settings'
 import { notificationService } from '@/lib/services/notificationService'
 import { Database } from '@/types/database'
+import { rateLimit } from '@/lib/rate-limit'
 
 // Create Supabase client with service role for server-side operations
 const supabaseAdmin = createClient<Database>(
@@ -31,6 +32,10 @@ const connection = new Connection(SOLANA_RPC, 'confirmed')
  * 
  * Finalizes and distributes payments for a social media engagement job.
  * 
+ * Security:
+ * - CRITICAL: Requires Supabase JWT authentication
+ * - Only the authenticated job poster can finalize payments
+ * 
  * This endpoint orchestrates the complete payment distribution:
  * 1. Validates job status and poster authorization
  * 2. Fetches all approved submissions
@@ -44,15 +49,7 @@ const connection = new Connection(SOLANA_RPC, 'confirmed')
  * 10. Awards karma to all parties
  * 11. Sends notifications to workers
  * 
- * Request body:
- * - poster_wallet: string (required) - Wallet address of the job poster
- * 
- * Security:
- * - Only the job poster can finalize payments
- * - Payments can only be finalized once
- * - Escrow balance is validated before transaction
- * 
- * @param request - Request containing poster_wallet
+ * @param request - Request with Authorization header
  * @param params - URL params containing job id
  * @returns Success response with payment details or error
  */
@@ -67,20 +64,59 @@ export async function POST(
     const { jobId } = await params
     console.log(`[Finalize Payments] Starting for job ${jobId}`)
 
-    // Parse request body
-    const body = await request.json()
-    const { poster_wallet } = body
+    // ==================== AUTHENTICATION ====================
 
-    // ==================== VALIDATION ====================
-
-    if (!poster_wallet) {
+    const authHeader = request.headers.get('authorization')
+    if (!authHeader?.startsWith('Bearer ')) {
+      console.error('[Finalize Payments] Missing authorization header')
       return NextResponse.json(
-        { error: 'Poster wallet address required' },
-        { status: 400 }
+        { error: 'Unauthorized - Authentication required' },
+        { status: 401 }
       )
     }
 
-    console.log(`[Finalize Payments] Poster wallet: ${poster_wallet}`)
+    const token = authHeader.substring(7)
+
+    // Verify JWT token
+    const { data: { user }, error: authError } = await supabaseAdmin.auth.getUser(token)
+
+    if (authError || !user) {
+      console.error('[Finalize Payments] Invalid auth token:', authError)
+      return NextResponse.json(
+        { error: 'Invalid authentication token' },
+        { status: 401 }
+      )
+    }
+
+    console.log(`[Finalize Payments] Authenticated user: ${user.id}`)
+
+    // Get user's wallet from profile
+    const { data: profile, error: profileError } = await supabaseAdmin
+      .from('profiles')
+      .select('wallet_address')
+      .eq('id', user.id)
+      .single()
+
+    if (profileError || !profile?.wallet_address) {
+      console.error('[Finalize Payments] No wallet found for user:', profileError)
+      return NextResponse.json(
+        { error: 'No wallet address linked to account' },
+        { status: 403 }
+      )
+    }
+
+    console.log(`[Finalize Payments] User wallet: ${profile.wallet_address}`)
+
+    // ==================== RATE LIMITING ====================
+
+    const rateLimitResult = rateLimit(user.id, 'payment')
+    if (!rateLimitResult.success) {
+      console.error('[Finalize Payments] Rate limit exceeded for user:', user.id)
+      return NextResponse.json(
+        { error: rateLimitResult.error },
+        { status: rateLimitResult.status }
+      )
+    }
 
     // ==================== GET JOB DETAILS ====================
 
@@ -102,14 +138,18 @@ export async function POST(
     console.log(`[Finalize Payments] Job found: ${job.title}`)
     console.log(`[Finalize Payments] Job status: ${job.status}`)
 
-    // Verify poster authorization
-    if (job.poster_wallet !== poster_wallet) {
-      console.error(`[Finalize Payments] Unauthorized: ${poster_wallet} is not poster ${job.poster_wallet}`)
+    // ==================== AUTHORIZATION ====================
+
+    // Verify user is the job poster
+    if (profile.wallet_address !== job.poster_wallet) {
+      console.error('[Finalize Payments] Unauthorized - not job poster')
       return NextResponse.json(
         { error: 'Only the job poster can finalize payments' },
         { status: 403 }
       )
     }
+
+    console.log('[Finalize Payments] ✅ Poster authorization verified')
 
     // Check if already finalized
     if (job.social_payments_distributed) {

@@ -33,6 +33,8 @@ import { awardApplicationUpvoterBonuses } from '@/lib/job-karma'
 import { notificationService } from '@/lib/services/notificationService'
 import { Database } from '@/types/database'
 import { useWallet } from '@solana/wallet-adapter-react'
+import { useVerification } from '@/contexts/VerificationContext'
+import { VerifyToUnlockButton } from '@/components/VerifyToUnlockButton'
 import { formatDistanceToNow, addDays, format } from 'date-fns'
 import { toast } from 'react-hot-toast'
 import { useMessaging } from '@/lib/MessagingContext'
@@ -144,7 +146,8 @@ function formatDeadline(deadline: string): string {
 export default function JobDetailPage() {
   const params = useParams()
   const router = useRouter()
-  const { publicKey } = useWallet()
+  const { publicKey, connected } = useWallet()
+  const { isVerified } = useVerification()
   const { openMessages } = useMessaging()
   const [job, setJob] = useState<Job | null>(null)
   const [project, setProject] = useState<Project | null>(null)
@@ -2883,20 +2886,31 @@ export default function JobDetailPage() {
                         </p>
                       </div>
                     )}
-                    <Button
-                      variant="primary"
-                      size="lg"
-                      onClick={handleApply}
-                      className="w-full shadow-lg"
-                    >
-                      {job.status === 'assigned' ? 'Apply as Backup' : 'Apply for This Job'}
-                    </Button>
-                    <p 
-                      className="text-sm text-center"
-                      style={{ color: '#36C170' }}
-                    >
-                      ✨ You'll earn +50 karma for applying
-                    </p>
+                    {/* Apply Button - Requires verification */}
+                    {connected && isVerified ? (
+                      <Button
+                        variant="primary"
+                        size="lg"
+                        onClick={handleApply}
+                        className="w-full shadow-lg"
+                      >
+                        {job.status === 'assigned' ? 'Apply as Backup' : 'Apply for This Job'}
+                      </Button>
+                    ) : (
+                      <VerifyToUnlockButton 
+                        label="Apply" 
+                        size="large" 
+                        fullWidth 
+                      />
+                    )}
+                    {connected && isVerified && (
+                      <p 
+                        className="text-sm text-center"
+                        style={{ color: '#36C170' }}
+                      >
+                        ✨ You'll earn +50 karma for applying
+                      </p>
+                    )}
                   </div>
                 )}
 

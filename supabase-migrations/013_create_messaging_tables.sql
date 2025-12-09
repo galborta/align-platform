@@ -63,6 +63,7 @@ CREATE TABLE IF NOT EXISTS blocked_users (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   blocker_wallet TEXT NOT NULL,
   blocked_wallet TEXT NOT NULL,
+  reason TEXT,
   created_at TIMESTAMP DEFAULT NOW(),
   
   CONSTRAINT blocked_users_unique UNIQUE (blocker_wallet, blocked_wallet),
@@ -298,6 +299,8 @@ ALTER PUBLICATION supabase_realtime ADD TABLE messages;
 ALTER PUBLICATION supabase_realtime ADD TABLE typing_indicators;
 ALTER PUBLICATION supabase_realtime ADD TABLE user_profiles;
 ALTER PUBLICATION supabase_realtime ADD TABLE conversations;
+
+
 
 
 

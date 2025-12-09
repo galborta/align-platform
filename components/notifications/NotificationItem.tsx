@@ -14,6 +14,7 @@ import { notificationService } from '@/lib/services/notificationService'
 import { handleNotificationNavigation } from '@/lib/notifications/navigationHandler'
 import { acceptVoluntaryRevision, declineVoluntaryRevision } from '@/lib/revisions'
 import { toast } from 'react-hot-toast'
+import { useMessaging } from '@/lib/MessagingContext'
 import type { EnrichedNotification } from '@/lib/services/notificationService'
 import type { NotificationType } from '@/types/database'
 
@@ -119,6 +120,16 @@ export function NotificationItem({
   const router = useRouter()
   const [actionLoading, setActionLoading] = useState<'accept' | 'decline' | null>(null)
   
+  // Get messaging context for opening message sidebar
+  let messaging: ReturnType<typeof useMessaging> | null = null
+  try {
+    messaging = useMessaging()
+    console.log('[NotificationItem] useMessaging hook succeeded')
+  } catch (err) {
+    console.log('[NotificationItem] useMessaging hook failed:', err)
+    // MessagingContext not available (e.g., in a component outside the provider)
+  }
+  
   const text = notificationService.generateNotificationText(notification)
   const IconComponent = NOTIFICATION_ICONS[notification.type]
   const iconColor = getNotificationIconColor(notification.type)
@@ -130,7 +141,27 @@ export function NotificationItem({
   const isVoluntaryRevisionRequest = notification.type === 'voluntary_revision_requested'
 
   const handleClick = () => {
-    // Navigate to the appropriate page
+    console.log('[NotificationItem] Click handler called for type:', notification.type)
+    console.log('[NotificationItem] messaging context available:', !!messaging)
+    console.log('[NotificationItem] actor_wallet:', notification.actor_wallet)
+    console.log('[NotificationItem] metadata:', notification.metadata)
+    
+    // Special handling for message/tip notifications - open sidebar instead of navigating
+    if ((notification.type === 'message_received' || notification.type === 'tip_received')) {
+      const senderWallet = notification.actor_wallet || (notification.metadata as any)?.sender_wallet
+      console.log('[NotificationItem] senderWallet resolved:', senderWallet)
+      
+      if (senderWallet && messaging) {
+        console.log('[NotificationItem] Opening messages for wallet:', senderWallet)
+        messaging.openMessages(senderWallet)
+        onClick(notification)
+        return
+      } else {
+        console.log('[NotificationItem] Cannot open messages - senderWallet:', senderWallet, 'messaging:', !!messaging)
+      }
+    }
+    
+    // Navigate to the appropriate page for other notification types
     handleNotificationNavigation(notification, router)
     
     // Call parent onClick (for marking as read, closing panel, etc.)

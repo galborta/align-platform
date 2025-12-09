@@ -70,3 +70,5 @@ COMMENT ON CONSTRAINT valid_notification_type ON notifications IS 'Allowed notif
 COMMENT ON CONSTRAINT valid_reference_type ON notifications IS 'Allowed reference types including contest';
 
 
+
+

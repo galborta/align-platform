@@ -5,11 +5,15 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useWallet } from '@solana/wallet-adapter-react'
 import { WalletButton } from '@/components/WalletButton'
+import { WalletVerificationFlow } from '@/components/WalletVerificationFlow'
 import { IconButton, Badge, Tooltip, Popover, Typography, Box, Divider } from '@mui/material'
 import PersonIcon from '@mui/icons-material/Person'
 import MailIcon from '@mui/icons-material/Mail'
+import LockIcon from '@mui/icons-material/Lock'
 import KeyboardIcon from '@mui/icons-material/Keyboard'
 import { useMessaging } from '@/lib/MessagingContext'
+import { useVerification } from '@/contexts/VerificationContext'
+import toast from 'react-hot-toast'
 import { supabase } from '@/lib/supabase'
 import { formatDistanceToNow } from 'date-fns'
 import { NotificationBell } from '@/components/notifications'
@@ -17,6 +21,7 @@ import { NotificationBell } from '@/components/notifications'
 export function AppHeader() {
   const wallet = useWallet()
   const router = useRouter()
+  const { isVerified } = useVerification()
   const [messagePreviewAnchor, setMessagePreviewAnchor] = useState<null | HTMLElement>(null)
   const [latestMessage, setLatestMessage] = useState<{
     content: string
@@ -101,8 +106,17 @@ export function AppHeader() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4" style={{ overflow: 'visible', minHeight: '64px' }}>
           <div className="flex items-center justify-between" style={{ overflow: 'visible' }}>
           <Link href="/" className="no-underline">
-            <h1 className="font-display text-2xl font-bold text-text-primary cursor-pointer hover:text-accent-primary transition-colors tracking-normal leading-normal border-b-2 border-accent-primary inline-block">
-              Align
+            <h1 
+              className="cursor-pointer hover:opacity-80 transition-opacity"
+              style={{
+                fontFamily: "'Gluten', cursive",
+                fontSize: '28px',
+                fontWeight: 500,
+                color: 'var(--text-primary)',
+                letterSpacing: '-0.02em',
+              }}
+            >
+              ORggly
             </h1>
           </Link>
           
@@ -128,24 +142,34 @@ export function AppHeader() {
               <>
                 <Tooltip 
                   title={
-                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                      <span>Messages</span>
-                      <Divider orientation="vertical" flexItem sx={{ mx: 0.5, bgcolor: 'rgba(255,255,255,0.3)' }} />
-                      <KeyboardIcon sx={{ fontSize: 14 }} />
-                      <span style={{ fontSize: '11px' }}>{isMac ? '⌘' : 'Ctrl'}+M</span>
-                    </Box>
+                    isVerified ? (
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                        <span>Messages</span>
+                        <Divider orientation="vertical" flexItem sx={{ mx: 0.5, bgcolor: 'rgba(255,255,255,0.3)' }} />
+                        <KeyboardIcon sx={{ fontSize: 14 }} />
+                        <span style={{ fontSize: '11px' }}>{isMac ? '⌘' : 'Ctrl'}+M</span>
+                      </Box>
+                    ) : (
+                      <span>Verify wallet to message</span>
+                    )
                   }
                   arrow
                 >
                   <IconButton
-                    onClick={() => openMessages()}
-                    onMouseEnter={handleMessageHover}
+                    onClick={() => {
+                      if (isVerified) {
+                        openMessages()
+                      } else {
+                        toast.error('Please verify your wallet to send messages')
+                      }
+                    }}
+                    onMouseEnter={isVerified ? handleMessageHover : undefined}
                     onMouseLeave={handleMessageLeave}
                     sx={{ 
-                      color: '#7C4DFF',
+                      color: isVerified ? '#7C4DFF' : '#A3A7B5',
                       '&:hover': { 
                         bgcolor: 'rgba(124, 77, 255, 0.08)',
-                        boxShadow: '0 0 8px rgba(124, 77, 255, 0.3)'
+                        boxShadow: isVerified ? '0 0 8px rgba(124, 77, 255, 0.3)' : 'none'
                       },
                       transition: 'all 0.2s ease-in-out'
                     }}
@@ -257,6 +281,11 @@ export function AppHeader() {
             )}
             
             <WalletButton />
+            
+            {/* Wallet Verification - Auto-triggers when wallet connects if not verified */}
+            {wallet?.publicKey && (
+              <WalletVerificationFlow autoTriggerDelay={2000} />
+            )}
           </div>
         </div>
       </div>

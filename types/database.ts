@@ -1427,6 +1427,14 @@ export type Database = {
           privacy_level: string | null
           updated_at: string | null
           wallet_address: string
+          // ==================== WALLET VERIFICATION FIELDS ====================
+          wallet_verified: boolean | null
+          wallet_verified_at: string | null
+          verification_signature: string | null
+          is_us_person: boolean | null
+          geo_check_confirmed_at: string | null
+          last_terms_accepted_at: string | null
+          terms_version_accepted: string | null
         }
         Insert: {
           allow_messages_from?: string | null
@@ -1443,6 +1451,14 @@ export type Database = {
           privacy_level?: string | null
           updated_at?: string | null
           wallet_address: string
+          // Wallet verification fields
+          wallet_verified?: boolean | null
+          wallet_verified_at?: string | null
+          verification_signature?: string | null
+          is_us_person?: boolean | null
+          geo_check_confirmed_at?: string | null
+          last_terms_accepted_at?: string | null
+          terms_version_accepted?: string | null
         }
         Update: {
           allow_messages_from?: string | null
@@ -1459,6 +1475,125 @@ export type Database = {
           privacy_level?: string | null
           updated_at?: string | null
           wallet_address?: string
+          // Wallet verification fields
+          wallet_verified?: boolean | null
+          wallet_verified_at?: string | null
+          verification_signature?: string | null
+          is_us_person?: boolean | null
+          geo_check_confirmed_at?: string | null
+          last_terms_accepted_at?: string | null
+          terms_version_accepted?: string | null
+        }
+        Relationships: []
+      }
+      // ==================== WALLET VERIFICATION SYSTEM TABLES ====================
+      verification_nonces: {
+        Row: {
+          id: string
+          nonce: string
+          wallet_address: string
+          used: boolean
+          created_at: string
+          expires_at: string
+          used_at: string | null
+          ip_address: string | null
+        }
+        Insert: {
+          id?: string
+          nonce: string
+          wallet_address: string
+          used?: boolean
+          created_at?: string
+          expires_at: string
+          used_at?: string | null
+          ip_address?: string | null
+        }
+        Update: {
+          id?: string
+          nonce?: string
+          wallet_address?: string
+          used?: boolean
+          created_at?: string
+          expires_at?: string
+          used_at?: string | null
+          ip_address?: string | null
+        }
+        Relationships: []
+      }
+      wallet_verifications: {
+        Row: {
+          id: string
+          wallet_address: string
+          signature: string
+          message: string
+          nonce: string
+          verified_at: string
+          ip_address: string | null
+          user_agent: string | null
+          previous_verification_id: string | null
+        }
+        Insert: {
+          id?: string
+          wallet_address: string
+          signature: string
+          message: string
+          nonce: string
+          verified_at?: string
+          ip_address?: string | null
+          user_agent?: string | null
+          previous_verification_id?: string | null
+        }
+        Update: {
+          id?: string
+          wallet_address?: string
+          signature?: string
+          message?: string
+          nonce?: string
+          verified_at?: string
+          ip_address?: string | null
+          user_agent?: string | null
+          previous_verification_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "wallet_verifications_previous_verification_id_fkey"
+            columns: ["previous_verification_id"]
+            isOneToOne: false
+            referencedRelation: "wallet_verifications"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      legal_acceptances: {
+        Row: {
+          id: string
+          wallet_address: string
+          terms_version: string
+          privacy_version: string
+          accepted_at: string
+          signature: string
+          ip_address: string | null
+          is_us_person_confirmed: boolean
+        }
+        Insert: {
+          id?: string
+          wallet_address: string
+          terms_version: string
+          privacy_version: string
+          accepted_at?: string
+          signature: string
+          ip_address?: string | null
+          is_us_person_confirmed?: boolean
+        }
+        Update: {
+          id?: string
+          wallet_address?: string
+          terms_version?: string
+          privacy_version?: string
+          accepted_at?: string
+          signature?: string
+          ip_address?: string | null
+          is_us_person_confirmed?: boolean
         }
         Relationships: []
       }
@@ -1797,3 +1932,44 @@ export type RevisionStatus = {
  * Job application type alias for convenience
  */
 export type JobApplication = Database['public']['Tables']['job_applications']['Row']
+
+// ==================== WALLET VERIFICATION TYPES ====================
+
+/**
+ * User profile with wallet verification fields
+ */
+export type UserProfile = Database['public']['Tables']['user_profiles']['Row']
+export type UserProfileInsert = Database['public']['Tables']['user_profiles']['Insert']
+export type UserProfileUpdate = Database['public']['Tables']['user_profiles']['Update']
+
+/**
+ * Verification nonce for single-use signature challenges
+ */
+export type VerificationNonce = Database['public']['Tables']['verification_nonces']['Row']
+export type VerificationNonceInsert = Database['public']['Tables']['verification_nonces']['Insert']
+export type VerificationNonceUpdate = Database['public']['Tables']['verification_nonces']['Update']
+
+/**
+ * Wallet verification audit trail record
+ */
+export type WalletVerification = Database['public']['Tables']['wallet_verifications']['Row']
+export type WalletVerificationInsert = Database['public']['Tables']['wallet_verifications']['Insert']
+export type WalletVerificationUpdate = Database['public']['Tables']['wallet_verifications']['Update']
+
+/**
+ * Legal acceptance record (ToS, Privacy Policy)
+ */
+export type LegalAcceptance = Database['public']['Tables']['legal_acceptances']['Row']
+export type LegalAcceptanceInsert = Database['public']['Tables']['legal_acceptances']['Insert']
+export type LegalAcceptanceUpdate = Database['public']['Tables']['legal_acceptances']['Update']
+
+/**
+ * Verification status for a user profile
+ */
+export interface WalletVerificationStatus {
+  isVerified: boolean
+  verifiedAt: string | null
+  hasAcceptedTerms: boolean
+  termsVersion: string | null
+  isUsPerson: boolean | null
+}

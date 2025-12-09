@@ -16,7 +16,6 @@ interface Winner {
 }
 
 interface SelectWinnersRequest {
-  posterWallet: string
   winners: Winner[]
 }
 
@@ -26,7 +25,11 @@ interface SelectWinnersRequest {
  * Selects winners for a contest job. Updates job_submissions with winner info
  * and sets the contest_winners_selected_at timestamp on the job.
  * 
- * Uses service role to bypass RLS since wallet auth doesn't work with RLS.
+ * Security:
+ * - CRITICAL: Requires Supabase JWT authentication
+ * - Only the authenticated job poster can select winners
+ * 
+ * Uses service role to bypass RLS for database operations.
  */
 export async function POST(
   request: NextRequest,
@@ -34,28 +37,66 @@ export async function POST(
 ) {
   try {
     const { jobId } = await params
-    const body: SelectWinnersRequest = await request.json()
-    const { posterWallet, winners } = body
 
-    console.log(`[Select Winners] Job: ${jobId}, Winners: ${winners.length}`)
+    // Parse winners selection data
+    const body: SelectWinnersRequest = await request.json()
+    const { winners } = body
 
     // ==================== VALIDATION ====================
 
-    if (!posterWallet) {
-      return NextResponse.json(
-        { error: 'Poster wallet is required' },
-        { status: 400 }
-      )
-    }
-
-    if (!winners || winners.length === 0) {
+    if (!winners || !Array.isArray(winners) || winners.length === 0) {
       return NextResponse.json(
         { error: 'At least one winner is required' },
         { status: 400 }
       )
     }
 
-    // ==================== VERIFY JOB AND POSTER ====================
+    // ==================== AUTHENTICATION ====================
+
+    const authHeader = request.headers.get('authorization')
+    if (!authHeader?.startsWith('Bearer ')) {
+      console.error('[Select Winners] Missing authorization header')
+      return NextResponse.json(
+        { error: 'Unauthorized - Authentication required' },
+        { status: 401 }
+      )
+    }
+
+    const token = authHeader.substring(7)
+
+    // Verify JWT token
+    const { data: { user }, error: authError } = await supabaseAdmin.auth.getUser(token)
+
+    if (authError || !user) {
+      console.error('[Select Winners] Invalid auth token:', authError)
+      return NextResponse.json(
+        { error: 'Invalid authentication token' },
+        { status: 401 }
+      )
+    }
+
+    console.log(`[Select Winners] Authenticated user: ${user.id}`)
+
+    // Get user's wallet from profile
+    const { data: profile, error: profileError } = await supabaseAdmin
+      .from('profiles')
+      .select('wallet_address')
+      .eq('id', user.id)
+      .single()
+
+    if (profileError || !profile?.wallet_address) {
+      console.error('[Select Winners] No wallet found for user:', profileError)
+      return NextResponse.json(
+        { error: 'No wallet address linked to account' },
+        { status: 403 }
+      )
+    }
+
+    console.log(`[Select Winners] User wallet: ${profile.wallet_address}`)
+
+    // ==================== FETCH AND VALIDATE JOB ====================
+
+    console.log(`[Select Winners] Job: ${jobId}, Winners: ${winners.length}`)
 
     const { data: job, error: jobError } = await supabaseAdmin
       .from('jobs')
@@ -71,17 +112,24 @@ export async function POST(
       )
     }
 
-    if (!job.is_contest) {
+    // ==================== AUTHORIZATION ====================
+
+    // Verify user is the job poster
+    if (profile.wallet_address !== job.poster_wallet) {
+      console.error('[Select Winners] Unauthorized - not job poster')
       return NextResponse.json(
-        { error: 'This is not a contest job' },
-        { status: 400 }
+        { error: 'Only job poster can select contest winners' },
+        { status: 403 }
       )
     }
 
-    if (job.poster_wallet !== posterWallet) {
+    console.log('[Select Winners] ✅ Poster authorization verified')
+
+    // Verify job is a contest
+    if (!job.is_contest) {
       return NextResponse.json(
-        { error: 'Only the job poster can select winners' },
-        { status: 403 }
+        { error: 'Winner selection only available for contest jobs' },
+        { status: 400 }
       )
     }
 
@@ -172,5 +220,7 @@ export async function POST(
     )
   }
 }
+
+
 
 

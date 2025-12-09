@@ -282,7 +282,7 @@ export function NotificationSettings({ walletAddress, currentProfile, onSave }: 
         {browserPermission === 'default' && 'Notification' in window && (
           <Alert severity="info" sx={{ mb: 2 }}>
             <AlertTitle>Enable Browser Notifications</AlertTitle>
-            Allow Align to send you notifications when you receive new messages.
+            Allow Orggly to send you notifications when you receive new messages.
             <Box sx={{ mt: 2 }}>
               <Button
                 variant="contained"

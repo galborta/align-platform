@@ -133,7 +133,7 @@ export default function AdminPage() {
       
       // Create a message to sign (proves ownership)
       const message = new TextEncoder().encode(
-        `Align Admin Access Verification\nTimestamp: ${new Date().toISOString()}\nWallet: ${publicKey.toBase58()}`
+        `Orggly Admin Access Verification\nTimestamp: ${new Date().toISOString()}\nWallet: ${publicKey.toBase58()}`
       )
       
       // This is SAFE - only signing a message, not a transaction

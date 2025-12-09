@@ -32,3 +32,5 @@ COMMENT ON COLUMN job_disputes.dispute_type IS 'Categorized dispute type. Includ
 COMMENT ON COLUMN job_disputes.revision_context IS 'JSON object containing revision-related dispute context: revisions_offered, revisions_used, revisions_remaining, revision_history, unanswered_since';
 
 
+
+

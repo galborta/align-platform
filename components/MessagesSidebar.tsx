@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback, useMemo } from 'react'
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import { getUnreadCount, getOrCreateConversation, getExistingConversation } from '@/lib/messaging'
@@ -62,7 +62,9 @@ export function MessagesSidebar({
   targetWallet
 }: MessagesSidebarProps) {
   const router = useRouter()
+  // If targetWallet is provided, we'll be loading a thread - don't show list flash
   const [view, setView] = useState<SidebarView>('list')
+  const [isLoadingThread, setIsLoadingThread] = useState(false)
   const [selectedConversationId, setSelectedConversationId] = useState<string | null>(null)
   const [recipientWallet, setRecipientWallet] = useState<string>('')
   const [unreadCount, setUnreadCount] = useState(0)
@@ -70,6 +72,14 @@ export function MessagesSidebar({
   const [filterTab, setFilterTab] = useState<'all' | 'unread'>('all')
   const [newMessageInput, setNewMessageInput] = useState('')
   const [creatingConversation, setCreatingConversation] = useState(false)
+  const [refreshTrigger, setRefreshTrigger] = useState(0)
+  
+  // Force refresh conversation list when sidebar opens
+  useEffect(() => {
+    if (isOpen) {
+      setRefreshTrigger(prev => prev + 1)
+    }
+  }, [isOpen])
   
   // Message search state
   const [isSearching, setIsSearching] = useState(false)
@@ -433,30 +443,62 @@ export function MessagesSidebar({
     loadUnreadCount()
   }
 
-  // Handle targetWallet from context
+  // Track which targetWallet we've already processed to prevent duplicate calls
+  const processedTargetWalletRef = useRef<string | null>(null)
+  const isOpeningRef = useRef(false)
+
+  // Handle targetWallet from context - open conversation directly
   useEffect(() => {
-    if (isOpen && targetWallet && currentWallet) {
+    // Only process if we have all required values and haven't processed this target yet
+    if (
+      isOpen && 
+      targetWallet && 
+      currentWallet && 
+      !isOpeningRef.current &&
+      processedTargetWalletRef.current !== targetWallet
+    ) {
+      console.log('[MessagesSidebar] targetWallet detected:', targetWallet)
+      processedTargetWalletRef.current = targetWallet
+      isOpeningRef.current = true
+      setIsLoadingThread(true) // Show loading state instead of list
+      
       // Auto-open conversation with target wallet
-      handleStartConversationWithWallet(targetWallet)
+      const openConversation = async () => {
+        try {
+          const conversation = await getOrCreateConversation(currentWallet, targetWallet)
+          
+          if (conversation) {
+            console.log('[MessagesSidebar] Got conversation:', conversation.id)
+            setSelectedConversationId(conversation.id)
+            setRecipientWallet(targetWallet)
+            setView('thread')
+          } else {
+            console.log('[MessagesSidebar] Failed to get/create conversation')
+            toast.error('Could not start conversation')
+            setView('list') // Fall back to list on error
+          }
+        } catch (error) {
+          console.error('[MessagesSidebar] Error opening conversation:', error)
+          toast.error('Failed to open conversation')
+          setView('list') // Fall back to list on error
+        } finally {
+          isOpeningRef.current = false
+          setIsLoadingThread(false)
+        }
+      }
+      
+      openConversation()
     }
   }, [isOpen, targetWallet, currentWallet])
-
-  // Helper to start conversation with specific wallet
-  const handleStartConversationWithWallet = async (walletAddress: string) => {
-    try {
-      // Get or create conversation
-      const conversation = await getOrCreateConversation(currentWallet, walletAddress)
-      
-      if (conversation) {
-        // Go directly to thread view
-        setSelectedConversationId(conversation.id)
-        setRecipientWallet(walletAddress)
-        setView('thread')
-      }
-    } catch (error) {
-      console.error('Error opening conversation:', error)
+  
+  // Reset processed wallet when sidebar closes
+  useEffect(() => {
+    if (!isOpen) {
+      processedTargetWalletRef.current = null
+      isOpeningRef.current = false
+      setIsLoadingThread(false)
     }
-  }
+  }, [isOpen])
 
   // Reset when closing
   useEffect(() => {
@@ -564,8 +606,25 @@ export function MessagesSidebar({
           </IconButton>
         </Box>
 
+        {/* Loading Thread State - Show while opening conversation from profile */}
+        {isLoadingThread && (
+          <Box sx={{ 
+            display: 'flex', 
+            flexDirection: 'column', 
+            alignItems: 'center', 
+            justifyContent: 'center', 
+            flex: 1,
+            gap: 2
+          }}>
+            <CircularProgress size={32} sx={{ color: '#7C4DFF' }} />
+            <Typography variant="body2" color="text.secondary">
+              Opening conversation...
+            </Typography>
+          </Box>
+        )}
+
         {/* List View */}
-        {view === 'list' && (
+        {view === 'list' && !isLoadingThread && (
           <Box sx={{ display: 'flex', flexDirection: 'column', flex: 1, overflow: 'hidden' }}>
             {/* Search Bar */}
             <Box sx={{ p: 2, position: 'relative' }}>
@@ -818,6 +877,7 @@ export function MessagesSidebar({
                       currentWallet={currentWallet}
                       onSelectConversation={handleSelectConversation}
                       filter={filterTab}
+                      refreshTrigger={refreshTrigger}
                     />
                   ) : (
                     <Box sx={{ p: 4, textAlign: 'center' }}>

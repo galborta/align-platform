@@ -3,6 +3,7 @@ import { createClient } from '@supabase/supabase-js'
 import { Connection } from '@solana/web3.js'
 import { notificationService } from '@/lib/services/notificationService'
 import { Database } from '@/types/database'
+import { rateLimit } from '@/lib/rate-limit'
 
 // Create Supabase client with service role for server-side operations
 const supabaseAdmin = createClient<Database>(
@@ -20,6 +21,11 @@ const connection = new Connection(SOLANA_RPC, 'confirmed')
  * Confirms that a payment transaction was successfully sent on-chain
  * and updates all database records accordingly.
  * 
+ * Security:
+ * - CRITICAL: Requires Supabase JWT authentication
+ * - Only the job poster can confirm payments
+ * - Rate limited to prevent abuse
+ * 
  * This endpoint is useful for:
  * 1. Verifying transactions that were sent client-side
  * 2. Re-confirming if initial database updates failed
@@ -30,15 +36,16 @@ const connection = new Connection(SOLANA_RPC, 'confirmed')
  * - transaction_record_id?: string - Payment transaction record ID
  * 
  * Flow:
- * 1. Verifies transaction exists and succeeded on Solana
- * 2. Updates payment_transactions record status
- * 3. Marks all submissions as paid
- * 4. Awards karma to workers
- * 5. Sends payment notifications
- * 6. Updates poster karma
- * 7. Releases escrow lock
+ * 1. Authenticates user via Supabase JWT
+ * 2. Verifies transaction exists and succeeded on Solana
+ * 3. Updates payment_transactions record status
+ * 4. Marks all submissions as paid
+ * 5. Awards karma to workers
+ * 6. Sends payment notifications
+ * 7. Updates poster karma
+ * 8. Releases escrow lock
  * 
- * @param request - Request with transaction details
+ * @param request - Request with Authorization header and transaction details
  * @param params - URL params containing job id
  * @returns Success response with workers paid count or error
  */
@@ -63,6 +70,59 @@ export async function POST(
       return NextResponse.json(
         { error: 'Transaction signature required' },
         { status: 400 }
+      )
+    }
+
+    // ==================== AUTHENTICATION ====================
+
+    const authHeader = request.headers.get('authorization')
+    if (!authHeader?.startsWith('Bearer ')) {
+      console.error('[Confirm Payment] Missing authorization header')
+      return NextResponse.json(
+        { error: 'Unauthorized - Authentication required' },
+        { status: 401 }
+      )
+    }
+
+    const token = authHeader.substring(7)
+
+    // Verify JWT token
+    const { data: { user }, error: authError } = await supabaseAdmin.auth.getUser(token)
+
+    if (authError || !user) {
+      console.error('[Confirm Payment] Invalid auth token:', authError)
+      return NextResponse.json(
+        { error: 'Invalid authentication token' },
+        { status: 401 }
+      )
+    }
+
+    console.log(`[Confirm Payment] Authenticated user: ${user.id}`)
+
+    // Get user's wallet from profile
+    const { data: profile, error: profileError } = await supabaseAdmin
+      .from('profiles')
+      .select('wallet_address')
+      .eq('id', user.id)
+      .single()
+
+    if (profileError || !profile?.wallet_address) {
+      console.error('[Confirm Payment] No wallet found for user:', profileError)
+      return NextResponse.json(
+        { error: 'No wallet address linked to account' },
+        { status: 403 }
+      )
+    }
+
+    console.log(`[Confirm Payment] User wallet: ${profile.wallet_address}`)
+
+    // Rate limiting
+    const rateLimitResult = rateLimit(user.id, 'payment')
+    if (!rateLimitResult.success) {
+      console.error('[Confirm Payment] Rate limit exceeded for user:', user.id)
+      return NextResponse.json(
+        { error: rateLimitResult.error },
+        { status: rateLimitResult.status }
       )
     }
 
@@ -148,6 +208,19 @@ export async function POST(
         { status: 404 }
       )
     }
+
+    // ==================== AUTHORIZATION ====================
+
+    // Verify user is the job poster
+    if (profile.wallet_address !== job.poster_wallet) {
+      console.error('[Confirm Payment] Unauthorized - not job poster')
+      return NextResponse.json(
+        { error: 'Only the job poster can confirm payments' },
+        { status: 403 }
+      )
+    }
+
+    console.log('[Confirm Payment] ✅ Poster authorization verified')
 
     // ==================== GET APPROVED SUBMISSIONS ====================
 

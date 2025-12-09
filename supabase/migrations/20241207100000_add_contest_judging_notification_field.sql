@@ -12,3 +12,5 @@ WHERE is_contest = TRUE;
 COMMENT ON COLUMN jobs.judging_notification_sent_at IS 'Timestamp when the poster was notified that their contest is ready for judging (submission deadline passed)';
 
 
+
+

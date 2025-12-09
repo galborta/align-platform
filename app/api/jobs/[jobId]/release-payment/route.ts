@@ -5,6 +5,7 @@ import { releasePaymentFromEscrow, validateEscrowBalance } from '@/lib/solana/es
 import { getFeePercentage, getFeeWallet, getEscrowWallet } from '@/lib/platform-settings'
 import { notificationService } from '@/lib/services/notificationService'
 import { Database } from '@/types/database'
+import { rateLimit } from '@/lib/rate-limit'
 
 // Create Supabase client with service role for server-side operations
 const supabaseAdmin = createClient<Database>(
@@ -160,6 +161,16 @@ export async function POST(
       }
 
       console.log('[Release Payment] ✅ Poster wallet verified via Supabase auth')
+
+      // Rate limiting for payment releases
+      const rateLimitResult = rateLimit(user.id, 'payment')
+      if (!rateLimitResult.success) {
+        console.error('[Release Payment] Rate limit exceeded for user:', user.id)
+        return NextResponse.json(
+          { error: rateLimitResult.error },
+          { status: rateLimitResult.status }
+        )
+      }
     }
     
     // ==================== STATUS VALIDATION ====================

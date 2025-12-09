@@ -34,6 +34,7 @@ export function MessagingProvider({ children, currentWallet }: MessagingProvider
     }
     
     const count = await getUnreadCount(currentWallet)
+    console.log('[MessagingContext] Unread count for', currentWallet.slice(0, 8), ':', count)
     setUnreadCount(count)
   }, [currentWallet])
 
@@ -47,7 +48,7 @@ export function MessagingProvider({ children, currentWallet }: MessagingProvider
     return () => clearInterval(interval)
   }, [loadUnreadCount])
 
-  // Subscribe to real-time message updates
+  // Subscribe to real-time message AND conversation updates
   useEffect(() => {
     if (!currentWallet) return
 
@@ -61,7 +62,24 @@ export function MessagingProvider({ children, currentWallet }: MessagingProvider
           table: 'messages'
         },
         () => {
+          console.log('[MessagingContext] Message change detected, refreshing unread count')
           loadUnreadCount()
+        }
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'conversations'
+        },
+        (payload) => {
+          // Check if current wallet is a participant in the new conversation
+          const newConv = payload.new as { participant_1: string; participant_2: string }
+          if (newConv.participant_1 === currentWallet || newConv.participant_2 === currentWallet) {
+            console.log('[MessagingContext] New conversation detected, refreshing unread count')
+            loadUnreadCount()
+          }
         }
       )
       .subscribe()

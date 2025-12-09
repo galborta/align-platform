@@ -85,6 +85,7 @@ export async function getExistingConversation(
 }
 
 // Get or create conversation between two users
+// Uses API route for proper RLS handling
 export async function getOrCreateConversation(
   wallet1: string,
   wallet2: string
@@ -94,7 +95,7 @@ export async function getOrCreateConversation(
     const participant1 = wallet1 < wallet2 ? wallet1 : wallet2
     const participant2 = wallet1 < wallet2 ? wallet2 : wallet1
     
-    // Check if conversation exists
+    // First, try to get existing conversation (this works client-side)
     const { data: existingConv, error: selectError } = await supabase
       .from('conversations')
       .select('*')
@@ -104,7 +105,7 @@ export async function getOrCreateConversation(
     
     if (selectError) {
       console.error('Error fetching conversation:', selectError)
-      return null
+      // Continue to try creating via API
     }
     
     // Return existing conversation
@@ -112,22 +113,25 @@ export async function getOrCreateConversation(
       return existingConv
     }
     
-    // Create new conversation
-    const { data: newConv, error: insertError } = await supabase
-      .from('conversations')
-      .insert({
-        participant_1: participant1,
-        participant_2: participant2
+    // Create new conversation via API (handles RLS properly)
+    console.log('[Messaging] Creating conversation via API...')
+    const response = await fetch('/api/conversations/create', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        currentWallet: wallet1,
+        targetWallet: wallet2
       })
-      .select()
-      .single()
-    
-    if (insertError) {
-      console.error('Error creating conversation:', insertError)
+    })
+
+    const data = await response.json()
+
+    if (!response.ok) {
+      console.error('Error creating conversation via API:', data.error)
       return null
     }
-    
-    return newConv
+
+    return data.conversation
     
   } catch (error) {
     console.error('Error in getOrCreateConversation:', error)
@@ -149,17 +153,25 @@ export async function canMessageUser(
     }
     
     // 1. Check if sender is blocked by recipient (or vice versa)
-    const { data: blocked } = await supabase
-      .from('blocked_users')
-      .select('id')
-      .or(`and(blocker_wallet.eq.${recipientWallet},blocked_wallet.eq.${senderWallet}),and(blocker_wallet.eq.${senderWallet},blocked_wallet.eq.${recipientWallet})`)
-      .maybeSingle()
-    
-    if (blocked) {
-      return {
-        canMessage: false,
-        reason: 'User has been blocked'
+    // Wrapped in try-catch so missing table doesn't break messaging
+    try {
+      const { data: blocked, error: blockedError } = await supabase
+        .from('blocked_users')
+        .select('id')
+        .or(`and(blocker_wallet.eq.${recipientWallet},blocked_wallet.eq.${senderWallet}),and(blocker_wallet.eq.${senderWallet},blocked_wallet.eq.${recipientWallet})`)
+        .maybeSingle()
+      
+      if (blockedError) {
+        // Table might not exist - log and continue
+        console.warn('[canMessageUser] blocked_users check failed, continuing:', blockedError.message)
+      } else if (blocked) {
+        return {
+          canMessage: false,
+          reason: 'User has been blocked'
+        }
       }
+    } catch (blockCheckError) {
+      console.warn('[canMessageUser] blocked_users check error, continuing:', blockCheckError)
     }
     
     // 2. Get recipient's profile to check privacy and message permissions
@@ -186,10 +198,8 @@ export async function canMessageUser(
     
   } catch (error) {
     console.error('Error in canMessageUser:', error)
-    return {
-      canMessage: false,
-      reason: 'Error checking message permissions'
-    }
+    // Allow messaging on error - don't block users due to system issues
+    return { canMessage: true }
   }
 }
 
@@ -199,7 +209,9 @@ export async function markConversationAsRead(
   readerWallet: string
 ): Promise<boolean> {
   try {
-    const { error } = await supabase
+    console.log('[markConversationAsRead] Marking messages as read for conversation:', conversationId, 'reader:', readerWallet.slice(0, 8))
+    
+    const { data, error } = await supabase
       .from('messages')
       .update({
         is_read: true,
@@ -209,11 +221,14 @@ export async function markConversationAsRead(
       .eq('conversation_id', conversationId)
       .neq('sender_wallet', readerWallet) // Don't mark own messages
       .eq('is_read', false)
+      .select('id')
     
     if (error) {
-      console.error('Error marking messages as read:', error)
+      console.error('[markConversationAsRead] Error:', error)
       return false
     }
+    
+    console.log('[markConversationAsRead] Marked', data?.length || 0, 'messages as read')
     
     return true
     

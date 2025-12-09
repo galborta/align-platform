@@ -57,7 +57,7 @@ interface RequestRevisionModalProps {
  * Modal for job posters to request revisions from the assigned worker.
  * Shows revision count, requires notes, and optionally allows reference images.
  * 
- * Follows Align design system with purple/lime accents.
+ * Follows Orggly design system with purple/lime accents.
  */
 export function RequestRevisionModal({
   isOpen,

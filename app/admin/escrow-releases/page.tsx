@@ -108,7 +108,7 @@ export default function EscrowReleasesPage() {
     try {
       setVerifying(true)
       const message = new TextEncoder().encode(
-        `Align Admin - Escrow Releases Access\nTimestamp: ${new Date().toISOString()}\nWallet: ${publicKey.toBase58()}`
+        `Orggly Admin - Escrow Releases Access\nTimestamp: ${new Date().toISOString()}\nWallet: ${publicKey.toBase58()}`
       )
       const signature = await signMessage(message)
       saveAdminSession(publicKey.toBase58(), signature)
