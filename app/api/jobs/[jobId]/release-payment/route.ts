@@ -144,10 +144,10 @@ export async function POST(
 
       console.log('[Release Payment] ✅ Poster wallet verified via Supabase auth')
 
-      // Rate limiting for payment releases
-      const rateLimitResult = rateLimit(user.id, 'payment')
+      // Rate limiting for payment releases (use wallet address as identifier)
+      const rateLimitResult = rateLimit(authenticatedWallet, 'payment')
       if (!rateLimitResult.success) {
-        console.error('[Release Payment] Rate limit exceeded for user:', user.id)
+        console.error('[Release Payment] Rate limit exceeded for wallet:', authenticatedWallet.slice(0, 8))
         return NextResponse.json(
           { error: rateLimitResult.error },
           { status: rateLimitResult.status }
