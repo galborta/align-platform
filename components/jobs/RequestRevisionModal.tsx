@@ -245,7 +245,7 @@ export function RequestRevisionModal({
         setLoading(false)
         return
       }
-      
+
       // Call the revision request API endpoint
       const response = await fetch(`/api/jobs/${jobId}/request-revision`, {
         method: 'POST',

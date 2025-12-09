@@ -81,7 +81,7 @@ export async function POST(
         resourceId: jobId,
         maxAge: 2 * 60 * 1000 // 2 minutes
       }
-    )
+      )
     
     // Fallback to old action name for backwards compatibility
     if (!authResult.success) {

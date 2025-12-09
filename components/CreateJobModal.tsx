@@ -667,7 +667,7 @@ export function CreateJobModal({
           }
           session = refreshedSession
         }
-        
+
         // Call backend API to update the job
         const response = await fetch(`/api/jobs/${existingJob.id}/update`, {
           method: 'POST',

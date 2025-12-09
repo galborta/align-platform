@@ -823,7 +823,7 @@ export default function JobDetailPage() {
   }
 
   const { signAction } = useActionSignature()
-  
+
   const handleCancelJob = async () => {
     if (!job || !publicKey) return
 
@@ -876,12 +876,12 @@ export default function JobDetailPage() {
             } else {
               // Other errors are real problems
               throw new Error(errorMsg)
-            }
+          }
           } else {
-            refundAmount = data.amountRefunded
+          refundAmount = data.amountRefunded
             toast.loading(`Refunded ${refundAmount.toFixed(2)} tokens. Canceling job...`, { id: 'action' })
-            refundSuccess = true
-            console.log('✅ Refund successful, proceeding to cancel job status...')
+          refundSuccess = true
+          console.log('✅ Refund successful, proceeding to cancel job status...')
           }
         } catch (refundError) {
           console.error('Refund error:', refundError)
@@ -1130,7 +1130,7 @@ export default function JobDetailPage() {
       const response = await fetch(`/api/jobs/${job.id}/release-payment`, {
         method: 'POST',
         headers: { 
-          'Content-Type': 'application/json'
+          'Content-Type': 'application/json' 
         },
         body: JSON.stringify({
           wallet: signResult.wallet,
@@ -1224,7 +1224,7 @@ export default function JobDetailPage() {
         setReassigning(false)
         return
       }
-      
+
       // Call the reassign API endpoint
       const response = await fetch(`/api/jobs/${job.id}/reassign`, {
         method: 'POST',
@@ -4362,23 +4362,23 @@ export default function JobDetailPage() {
               </>
             ) : (
               // Regular cancellation consequences
-              <div 
-                className="p-4 rounded-lg border-2"
-                style={{ borderColor: '#FEE2E2', backgroundColor: '#FEF2F2' }}
+            <div 
+              className="p-4 rounded-lg border-2"
+              style={{ borderColor: '#FEE2E2', backgroundColor: '#FEF2F2' }}
+            >
+              <h4 
+                className="text-sm font-semibold mb-3"
+                style={{ color: '#EF4444' }}
               >
-                <h4 
-                  className="text-sm font-semibold mb-3"
-                  style={{ color: '#EF4444' }}
-                >
-                  CONSEQUENCES:
-                </h4>
-                <ul className="space-y-2 text-sm" style={{ color: '#1A1A1E' }}>
-                  <li>❌ You will lose <strong>-50 karma</strong></li>
-                  <li>💰 Payment will be returned to your wallet</li>
-                  <li>🚫 All applications will be invalidated</li>
-                  <li>⏰ Cannot repost same job for 24 hours</li>
-                </ul>
-              </div>
+                CONSEQUENCES:
+              </h4>
+              <ul className="space-y-2 text-sm" style={{ color: '#1A1A1E' }}>
+                <li>❌ You will lose <strong>-50 karma</strong></li>
+                <li>💰 Payment will be returned to your wallet</li>
+                <li>🚫 All applications will be invalidated</li>
+                <li>⏰ Cannot repost same job for 24 hours</li>
+              </ul>
+            </div>
             )}
 
             <div 

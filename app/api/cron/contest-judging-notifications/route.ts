@@ -152,14 +152,14 @@ export async function GET(request: NextRequest) {
           console.log(`[Contest Judging Cron] ✅ Notified poster about no submissions for contest ${contest.id}`)
         } else {
           // Has submissions - notify poster to select winners
-          await notificationService.notifyContestJudgingStarted({
-            posterWallet: contest.poster_wallet,
-            jobId: contest.id,
-            jobTitle: contest.title,
-            submissionCount
-          })
+        await notificationService.notifyContestJudgingStarted({
+          posterWallet: contest.poster_wallet,
+          jobId: contest.id,
+          jobTitle: contest.title,
+          submissionCount
+        })
 
-          notificationsSent++
+        notificationsSent++
           console.log(`[Contest Judging Cron] ✅ Notified poster to select winners for contest ${contest.id}`)
         }
       } catch (notifError) {

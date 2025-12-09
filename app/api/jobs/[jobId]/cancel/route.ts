@@ -187,16 +187,16 @@ export async function POST(
 
     // Apply karma penalty (unless explicitly skipped, e.g., for contests with no submissions)
     if (!skip_karma_penalty) {
-      try {
-        console.log('[Cancel Job API] Applying karma penalty...')
-        await applyJobCancellationPenalty(
-          authenticatedWallet,
-          job.project_id
-        )
-        console.log('[Cancel Job API] ✅ Karma penalty applied (-50 points)')
-      } catch (karmaError) {
-        console.error('[Cancel Job API] Karma penalty failed:', karmaError)
-        // Continue - karma failure shouldn't block cancellation
+    try {
+      console.log('[Cancel Job API] Applying karma penalty...')
+      await applyJobCancellationPenalty(
+        authenticatedWallet,
+        job.project_id
+      )
+      console.log('[Cancel Job API] ✅ Karma penalty applied (-50 points)')
+    } catch (karmaError) {
+      console.error('[Cancel Job API] Karma penalty failed:', karmaError)
+      // Continue - karma failure shouldn't block cancellation
       }
     } else {
       console.log('[Cancel Job API] ⏭️ Karma penalty skipped (contest with no submissions)')

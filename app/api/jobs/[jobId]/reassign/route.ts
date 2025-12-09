@@ -75,7 +75,7 @@ export async function POST(
 
     const { getUserWallet } = await import('@/lib/auth-helpers')
     const walletResult = await getUserWallet(user.id, user)
-    
+
     if (!walletResult.success) {
       console.error('[Reassign API] No wallet found for user:', user.id)
       return NextResponse.json(

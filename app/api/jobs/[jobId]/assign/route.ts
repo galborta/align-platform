@@ -65,7 +65,7 @@ export async function POST(
     // Get user's wallet using the helper function
     const { getUserWallet } = await import('@/lib/auth-helpers')
     const walletResult = await getUserWallet(user.id, user)
-    
+
     if (!walletResult.success) {
       console.error('[Assign Job] No wallet found for user:', user.id)
       return NextResponse.json(
