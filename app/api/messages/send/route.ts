@@ -1,15 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase'
-import { getWalletFromHeaders } from '@/lib/server-utils'
 
 export async function POST(request: NextRequest) {
   try {
-    const { conversation_id, content } = await request.json()
-    const senderWallet = getWalletFromHeaders(request.headers)
+    const { conversation_id, content, sender_wallet } = await request.json()
 
-    if (!senderWallet) {
-      return NextResponse.json({ error: 'Unauthorized: Wallet address not found in headers' }, { status: 401 })
+    if (!sender_wallet) {
+      return NextResponse.json({ error: 'Unauthorized: Wallet address is required' }, { status: 401 })
     }
+    
+    const senderWallet = sender_wallet
 
     if (!conversation_id || !content) {
       return NextResponse.json({ error: 'Missing required fields: conversation_id and content' }, { status: 400 })
