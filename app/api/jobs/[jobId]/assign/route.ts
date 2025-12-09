@@ -62,23 +62,20 @@ export async function POST(
 
     console.log(`[Assign Job] Authenticated user: ${user.id}`)
 
-    // Get user's wallet from profile
-    const { data: profile, error: profileError } = await supabaseAdmin
-      .from('profiles')
-      .select('wallet_address')
-      .eq('id', user.id)
-      .single()
-
-    if (profileError || !profile?.wallet_address) {
-      console.error('[Assign Job] No wallet found for user:', profileError)
+    // Get user's wallet using the helper function
+    const { getUserWallet } = await import('@/lib/auth-helpers')
+    const walletResult = await getUserWallet(user.id, user)
+    
+    if (!walletResult.success) {
+      console.error('[Assign Job] No wallet found for user:', user.id)
       return NextResponse.json(
-        { error: 'No wallet address linked to account' },
-        { status: 403 }
+        { error: walletResult.error },
+        { status: walletResult.status || 403 }
       )
     }
 
-    const authenticatedWallet = profile.wallet_address
-    console.log(`[Assign Job] User wallet: ${authenticatedWallet}`)
+    const authenticatedWallet = walletResult.wallet
+    console.log(`[Assign Job] User wallet: ${authenticatedWallet.slice(0, 8)}...`)
 
     // ==================== FETCH AND VALIDATE JOB ====================
 

@@ -73,21 +73,18 @@ export async function POST(
 
     console.log(`[Reassign API] Authenticated user: ${user.id}`)
 
-    const { data: profile, error: profileError } = await supabaseAdmin
-      .from('profiles')
-      .select('wallet_address')
-      .eq('id', user.id)
-      .single()
-
-    if (profileError || !profile?.wallet_address) {
-      console.error('[Reassign API] No wallet found for user:', profileError)
+    const { getUserWallet } = await import('@/lib/auth-helpers')
+    const walletResult = await getUserWallet(user.id, user)
+    
+    if (!walletResult.success) {
+      console.error('[Reassign API] No wallet found for user:', user.id)
       return NextResponse.json(
-        { error: 'No wallet address linked to account' },
-        { status: 403 }
+        { error: walletResult.error },
+        { status: walletResult.status || 403 }
       )
     }
 
-    const authenticatedWallet = profile.wallet_address
+    const authenticatedWallet = walletResult.wallet
     console.log(`[Reassign API] User wallet: ${authenticatedWallet}`)
     console.log(`[Reassign API] Processing reassignment for job ${jobId}`)
     console.log(`[Reassign API] New worker: ${new_worker_wallet.slice(0, 8)}...`)
