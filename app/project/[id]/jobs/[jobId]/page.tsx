@@ -1108,23 +1108,36 @@ export default function JobDetailPage() {
     try {
       console.log('[Release Payment] Calling API for job:', job.id)
       
-      // Get Supabase session for authentication
-      const { data: { session }, error: sessionError } = await supabase.auth.getSession()
-      if (sessionError || !session) {
-        toast.error('Authentication required. Please sign in again.')
+      // Sign the release payment action
+      const signResult = await signAction({
+        action: 'Release payment',
+        resourceId: job.id,
+        additionalInfo: {
+          amount: `${job.payment_amount_tokens} tokens`,
+          worker: job.assigned_to || 'N/A'
+        }
+      })
+
+      if (!signResult) {
+        toast.error('Signature required to release payment')
         setReleasing(false)
         return
       }
+
+      console.log('[Release Payment] Signature obtained, calling API...')
       
-      // Call the payment release API endpoint
+      // Call the payment release API endpoint with signature
       const response = await fetch(`/api/jobs/${job.id}/release-payment`, {
         method: 'POST',
         headers: { 
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${session.access_token}`
+          'Content-Type': 'application/json'
         },
         body: JSON.stringify({
-          poster_wallet: publicKey.toString()
+          wallet: signResult.wallet,
+          signature: signResult.signature,
+          message: signResult.message,
+          nonce: signResult.nonce,
+          is_manual: true
         })
       })
 
