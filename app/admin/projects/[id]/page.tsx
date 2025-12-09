@@ -762,10 +762,21 @@ export default function AdminProjectPage() {
 
       // If job has escrow locked, we need to handle refund first
       if (deletingJob.escrow_locked && deletingJob.escrow_amount_tokens) {
+        // Get Supabase session for authentication
+        const { data: { session }, error: sessionError } = await supabase.auth.getSession()
+        if (sessionError || !session) {
+          toast.error('Authentication required. Please sign in again.')
+          setDeleting(false)
+          return
+        }
+        
         // Call the refund API
         const refundResponse = await fetch(`/api/jobs/${deletingJob.id}/refund-escrow`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${session.access_token}`
+          },
           body: JSON.stringify({
             poster_wallet: deletingJob.poster_wallet
           })

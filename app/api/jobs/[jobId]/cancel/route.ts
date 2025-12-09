@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { applyJobCancellationPenalty } from '@/lib/job-karma'
 import { Database } from '@/types/database'
+import { verifyRequestSignature } from '@/lib/signature-auth'
 
 // Create Supabase client with service role for server-side operations
 const supabaseAdmin = createClient<Database>(
@@ -13,6 +14,9 @@ const supabaseAdmin = createClient<Database>(
  * POST /api/jobs/[jobId]/cancel
  * 
  * Cancel a job (after refund has been processed)
+ * 
+ * Request body:
+ * - skip_karma_penalty?: boolean - Skip karma penalty (for contests with no submissions)
  * 
  * Security:
  * - CRITICAL: Requires Supabase JWT authentication
@@ -31,7 +35,7 @@ const supabaseAdmin = createClient<Database>(
  * 4. Updates job status to 'cancelled'
  * 5. Unlocks escrow
  * 6. Invalidates all applications
- * 7. Applies karma penalty
+ * 7. Applies karma penalty (unless skip_karma_penalty is true)
  */
 export async function POST(
   request: NextRequest,
@@ -40,6 +44,8 @@ export async function POST(
   try {
     // Await params in Next.js 15+
     const { jobId } = await params
+    const body = await request.json()
+    const { wallet, signature, message, skip_karma_penalty } = body
 
     if (!jobId) {
       return NextResponse.json(
@@ -48,47 +54,41 @@ export async function POST(
       )
     }
 
-    // ==================== AUTHENTICATION ====================
+    // ==================== SIGNATURE AUTHENTICATION ====================
+    // Verify cryptographic signature proving wallet ownership
+    
+    // Accept both "Cancel job" and "Cancel job and refund" actions
+    let authResult = verifyRequestSignature(
+      { wallet, signature, message },
+      {
+        action: 'Cancel job and refund',
+        resourceId: jobId,
+        maxAge: 2 * 60 * 1000 // 2 minutes
+      }
+    )
+    
+    // Fallback to old action name for backwards compatibility
+    if (!authResult.success) {
+      authResult = verifyRequestSignature(
+        { wallet, signature, message },
+        {
+          action: 'Cancel job',
+          resourceId: jobId,
+          maxAge: 2 * 60 * 1000 // 2 minutes
+        }
+      )
+    }
 
-    const authHeader = request.headers.get('authorization')
-    if (!authHeader?.startsWith('Bearer ')) {
-      console.error('[Cancel Job] Missing authorization header')
+    if (!authResult.success) {
+      console.error('[Cancel Job] Signature verification failed:', authResult.error)
       return NextResponse.json(
-        { error: 'Unauthorized - Authentication required' },
+        { error: authResult.error || 'Invalid signature' },
         { status: 401 }
       )
     }
 
-    const token = authHeader.substring(7)
-
-    const { data: { user }, error: authError } = await supabaseAdmin.auth.getUser(token)
-
-    if (authError || !user) {
-      console.error('[Cancel Job] Invalid auth token:', authError)
-      return NextResponse.json(
-        { error: 'Invalid authentication token' },
-        { status: 401 }
-      )
-    }
-
-    console.log(`[Cancel Job] Authenticated user: ${user.id}`)
-
-    const { data: profile, error: profileError } = await supabaseAdmin
-      .from('profiles')
-      .select('wallet_address')
-      .eq('id', user.id)
-      .single()
-
-    if (profileError || !profile?.wallet_address) {
-      console.error('[Cancel Job] No wallet found for user:', profileError)
-      return NextResponse.json(
-        { error: 'No wallet address linked to account' },
-        { status: 403 }
-      )
-    }
-
-    const authenticatedWallet = profile.wallet_address
-    console.log(`[Cancel Job] User wallet: ${authenticatedWallet}`)
+    const authenticatedWallet = authResult.wallet!
+    console.log(`[Cancel Job] ✅ Authenticated via signature: ${authenticatedWallet.slice(0, 8)}...`)
 
     // ==================== FETCH AND VALIDATE JOB ====================
 
@@ -185,17 +185,21 @@ export async function POST(
 
     console.log('[Cancel Job API] ✅ Applications invalidated')
 
-    // Apply karma penalty
-    try {
-      console.log('[Cancel Job API] Applying karma penalty...')
-      await applyJobCancellationPenalty(
-        authenticatedWallet,
-        job.project_id
-      )
-      console.log('[Cancel Job API] ✅ Karma penalty applied (-50 points)')
-    } catch (karmaError) {
-      console.error('[Cancel Job API] Karma penalty failed:', karmaError)
-      // Continue - karma failure shouldn't block cancellation
+    // Apply karma penalty (unless explicitly skipped, e.g., for contests with no submissions)
+    if (!skip_karma_penalty) {
+      try {
+        console.log('[Cancel Job API] Applying karma penalty...')
+        await applyJobCancellationPenalty(
+          authenticatedWallet,
+          job.project_id
+        )
+        console.log('[Cancel Job API] ✅ Karma penalty applied (-50 points)')
+      } catch (karmaError) {
+        console.error('[Cancel Job API] Karma penalty failed:', karmaError)
+        // Continue - karma failure shouldn't block cancellation
+      }
+    } else {
+      console.log('[Cancel Job API] ⏭️ Karma penalty skipped (contest with no submissions)')
     }
 
     // TODO: Send notifications to applicants

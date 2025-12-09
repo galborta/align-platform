@@ -19,6 +19,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { verifySolanaSignature } from '@/lib/solana-signature'
 import { supabase } from '@/lib/supabase'
+import { supabaseAdmin } from '@/lib/auth-helpers'
 
 // Constants
 const CURRENT_TERMS_VERSION = '2024-12-08'
@@ -41,6 +42,7 @@ interface SuccessResponse {
   wallet: string
   verifiedAt: string
   message?: string
+  authEmail?: string
 }
 
 /**
@@ -258,7 +260,7 @@ export async function POST(request: NextRequest) {
       console.error(`[Verify Wallet] Profile check error:`, profileCheckError.message)
     }
     
-    // If already verified, return success (idempotent behavior)
+    // If already verified, ensure auth user exists and return success (idempotent behavior)
     if (existingProfile?.wallet_verified) {
       console.log(`[Verify Wallet] ℹ️ Wallet already verified at: ${existingProfile.wallet_verified_at}`)
       
@@ -268,6 +270,34 @@ export async function POST(request: NextRequest) {
         .update({ used: true, used_at: new Date().toISOString() })
         .eq('nonce', nonce)
       
+      // Check if auth user exists, create if not (migration for existing users)
+      const authEmail = `${wallet}@align.solana`
+      const authPassword = wallet
+      
+      const { data: { users: existingAuthUsers } } = await supabaseAdmin.auth.admin.listUsers()
+      const existingAuthUser = existingAuthUsers.find(u => u.email === authEmail)
+      
+      if (!existingAuthUser) {
+        console.log(`[Verify Wallet] Creating auth user for existing verified wallet...`)
+        const { data: newUser, error: createUserError } = await supabaseAdmin.auth.admin.createUser({
+          email: authEmail,
+          password: authPassword,
+          email_confirm: true,
+          user_metadata: {
+            wallet_address: wallet,
+            verified_via_wallet: true,
+          }
+        })
+        
+        if (createUserError) {
+          console.error('[Verify Wallet] ⚠️ Failed to create auth user:', createUserError.message)
+        } else {
+          console.log(`[Verify Wallet] ✅ Created auth user for existing wallet: ${newUser.user?.id}`)
+        }
+      } else {
+        console.log(`[Verify Wallet] ✅ Auth user already exists: ${existingAuthUser.id}`)
+      }
+      
       const duration = Date.now() - startTime
       console.log(`[Verify Wallet] ✅ Returning existing verification (${duration}ms)`)
       
@@ -275,7 +305,8 @@ export async function POST(request: NextRequest) {
         success: true,
         wallet,
         verifiedAt: existingProfile.wallet_verified_at || new Date().toISOString(),
-        message: 'Wallet was already verified'
+        message: 'Wallet was already verified',
+        authEmail,
       } satisfies SuccessResponse)
     }
     
@@ -337,6 +368,44 @@ export async function POST(request: NextRequest) {
     
     console.log(`[Verify Wallet] ✅ Profile updated successfully`)
     
+    // ==================== STEP 5.5: CREATE SUPABASE AUTH SESSION ====================
+    console.log(`[Verify Wallet] Step 5.5: Creating Supabase auth session...`)
+    
+    // Create or get auth user for this wallet
+    // Use wallet address as the "email" since we don't require actual emails
+    const authEmail = `${wallet}@align.solana`
+    const authPassword = wallet // Use wallet as password - only accessible via admin API
+    
+    // Try to get existing user first
+    const { data: { users: existingAuthUsers } } = await supabaseAdmin.auth.admin.listUsers()
+    const existingAuthUser = existingAuthUsers.find(u => u.email === authEmail)
+    
+    let userId: string | undefined
+    
+    if (existingAuthUser) {
+      console.log(`[Verify Wallet] Found existing auth user: ${existingAuthUser.id}`)
+      userId = existingAuthUser.id
+    } else {
+      // Create new auth user with password
+      const { data: newUser, error: createUserError } = await supabaseAdmin.auth.admin.createUser({
+        email: authEmail,
+        password: authPassword,
+        email_confirm: true, // Auto-confirm since we verified the wallet
+        user_metadata: {
+          wallet_address: wallet,
+          verified_via_wallet: true,
+        }
+      })
+      
+      if (createUserError || !newUser.user) {
+        console.error('[Verify Wallet] ⚠️ Failed to create auth user:', createUserError?.message)
+        // Non-blocking - profile is still verified
+      } else {
+        console.log(`[Verify Wallet] ✅ Created auth user: ${newUser.user.id}`)
+        userId = newUser.user.id
+      }
+    }
+    
     // ==================== STEP 6: CREATE AUDIT RECORD ====================
     console.log(`[Verify Wallet] Step 6: Creating verification audit record...`)
     
@@ -386,12 +455,14 @@ export async function POST(request: NextRequest) {
     console.log(`[Verify Wallet] Wallet: ${preview}`)
     console.log(`[Verify Wallet] Verified at: ${verifiedAt}`)
     console.log(`[Verify Wallet] Duration: ${duration}ms`)
+    console.log(`[Verify Wallet] Auth user ID: ${userId || 'not created'}`)
     console.log(`[Verify Wallet] ========================================`)
     
     return NextResponse.json({
       success: true,
       wallet,
       verifiedAt,
+      authEmail: `${wallet}@align.solana`, // Frontend can use this to sign in
     } satisfies SuccessResponse)
     
   } catch (error) {
@@ -439,3 +510,4 @@ export async function DELETE() {
     { status: 405 }
   )
 }
+

@@ -84,24 +84,62 @@ export async function verifyAuth(request: NextRequest): Promise<AuthResult> {
 /**
  * Get wallet address for authenticated user
  */
-export async function getUserWallet(userId: string): Promise<WalletResult> {
+export async function getUserWallet(userId: string, authUser?: any): Promise<WalletResult> {
+  // If auth user is provided, try to extract wallet from it first
+  if (authUser) {
+    // Try user metadata first (for new auth users)
+    if (authUser.user_metadata?.wallet_address) {
+      return {
+        success: true,
+        wallet: authUser.user_metadata.wallet_address
+      }
+    }
+
+    // Try to extract from email ({wallet}@align.solana format)
+    if (authUser.email?.endsWith('@align.solana')) {
+      const wallet = authUser.email.replace('@align.solana', '')
+      return {
+        success: true,
+        wallet
+      }
+    }
+  }
+
+  // Fallback: try profiles table (legacy)
   const { data: profile, error } = await supabaseAdmin
     .from('profiles')
     .select('wallet_address')
     .eq('id', userId)
     .single()
 
-  if (error || !profile?.wallet_address) {
+  if (profile?.wallet_address) {
     return {
-      success: false,
-      error: 'No wallet address linked to account',
-      status: 403
+      success: true,
+      wallet: profile.wallet_address
+    }
+  }
+
+  // Final fallback: try user_profiles table
+  if (authUser?.email?.endsWith('@align.solana')) {
+    const potentialWallet = authUser.email.replace('@align.solana', '')
+    const { data: userProfile } = await supabaseAdmin
+      .from('user_profiles')
+      .select('wallet_address')
+      .eq('wallet_address', potentialWallet)
+      .single()
+
+    if (userProfile?.wallet_address) {
+      return {
+        success: true,
+        wallet: userProfile.wallet_address
+      }
     }
   }
 
   return {
-    success: true,
-    wallet: profile.wallet_address
+    success: false,
+    error: 'No wallet address linked to account',
+    status: 403
   }
 }
 
@@ -262,3 +300,4 @@ export async function verifyAdminAuth(request: NextRequest): Promise<FullAuthRes
     admin: adminResult.admin
   }
 }
+

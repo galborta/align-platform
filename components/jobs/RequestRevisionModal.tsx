@@ -31,6 +31,7 @@ import CameraAltIcon from '@mui/icons-material/CameraAlt'
 import { toast } from 'react-hot-toast'
 import { parseRevisionOffering, formatRevisionOffering, canRequestRevision, isVoluntaryRevision } from '@/lib/revisions'
 import { supabase } from '@/lib/supabase'
+import { getSessionWithError } from '@/lib/session-helpers'
 import type { JobApplication } from '@/types/database'
 
 interface ImagePreview {
@@ -237,10 +238,21 @@ export function RequestRevisionModal({
         imageUrls = await uploadImages()
       }
 
+      // Get Supabase session for authentication
+      const { session, error: sessionError } = await getSessionWithError()
+      if (sessionError || !session) {
+        toast.error(sessionError || 'Authentication required. Please sign in again.')
+        setLoading(false)
+        return
+      }
+      
       // Call the revision request API endpoint
       const response = await fetch(`/api/jobs/${jobId}/request-revision`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`
+        },
         body: JSON.stringify({
           poster_wallet: posterWallet,
           notes: notes.trim(),

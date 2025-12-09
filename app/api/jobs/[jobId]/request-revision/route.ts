@@ -89,7 +89,8 @@ export async function POST(
       )
     }
 
-    console.log(`[Request Revision] User wallet: ${profile.wallet_address}`)
+    const authenticatedWallet = profile.wallet_address
+    console.log(`[Request Revision] User wallet: ${authenticatedWallet}`)
 
     // ==================== FETCH AND VALIDATE JOB ====================
 
@@ -114,7 +115,7 @@ export async function POST(
     // ==================== AUTHORIZATION ====================
 
     // Verify user is the job poster
-    if (profile.wallet_address !== job.poster_wallet) {
+    if (authenticatedWallet !== job.poster_wallet) {
       console.error('[Request Revision] Unauthorized - not job poster')
       return NextResponse.json(
         { error: 'Only job poster can request revisions' },
@@ -211,7 +212,7 @@ export async function POST(
       .from('job_comments')
       .insert({
         job_id: jobId,
-        wallet_address: profile.wallet_address,
+        wallet_address: authenticatedWallet,
         message: commentMessage
       })
 
@@ -248,7 +249,7 @@ export async function POST(
       await notificationService.createNotification({
         userWallet: workerWallet,
         type: notificationType,
-        actorWallet: profile.wallet_address,
+        actorWallet: authenticatedWallet,
         referenceId: jobId,
         referenceType: 'job',
         metadata: {

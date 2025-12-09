@@ -608,9 +608,26 @@ export function CreateJobModal({
               const refundAmount = Math.abs(escrowDifference)
               toast.loading(`Refunding ${refundAmount.toFixed(2)} ${tokenSymbol} (full amount including fee)...`, { id: 'escrow-adjust' })
 
+              // Get Supabase session for authentication (try to refresh if expired)
+              let session = (await supabase.auth.getSession()).data.session
+              
+              // If no session or expired, try to refresh
+              if (!session) {
+                const { data: { session: refreshedSession }, error: refreshError } = await supabase.auth.refreshSession()
+                if (refreshError || !refreshedSession) {
+                  toast.error('Authentication session expired. Please refresh the page and try again.', { id: 'escrow-adjust' })
+                  setLoading(false)
+                  return
+                }
+                session = refreshedSession
+              }
+
               const refundResponse = await fetch(`/api/jobs/${existingJob.id}/adjust-escrow`, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: { 
+                  'Content-Type': 'application/json',
+                  'Authorization': `Bearer ${session.access_token}`
+                },
                 body: JSON.stringify({
                   poster_wallet: walletAddress,
                   refund_amount: refundAmount
@@ -637,10 +654,27 @@ export function CreateJobModal({
           }
         }
 
+        // Get Supabase session for authentication (try to refresh if expired)
+        let session = (await supabase.auth.getSession()).data.session
+        
+        // If no session or expired, try to refresh
+        if (!session) {
+          const { data: { session: refreshedSession }, error: refreshError } = await supabase.auth.refreshSession()
+          if (refreshError || !refreshedSession) {
+            toast.error('Authentication session expired. Please refresh the page and try again.')
+            setLoading(false)
+            return
+          }
+          session = refreshedSession
+        }
+        
         // Call backend API to update the job
         const response = await fetch(`/api/jobs/${existingJob.id}/update`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${session.access_token}`
+          },
           body: JSON.stringify(updatePayload)
         })
 

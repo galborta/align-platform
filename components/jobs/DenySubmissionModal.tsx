@@ -17,6 +17,7 @@ import {
   FormControl,
   FormLabel
 } from '@mui/material'
+import { supabase } from '@/lib/supabase'
 
 // ==================== TYPES ====================
 
@@ -59,9 +60,20 @@ export default function DenySubmissionModal({
     setError('')
 
     try {
+      // Get Supabase session for authentication
+      const { session, error: sessionError } = await getSessionWithError()
+      if (sessionError || !session) {
+        setError(sessionError || 'Authentication required. Please sign in again.')
+        setLoading(false)
+        return
+      }
+      
       const response = await fetch(`/api/jobs/${jobId}/review-submission`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`
+        },
         body: JSON.stringify({
           submission_id: submission.id,
           action: 'deny',

@@ -90,7 +90,10 @@ class NotificationService {
     'high_revision_count_warning_worker', // Important warning
     'contest_judging_started', // Poster needs to select winners
     'contest_winners_selected', // Participants need to know results
-    'contest_prize_won' // Winner needs to know they won
+    'contest_prize_won', // Winner needs to know they won
+    'contest_no_submissions', // Poster can cancel for refund
+    'contest_deadline_reminder', // Important deadline reminder
+    'job_status_changed' // Status changes are important
   ];
 
   // Types that trigger browser notifications (high priority)
@@ -98,6 +101,8 @@ class NotificationService {
     'job_assigned',
     'job_completed',
     'tip_received',
+    'contest_no_submissions',
+    'contest_deadline_reminder',
     'message_received',
     'payment_released',
     'karma_warning',
@@ -1080,6 +1085,26 @@ class NotificationService {
         return {
           title: `🥇 Congratulations! You won ${positionText} place!`,
           body: `You won ${positionText} place in "${metadata.job_title || 'a contest'}"! Prize: ${metadata.prize_amount_tokens?.toLocaleString() || '...'} ${metadata.token || 'tokens'}`
+        };
+
+      // Contest deadline notifications
+      case 'contest_no_submissions':
+        return {
+          title: '📭 Contest Ended - No Submissions',
+          body: `Your contest "${metadata.job_title || 'a contest'}" received no submissions. You can cancel it for a full refund with no karma penalty.`
+        };
+
+      case 'contest_deadline_reminder':
+        return {
+          title: '⏰ Contest Deadline Approaching',
+          body: `Your contest "${metadata.job_title || 'a contest'}" ends soon! Current submissions: ${metadata.submission_count || 0}`
+        };
+
+      // Job status change notifications
+      case 'job_status_changed':
+        return {
+          title: '🔄 Job Status Changed',
+          body: `Your job "${metadata.job_title || 'a job'}" status changed to ${metadata.new_status || 'updated'}`
         };
 
       default:

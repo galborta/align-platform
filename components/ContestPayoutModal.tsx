@@ -27,6 +27,7 @@ import { PublicKey } from '@solana/web3.js'
 import { verifyEscrowBalance } from '@/lib/escrow-payout'
 import { getEscrowWallet } from '@/lib/platform-settings'
 import { toast } from 'react-hot-toast'
+import { supabase } from '@/lib/supabase'
 import { WalletAddressWithButtons } from './WalletAddressWithButtons'
 
 type Job = Database['public']['Tables']['jobs']['Row']
@@ -122,10 +123,21 @@ export default function ContestPayoutModal({
     try {
       console.log('[ContestPayout] Executing payout via API...')
       
+      // Get Supabase session for authentication
+      const { data: { session }, error: sessionError } = await supabase.auth.getSession()
+      if (sessionError || !session) {
+        toast.error('Authentication required. Please sign in again.')
+        setProcessing(false)
+        return
+      }
+      
       // Call server-side API that uses escrow keypair
       const response = await fetch(`/api/jobs/${job.id}/contest-payout`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`
+        },
         body: JSON.stringify({
           posterWallet: job.poster_wallet
         })

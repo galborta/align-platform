@@ -12,8 +12,10 @@ const supabaseAdmin = createClient<Database>(
 /**
  * GET /api/cron/contest-judging-notifications
  * 
- * Cron job that notifies contest posters when their contest enters the judging phase.
- * A contest enters judging phase when its submission deadline has passed.
+ * Cron job that notifies contest posters when their contest deadline has passed.
+ * Handles two scenarios:
+ * 1. Contests with submissions: Notify poster to select winners
+ * 2. Contests with NO submissions: Notify poster they can cancel for full refund (no karma penalty)
  * 
  * **Schedule:** Recommended to run every 15 minutes via Vercel Cron
  * 
@@ -21,10 +23,10 @@ const supabaseAdmin = createClient<Database>(
  * 1. Find all contest jobs where:
  *    - Submission deadline has passed
  *    - Winners have NOT been selected yet
- *    - Has at least one submission
  *    - Poster hasn't been notified yet (tracked by judging_notification_sent_at)
- * 2. For each contest, notify the poster that judging can begin
- * 3. Mark the contest as notified to prevent duplicate notifications
+ * 2. For each contest, count submissions
+ * 3. Send appropriate notification based on submission count
+ * 4. Mark the contest as notified to prevent duplicate notifications
  * 
  * **Security:**
  * - Requires CRON_SECRET in Authorization header (optional for dev)
@@ -126,37 +128,47 @@ export async function GET(request: NextRequest) {
         continue
       }
 
-      // Skip if no submissions
-      if (!submissionCount || submissionCount === 0) {
-        console.log(`[Contest Judging Cron] Skipping contest ${contest.id} - no submissions`)
-        results.push({
-          job_id: contest.id,
-          job_title: contest.title,
-          submission_count: 0,
-          notified: false
-        })
-        continue
-      }
-
       // ==================== SEND NOTIFICATION ====================
 
       try {
-        await notificationService.notifyContestJudgingStarted({
-          posterWallet: contest.poster_wallet,
-          jobId: contest.id,
-          jobTitle: contest.title,
-          submissionCount
-        })
+        if (!submissionCount || submissionCount === 0) {
+          // No submissions - notify poster they can cancel for full refund
+          console.log(`[Contest Judging Cron] Contest ${contest.id} has no submissions - notifying about cancellation option`)
+          
+          await notificationService.createNotification({
+            userWallet: contest.poster_wallet,
+            type: 'contest_no_submissions',
+            referenceId: contest.id,
+            referenceType: 'job',
+            metadata: {
+              job_id: contest.id,
+              job_title: contest.title,
+              submission_count: 0,
+              message: 'Your contest deadline has passed with no submissions. You can cancel this contest for a full refund with no karma penalty.'
+            }
+          })
 
-        notificationsSent++
-        console.log(`[Contest Judging Cron] ✅ Notified poster for contest ${contest.id}`)
+          notificationsSent++
+          console.log(`[Contest Judging Cron] ✅ Notified poster about no submissions for contest ${contest.id}`)
+        } else {
+          // Has submissions - notify poster to select winners
+          await notificationService.notifyContestJudgingStarted({
+            posterWallet: contest.poster_wallet,
+            jobId: contest.id,
+            jobTitle: contest.title,
+            submissionCount
+          })
+
+          notificationsSent++
+          console.log(`[Contest Judging Cron] ✅ Notified poster to select winners for contest ${contest.id}`)
+        }
       } catch (notifError) {
         console.error(`[Contest Judging Cron] Failed to notify poster for ${contest.id}:`, notifError)
         // Continue but don't mark as notified
         results.push({
           job_id: contest.id,
           job_title: contest.title,
-          submission_count: submissionCount,
+          submission_count: submissionCount || 0,
           notified: false
         })
         continue
@@ -181,7 +193,7 @@ export async function GET(request: NextRequest) {
       results.push({
         job_id: contest.id,
         job_title: contest.title,
-        submission_count: submissionCount,
+        submission_count: submissionCount || 0,
         notified: true
       })
     }

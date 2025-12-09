@@ -8,6 +8,7 @@ import { saveAdminSession, getAdminSession, isSessionValid, clearAdminSession } 
 import { AppHeader } from '@/components/AppHeader'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
+import { toast } from 'react-hot-toast'
 
 interface PendingRelease {
   id: string
@@ -210,10 +211,19 @@ export default function EscrowReleasesPage() {
     try {
       setProcessing(prev => ({ ...prev, [jobId]: true }))
 
+      // Get Supabase session for authentication
+      const { data: { session }, error: sessionError } = await supabase.auth.getSession()
+      if (sessionError || !session) {
+        toast.error('Authentication required. Please sign in again.')
+        setProcessing(prev => ({ ...prev, [jobId]: false }))
+        return
+      }
+
       const response = await fetch(`/api/admin/jobs/${jobId}/manual-release`, {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json'
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`
         }
       })
 

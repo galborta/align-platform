@@ -77,7 +77,8 @@ export async function POST(
       )
     }
 
-    console.log(`[Assign Job] User wallet: ${profile.wallet_address}`)
+    const authenticatedWallet = profile.wallet_address
+    console.log(`[Assign Job] User wallet: ${authenticatedWallet}`)
 
     // ==================== FETCH AND VALIDATE JOB ====================
 
@@ -98,7 +99,7 @@ export async function POST(
     // ==================== AUTHORIZATION ====================
 
     // Verify user is the job poster
-    if (profile.wallet_address !== job.poster_wallet) {
+    if (authenticatedWallet !== job.poster_wallet) {
       console.error('[Assign Job] Unauthorized - not job poster')
       return NextResponse.json(
         { error: 'Only job poster can assign this job' },

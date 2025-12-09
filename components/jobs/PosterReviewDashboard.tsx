@@ -22,6 +22,8 @@ import {
   calculateRefundAmount 
 } from '@/lib/social-media-jobs'
 import SubmissionReviewCard from './SubmissionReviewCard'
+import { toast } from 'react-hot-toast'
+import { supabase } from '@/lib/supabase'
 
 // ==================== TYPES ====================
 
@@ -167,9 +169,19 @@ export default function PosterReviewDashboard({
 
   const handleApproveSubmission = async (submissionId: string) => {
     try {
+      // Get Supabase session for authentication
+      const { data: { session }, error: sessionError } = await supabase.auth.getSession()
+      if (sessionError || !session) {
+        toast.error('Authentication required. Please sign in again.')
+        return
+      }
+      
       const response = await fetch(`/api/jobs/${job.id}/review-submission`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`
+        },
         body: JSON.stringify({
           submission_id: submissionId,
           action: 'approve'
@@ -214,10 +226,21 @@ export default function PosterReviewDashboard({
     setFinalizingLoading(true)
 
     try {
+      // Get Supabase session for authentication
+      const { data: { session }, error: sessionError } = await supabase.auth.getSession()
+      if (sessionError || !session) {
+        toast.error('Authentication required. Please sign in again.')
+        setProcessingPayouts(false)
+        return
+      }
+      
       // Call finalize-payments API (server-side signing)
       const response = await fetch(`/api/jobs/${job.id}/finalize-payments`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`
+        },
         body: JSON.stringify({
           poster_wallet: currentUserWallet
         })

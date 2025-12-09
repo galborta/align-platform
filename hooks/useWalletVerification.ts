@@ -7,6 +7,7 @@ import { useWallet } from '@solana/wallet-adapter-react'
 import { useVerification } from '@/contexts/VerificationContext'
 import { generateVerificationMessage } from '@/lib/solana-signature'
 import toast from 'react-hot-toast'
+import { supabase } from '@/lib/supabase'
 
 type VerificationStep = 
   | 'idle' 
@@ -122,6 +123,28 @@ export function useWalletVerification() {
 
       // Success!
       console.log(`[Verification] ✅ Wallet verified successfully: ${wallet.slice(0, 8)}...`)
+      
+      // Sign in to Supabase to create session
+      try {
+        const authEmail = `${wallet}@align.solana`
+        const authPassword = wallet // Same as used on backend
+        
+        const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
+          email: authEmail,
+          password: authPassword,
+        })
+        
+        if (authError) {
+          console.error('[Verification] ⚠️ Auth session creation failed:', authError.message)
+          // Non-blocking - wallet is still verified
+        } else {
+          console.log('[Verification] ✅ Supabase session created:', authData.session?.access_token?.slice(0, 20) + '...')
+        }
+      } catch (authErr) {
+        console.error('[Verification] ⚠️ Auth error:', authErr)
+        // Non-blocking - wallet is still verified
+      }
+      
       toast.success('Wallet verified successfully! 🎉', { id: toastId })
       setCurrentStep('complete')
 

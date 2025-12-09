@@ -6,6 +6,7 @@ import { getFeePercentage, getFeeWallet, getEscrowWallet } from '@/lib/platform-
 import { notificationService } from '@/lib/services/notificationService'
 import { Database } from '@/types/database'
 import { rateLimit } from '@/lib/rate-limit'
+import { verifyRequestSignature } from '@/lib/signature-auth'
 
 // Create Supabase client with service role for server-side operations
 const supabaseAdmin = createClient<Database>(
@@ -109,50 +110,31 @@ export async function POST(
       
       console.log('[Release Payment] ✅ Service token validated for auto-release')
     } else {
-      // Manual release: Require Supabase authentication
-      const authHeader = request.headers.get('authorization')
-      if (!authHeader?.startsWith('Bearer ')) {
-        console.error('[Release Payment] Missing or invalid authorization header')
+      // Manual release: Require wallet signature authentication
+      const { wallet, signature, message } = body
+
+      const authResult = verifyRequestSignature(
+        { wallet, signature, message },
+        {
+          action: 'Release payment',
+          resourceId: jobId,
+          maxAge: 2 * 60 * 1000 // 2 minutes
+        }
+      )
+
+      if (!authResult.success) {
+        console.error('[Release Payment] Signature verification failed:', authResult.error)
         return NextResponse.json(
-          { error: 'Unauthorized - Authentication required' },
+          { error: authResult.error || 'Invalid signature' },
           { status: 401 }
         )
       }
 
-      const token = authHeader.substring(7)
-      
-      // Verify JWT and get authenticated user
-      const { data: { user }, error: authError } = await supabaseAdmin.auth.getUser(token)
-
-      if (authError || !user) {
-        console.error('[Release Payment] Invalid auth token:', authError)
-        return NextResponse.json(
-          { error: 'Invalid authentication token' },
-          { status: 401 }
-        )
-      }
-
-      console.log(`[Release Payment] Authenticated user: ${user.id}`)
-
-      // Get user's wallet from their profile
-      const { data: profile, error: profileError } = await supabaseAdmin
-        .from('profiles')
-        .select('wallet_address')
-        .eq('id', user.id)
-        .single()
-
-      if (profileError || !profile?.wallet_address) {
-        console.error('[Release Payment] No wallet found for user:', profileError)
-        return NextResponse.json(
-          { error: 'No wallet address linked to account' },
-          { status: 403 }
-        )
-      }
-
-      console.log(`[Release Payment] User wallet: ${profile.wallet_address}`)
+      const authenticatedWallet = authResult.wallet!
+      console.log(`[Release Payment] Authenticated wallet: ${authenticatedWallet}`)
 
       // Verify wallet matches job poster
-      if (profile.wallet_address !== job.poster_wallet) {
+      if (authenticatedWallet !== job.poster_wallet) {
         console.error('[Release Payment] Wallet mismatch - not job poster')
         return NextResponse.json(
           { error: 'Only the job poster can release payment' },

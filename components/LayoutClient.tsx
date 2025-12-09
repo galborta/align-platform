@@ -7,6 +7,7 @@ import { MessagesSidebar } from '@/components/MessagesSidebar'
 import { useMessaging } from '@/lib/MessagingContext'
 import { usePresenceTracking } from '@/lib/presence'
 import { useMessageNotifications } from '@/lib/notifications'
+import { useAutoSignIn } from '@/hooks/useAutoSignIn'
 
 function MessagesSidebarWrapper() {
   const wallet = useWallet()
@@ -37,6 +38,9 @@ export function LayoutClient({ children }: { children: ReactNode }) {
   
   // Track user presence (online status)
   usePresenceTracking(wallet.publicKey?.toBase58())
+  
+  // Automatically sign in to Supabase when wallet connects
+  useAutoSignIn()
   
   return (
     <MessagingProvider currentWallet={wallet.publicKey?.toBase58()}>

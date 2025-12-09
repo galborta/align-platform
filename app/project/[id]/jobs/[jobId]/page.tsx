@@ -38,6 +38,7 @@ import { VerifyToUnlockButton } from '@/components/VerifyToUnlockButton'
 import { formatDistanceToNow, addDays, format } from 'date-fns'
 import { toast } from 'react-hot-toast'
 import { useMessaging } from '@/lib/MessagingContext'
+import { useActionSignature } from '@/hooks/useActionSignature'
 import ArrowBackIcon from '@mui/icons-material/ArrowBack'
 import CircularProgress from '@mui/material/CircularProgress'
 import Chip from '@mui/material/Chip'
@@ -821,43 +822,74 @@ export default function JobDetailPage() {
     setShowSubmitWorkModal(true)
   }
 
+  const { signAction } = useActionSignature()
+  
   const handleCancelJob = async () => {
     if (!job || !publicKey) return
 
     setCancelling(true)
     try {
+      // Check if this is a contest with no submissions after deadline (no karma penalty)
+      const isContestWithNoSubmissions = job.is_contest && 
+        contestSubmissions.length === 0 && 
+        job.contest_submission_deadline && 
+        new Date() > new Date(job.contest_submission_deadline)
+
+      // Sign once for both refund and cancel operations
+      toast.loading('Please sign to authorize action...', { id: 'action' })
+      const signedAction = await signAction({
+        action: 'Cancel job and refund',
+        resourceId: job.id,
+        additionalInfo: {
+          'Skip Penalty': isContestWithNoSubmissions ? 'Yes (no submissions)' : 'No',
+          'Refund Amount': job.escrow_locked ? `${job.escrow_amount_tokens} tokens` : 'None'
+        }
+      })
+
+      console.log('[Frontend] Signed action:', {
+        wallet: signedAction.wallet,
+        signatureLength: signedAction.signature.length
+      })
+
       // If escrow is locked, refund tokens first
       let refundSuccess = false
       let refundAmount = 0
       if (job.escrow_locked && job.escrow_amount_tokens && job.escrow_token_mint) {
-        toast.loading('Refunding tokens from escrow...', { id: 'refund' })
-        
         try {
+          toast.loading('Processing refund...', { id: 'action' })
           const response = await fetch(`/api/jobs/${job.id}/refund-escrow`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              poster_wallet: publicKey.toString()
-            })
+            headers: { 
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(signedAction)
           })
 
           const data = await response.json()
           
           if (!response.ok || !data.success) {
-            throw new Error(data.error || 'Refund failed')
+            // If escrow already refunded or doesn't exist, that's ok - proceed with cancel
+            const errorMsg = data.error || 'Refund failed'
+            if (errorMsg.includes('already been refunded') || errorMsg.includes('No escrow to refund')) {
+              console.log('ℹ️  Escrow already refunded, proceeding with cancellation...')
+              toast.loading('Canceling job...', { id: 'action' })
+            } else {
+              // Other errors are real problems
+              throw new Error(errorMsg)
+            }
+          } else {
+            refundAmount = data.amountRefunded
+            toast.loading(`Refunded ${refundAmount.toFixed(2)} tokens. Canceling job...`, { id: 'action' })
+            refundSuccess = true
+            console.log('✅ Refund successful, proceeding to cancel job status...')
           }
-
-          refundAmount = data.amountRefunded
-          toast.success(`Refunded ${refundAmount.toFixed(2)} tokens`, { id: 'refund' })
-          refundSuccess = true
-          console.log('✅ Refund successful, proceeding to cancel job status...')
         } catch (refundError) {
           console.error('Refund error:', refundError)
           toast.error(
             refundError instanceof Error 
               ? refundError.message 
               : 'Failed to refund escrow. Please contact support.', 
-            { id: 'refund' }
+            { id: 'action' }
           )
           setCancelling(false)
           setShowCancelConfirm(false)
@@ -868,11 +900,15 @@ export default function JobDetailPage() {
       // Cancel the job via API (uses service role to bypass RLS)
       console.log('📝 Calling cancel API...')
       try {
+        toast.loading('Cancelling job...', { id: 'action' })
         const cancelResponse = await fetch(`/api/jobs/${job.id}/cancel`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 
+            'Content-Type': 'application/json'
+          },
           body: JSON.stringify({
-            poster_wallet: publicKey.toString()
+            ...signedAction,
+            skip_karma_penalty: isContestWithNoSubmissions
           })
         })
 
@@ -891,7 +927,10 @@ export default function JobDetailPage() {
       const refundText = refundSuccess 
         ? ` ${refundAmount.toFixed(2)} tokens refunded.` 
         : ''
-      toast.success(`Job cancelled. -50 karma penalty applied.${refundText}`, {
+      const penaltyText = isContestWithNoSubmissions 
+        ? '' 
+        : ' -50 karma penalty applied.'
+      toast.success(`Job cancelled.${penaltyText}${refundText}`, {
         duration: 5000,
         icon: '🚫'
       })
@@ -945,10 +984,21 @@ export default function JobDetailPage() {
     try {
       console.log('🎯 Assigning job to:', selectedApplication.applicant_wallet)
       
+      // Get Supabase session for authentication
+      const { data: { session }, error: sessionError } = await supabase.auth.getSession()
+      if (sessionError || !session) {
+        toast.error('Authentication required. Please sign in again.')
+        setAssigning(false)
+        return
+      }
+      
       // Call backend API to assign the job (uses service role to bypass RLS)
       const response = await fetch(`/api/jobs/${job.id}/assign`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`
+        },
         body: JSON.stringify({
           poster_wallet: publicKey.toString(),
           assigned_to: selectedApplication.applicant_wallet,
@@ -1058,11 +1108,20 @@ export default function JobDetailPage() {
     try {
       console.log('[Release Payment] Calling API for job:', job.id)
       
+      // Get Supabase session for authentication
+      const { data: { session }, error: sessionError } = await supabase.auth.getSession()
+      if (sessionError || !session) {
+        toast.error('Authentication required. Please sign in again.')
+        setReleasing(false)
+        return
+      }
+      
       // Call the payment release API endpoint
       const response = await fetch(`/api/jobs/${job.id}/release-payment`, {
         method: 'POST',
         headers: { 
-          'Content-Type': 'application/json' 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`
         },
         body: JSON.stringify({
           poster_wallet: publicKey.toString()
@@ -1145,10 +1204,21 @@ export default function JobDetailPage() {
         app => app.applicant_wallet === selectedReassignApplicant
       )
 
+      // Get Supabase session for authentication
+      const { data: { session }, error: sessionError } = await supabase.auth.getSession()
+      if (sessionError || !session) {
+        toast.error('Authentication required. Please sign in again.')
+        setReassigning(false)
+        return
+      }
+      
       // Call the reassign API endpoint
       const response = await fetch(`/api/jobs/${job.id}/reassign`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`
+        },
         body: JSON.stringify({
           poster_wallet: publicKey.toString(),
           new_worker_wallet: selectedReassignApplicant,
@@ -1363,6 +1433,31 @@ export default function JobDetailPage() {
                   <EmojiEventsIcon sx={{ mr: 1 }} />
                   Select Contest Winners
                 </Button>
+              ) : contestSubmissions.length === 0 && 
+                 job.contest_submission_deadline && 
+                 new Date() > new Date(job.contest_submission_deadline) ? (
+                // No submissions after deadline - allow cancellation without penalty
+                <div className="space-y-3">
+                  <Alert 
+                    severity="warning"
+                    sx={{
+                      borderRadius: '24px',
+                      '& .MuiAlert-message': {
+                        fontFamily: 'var(--font-body, Satoshi, sans-serif)'
+                      }
+                    }}
+                  >
+                    The submission deadline has passed with no submissions. You can cancel this contest to receive a full refund (no karma penalty).
+                  </Alert>
+                  <Button
+                    variant="outline"
+                    onClick={handleCancel}
+                    className="w-full"
+                    style={{ color: '#EF4444', borderColor: '#EF4444' }}
+                  >
+                    Cancel Contest & Get Refund
+                  </Button>
+                </div>
               ) : (
                 <Alert 
                   severity="info"
@@ -4191,7 +4286,14 @@ export default function JobDetailPage() {
         <DialogTitle>
           <div className="flex items-center gap-2">
             <WarningIcon sx={{ color: '#EF4444' }} />
-            <span style={{ color: '#1A1A1E' }}>Cancel Job?</span>
+            <span style={{ color: '#1A1A1E' }}>
+              {job?.is_contest && contestSubmissions.length === 0 && 
+               job?.contest_submission_deadline && 
+               new Date() > new Date(job.contest_submission_deadline)
+                ? 'Cancel Contest?'
+                : 'Cancel Job?'
+              }
+            </span>
           </div>
         </DialogTitle>
         <DialogContent>
@@ -4200,26 +4302,71 @@ export default function JobDetailPage() {
               className="text-base"
               style={{ color: '#1A1A1E' }}
             >
-              Are you sure you want to cancel this job? <strong>This action cannot be undone.</strong>
+              Are you sure you want to cancel this {job?.is_contest ? 'contest' : 'job'}? <strong>This action cannot be undone.</strong>
             </p>
 
-            <div 
-              className="p-4 rounded-lg border-2"
-              style={{ borderColor: '#FEE2E2', backgroundColor: '#FEF2F2' }}
-            >
-              <h4 
-                className="text-sm font-semibold mb-3"
-                style={{ color: '#EF4444' }}
+            {job?.is_contest && contestSubmissions.length === 0 && 
+             job?.contest_submission_deadline && 
+             new Date() > new Date(job.contest_submission_deadline) ? (
+              // Special messaging for contests with no submissions
+              <>
+                {/* Refund Preview */}
+                {job?.escrow_locked && job?.escrow_amount_tokens && (
+                  <div 
+                    className="p-4 rounded-lg border-2"
+                    style={{ borderColor: '#10B981', backgroundColor: '#ECFDF5' }}
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm font-medium" style={{ color: '#065F46' }}>
+                        You will receive:
+                      </span>
+                      <span className="text-xl font-bold" style={{ color: '#10B981' }}>
+                        +{job.escrow_amount_tokens.toFixed(2)} {job.token_symbol || 'tokens'}
+                      </span>
+                    </div>
+                    <p className="text-xs mt-1" style={{ color: '#059669' }}>
+                      Full refund (includes platform fee)
+                    </p>
+                  </div>
+                )}
+                
+                <div 
+                  className="p-4 rounded-lg border-2"
+                  style={{ borderColor: '#E0E7FF', backgroundColor: '#EEF2FF' }}
+                >
+                  <h4 
+                    className="text-sm font-semibold mb-3"
+                    style={{ color: '#4F46E5' }}
+                  >
+                    WHAT HAPPENS:
+                  </h4>
+                  <ul className="space-y-2 text-sm" style={{ color: '#1A1A1E' }}>
+                    <li>✅ No karma penalty (no submissions received)</li>
+                    <li>💰 Full payment refunded to your wallet</li>
+                    <li>🏆 Contest will be marked as cancelled</li>
+                  </ul>
+                </div>
+              </>
+            ) : (
+              // Regular cancellation consequences
+              <div 
+                className="p-4 rounded-lg border-2"
+                style={{ borderColor: '#FEE2E2', backgroundColor: '#FEF2F2' }}
               >
-                CONSEQUENCES:
-              </h4>
-              <ul className="space-y-2 text-sm" style={{ color: '#1A1A1E' }}>
-                <li>❌ You will lose <strong>-50 karma</strong></li>
-                <li>💰 Payment will be returned to your wallet</li>
-                <li>🚫 All applications will be invalidated</li>
-                <li>⏰ Cannot repost same job for 24 hours</li>
-              </ul>
-            </div>
+                <h4 
+                  className="text-sm font-semibold mb-3"
+                  style={{ color: '#EF4444' }}
+                >
+                  CONSEQUENCES:
+                </h4>
+                <ul className="space-y-2 text-sm" style={{ color: '#1A1A1E' }}>
+                  <li>❌ You will lose <strong>-50 karma</strong></li>
+                  <li>💰 Payment will be returned to your wallet</li>
+                  <li>🚫 All applications will be invalidated</li>
+                  <li>⏰ Cannot repost same job for 24 hours</li>
+                </ul>
+              </div>
+            )}
 
             <div 
               className="p-4 rounded-lg"

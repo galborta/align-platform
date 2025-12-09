@@ -28,6 +28,9 @@ interface NotificationItemProps {
 // Icon mapping
 const NOTIFICATION_ICONS: Record<NotificationType, LucideIcon> = {
   job_application_received: Briefcase,
+  contest_no_submissions: Inbox,
+  contest_deadline_reminder: AlertCircle,
+  job_status_changed: RefreshCw,
   job_assigned: CheckCircle,
   job_submitted: Upload,
   job_completed: DollarSign,
@@ -61,6 +64,10 @@ const NOTIFICATION_ICONS: Record<NotificationType, LucideIcon> = {
   // Revision warning notifications
   high_revision_count_warning_poster: AlertTriangle,
   high_revision_count_warning_worker: AlertTriangle,
+  // Contest notifications
+  contest_judging_started: Award,
+  contest_winners_selected: Award,
+  contest_prize_won: Award,
 }
 
 // Icon color mapping

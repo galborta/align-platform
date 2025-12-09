@@ -25,6 +25,8 @@ import CheckCircleIcon from '@mui/icons-material/CheckCircle'
 import LinkIcon from '@mui/icons-material/Link'
 import PeopleIcon from '@mui/icons-material/People'
 import { toast } from 'react-hot-toast'
+import { supabase } from '@/lib/supabase'
+import { getSessionWithError } from '@/lib/session-helpers'
 
 interface SubmitSocialParticipationModalProps {
   open: boolean
@@ -114,9 +116,20 @@ export default function SubmitSocialParticipationModal({
     setError('')
 
     try {
+      // Get Supabase session for authentication
+      const { session, error: sessionError } = await getSessionWithError()
+      if (sessionError || !session) {
+        setError(sessionError || 'Authentication required. Please sign in again.')
+        setLoading(false)
+        return
+      }
+      
       const response = await fetch(`/api/jobs/${job.id}/submit-social`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`
+        },
         body: JSON.stringify({
           worker_wallet: userWallet,
           social_tweet_link: tweetLink.trim(),

@@ -1733,7 +1733,11 @@ export type NotificationType =
   // Contest notifications
   | 'contest_judging_started'
   | 'contest_winners_selected'
-  | 'contest_prize_won';
+  | 'contest_prize_won'
+  | 'contest_no_submissions'
+  | 'contest_deadline_reminder'
+  // Job status notifications
+  | 'job_status_changed';
 
 /**
  * Types of entities that can be referenced in notifications

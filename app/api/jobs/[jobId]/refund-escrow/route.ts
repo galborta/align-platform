@@ -3,6 +3,7 @@ import { createClient } from '@supabase/supabase-js'
 import { Connection, clusterApiUrl } from '@solana/web3.js'
 import { refundEscrowToPoster } from '@/lib/solana/escrow-refund'
 import { Database } from '@/types/database'
+import { verifyRequestSignature } from '@/lib/signature-auth'
 
 // Create Supabase client with service role for server-side operations
 const supabaseAdmin = createClient<Database>(
@@ -60,45 +61,50 @@ export async function POST(
     console.log(`[Refund API] Processing refund for job ${jobId}`)
 
     // ==================== AUTHENTICATION ====================
+    // Verify cryptographic signature proving wallet ownership
     
-    // Get authenticated user via Supabase JWT
-    const authHeader = request.headers.get('authorization')
-    if (!authHeader?.startsWith('Bearer ')) {
-      console.error('[Refund API] Missing authorization header')
+    const body = await request.json()
+    const { wallet, signature, message } = body
+
+    console.log('='.repeat(80))
+    console.log('[REFUND API DEBUG] REQUEST BODY RECEIVED:')
+    console.log('Wallet:', wallet)
+    console.log('Signature:', signature)
+    console.log('Message:', message)
+    console.log('='.repeat(80))
+
+    // Accept both "Refund escrow" and "Cancel job and refund" actions
+    let authResult = verifyRequestSignature(
+      { wallet, signature, message },
+      {
+        action: 'Cancel job and refund',
+        resourceId: jobId,
+        maxAge: 2 * 60 * 1000 // 2 minutes
+      }
+    )
+    
+    // Fallback to old action name for backwards compatibility
+    if (!authResult.success) {
+      authResult = verifyRequestSignature(
+        { wallet, signature, message },
+        {
+          action: 'Refund escrow',
+          resourceId: jobId,
+          maxAge: 2 * 60 * 1000 // 2 minutes
+        }
+      )
+    }
+
+    if (!authResult.success) {
+      console.error('[Refund API] Signature verification failed:', authResult.error)
       return NextResponse.json(
-        { error: 'Unauthorized - Authentication required' },
+        { error: authResult.error || 'Invalid signature' },
         { status: 401 }
       )
     }
 
-    const token = authHeader.substring(7)
-    const { data: { user }, error: authError } = await supabaseAdmin.auth.getUser(token)
-
-    if (authError || !user) {
-      console.error('[Refund API] Invalid auth token:', authError)
-      return NextResponse.json(
-        { error: 'Invalid authentication token' },
-        { status: 401 }
-      )
-    }
-
-    // Get user's wallet from profile
-    const { data: profile, error: profileError } = await supabaseAdmin
-      .from('profiles')
-      .select('wallet_address')
-      .eq('id', user.id)
-      .single()
-
-    if (profileError || !profile?.wallet_address) {
-      console.error('[Refund API] No wallet found for user:', profileError)
-      return NextResponse.json(
-        { error: 'No wallet address linked to account' },
-        { status: 403 }
-      )
-    }
-
-    const authenticatedWallet = profile.wallet_address
-    console.log(`[Refund API] Authenticated user: ${user.id}`)
+    const authenticatedWallet = authResult.wallet!
+    console.log(`[Refund API] ✅ Authenticated via signature: ${authenticatedWallet.slice(0, 8)}...`)
     console.log(`[Refund API] User wallet: ${authenticatedWallet}`)
 
     // ==================== GET JOB DETAILS ====================
@@ -119,6 +125,11 @@ export async function POST(
     }
 
     // ==================== AUTHORIZATION ====================
+    
+    console.log('[Refund API] Authorization check:')
+    console.log('  Job poster wallet:', job.poster_wallet)
+    console.log('  Authenticated wallet:', authenticatedWallet)
+    console.log('  Match:', job.poster_wallet === authenticatedWallet)
 
     // Verify authenticated user is the job poster
     if (job.poster_wallet !== authenticatedWallet) {
@@ -161,7 +172,7 @@ export async function POST(
     const result = await refundEscrowToPoster({
       connection,
       jobId: job.id,
-      posterWallet: poster_wallet,
+      posterWallet: authenticatedWallet,
       tokenMint: job.escrow_token_mint,
       escrowAmount: job.escrow_amount_tokens,
       decimals: 9, // TODO: Get from token metadata or store in job

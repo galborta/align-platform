@@ -86,21 +86,21 @@ export async function POST(
 
     console.log(`[Update Job] Authenticated user: ${user.id}`)
 
-    const { data: profile, error: profileError } = await supabaseAdmin
-      .from('profiles')
-      .select('wallet_address')
-      .eq('id', user.id)
-      .single()
-
-    if (profileError || !profile?.wallet_address) {
-      console.error('[Update Job] No wallet found for user:', profileError)
+    // Import the helper at the top if not already imported
+    const { getUserWallet } = await import('@/lib/auth-helpers')
+    
+    const walletResult = await getUserWallet(user.id, user)
+    if (!walletResult.success) {
+      console.error('[Update Job] No wallet found for user:', user.id)
       return NextResponse.json(
-        { error: 'No wallet address linked to account' },
-        { status: 403 }
+        { error: walletResult.error },
+        { status: walletResult.status || 403 }
       )
     }
 
-    console.log(`[Update Job] User wallet: ${profile.wallet_address}`)
+    const authenticatedWallet = walletResult.wallet
+    console.log(`[Update Job] Authenticated wallet: ${authenticatedWallet.slice(0, 8)}...`)
+    console.log(`[Update Job] User wallet: ${authenticatedWallet}`)
 
     // ==================== FETCH AND VALIDATE JOB ====================
 
@@ -124,7 +124,7 @@ export async function POST(
     // ==================== AUTHORIZATION ====================
 
     // Verify user is the job poster
-    if (profile.wallet_address !== job.poster_wallet) {
+    if (authenticatedWallet !== job.poster_wallet) {
       console.warn(`[Update Job API] Unauthorized update attempt`)
       return NextResponse.json(
         { error: 'Only the job poster can update this job' },

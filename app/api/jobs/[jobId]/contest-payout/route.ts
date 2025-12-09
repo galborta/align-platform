@@ -10,6 +10,7 @@ import {
 import { Database } from '@/types/database'
 import { getFeeWallet } from '@/lib/platform-settings'
 import bs58 from 'bs58'
+import { verifyRequestSignature } from '@/lib/signature-auth'
 
 // Use service role for elevated permissions
 const supabaseAdmin = createClient<Database>(
@@ -47,46 +48,28 @@ export async function POST(
 
     // ==================== AUTHENTICATION ====================
 
-    // Authenticate request
-    const authHeader = request.headers.get('authorization')
-    if (!authHeader?.startsWith('Bearer ')) {
-      console.error('[Contest Payout] Missing authorization')
+    const body = await request.json()
+    const { wallet, signature, message } = body
+
+    const authResult = verifyRequestSignature(
+      { wallet, signature, message },
+      {
+        action: 'Payout contest prizes',
+        resourceId: jobId,
+        maxAge: 2 * 60 * 1000 // 2 minutes
+      }
+    )
+
+    if (!authResult.success) {
+      console.error('[Contest Payout] Signature verification failed:', authResult.error)
       return NextResponse.json(
-        { error: 'Unauthorized - Authentication required' },
+        { error: authResult.error || 'Invalid signature' },
         { status: 401 }
       )
     }
 
-    const token = authHeader.substring(7)
-
-    // Verify token
-    const { data: { user }, error: authError } = await supabaseAdmin.auth.getUser(token)
-
-    if (authError || !user) {
-      console.error('[Contest Payout] Auth failed:', authError)
-      return NextResponse.json(
-        { error: 'Invalid authentication token' },
-        { status: 401 }
-      )
-    }
-
-    // Get authenticated user's wallet
-    const { data: profile, error: profileError } = await supabaseAdmin
-      .from('profiles')
-      .select('wallet_address')
-      .eq('id', user.id)
-      .single()
-
-    if (profileError || !profile?.wallet_address) {
-      console.error('[Contest Payout] No wallet for user:', profileError)
-      return NextResponse.json(
-        { error: 'No wallet address linked to account' },
-        { status: 403 }
-      )
-    }
-
-    const authenticatedWallet = profile.wallet_address
-    console.log(`[Contest Payout] Authenticated user: ${user.id}`)
+    const authenticatedWallet = authResult.wallet!
+    console.log(`[Contest Payout] Authenticated wallet: ${authenticatedWallet}`)
     console.log(`[Contest Payout] User wallet: ${authenticatedWallet}`)
 
     // ==================== VALIDATION ====================

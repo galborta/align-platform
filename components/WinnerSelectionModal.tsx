@@ -137,10 +137,21 @@ export default function WinnerSelectionModal({
         }
       })
 
+      // Get Supabase session for authentication
+      const { data: { session }, error: sessionError } = await supabase.auth.getSession()
+      if (sessionError || !session) {
+        toast.error('Authentication required. Please sign in again.')
+        setSelecting(false)
+        return
+      }
+      
       // Call API to select winners (uses service role to bypass RLS)
       const response = await fetch(`/api/jobs/${job.id}/select-winners`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`
+        },
         body: JSON.stringify({
           posterWallet: job.poster_wallet,
           winners: winnersData

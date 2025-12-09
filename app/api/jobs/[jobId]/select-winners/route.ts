@@ -39,7 +39,7 @@ export async function POST(
     const { jobId } = await params
 
     // Parse winners selection data
-    const body: SelectWinnersRequest = await request.json()
+    const body = await request.json()
     const { winners } = body
 
     // ==================== VALIDATION ====================
@@ -92,7 +92,8 @@ export async function POST(
       )
     }
 
-    console.log(`[Select Winners] User wallet: ${profile.wallet_address}`)
+    const authenticatedWallet = profile.wallet_address
+    console.log(`[Select Winners] User wallet: ${authenticatedWallet}`)
 
     // ==================== FETCH AND VALIDATE JOB ====================
 
@@ -115,7 +116,7 @@ export async function POST(
     // ==================== AUTHORIZATION ====================
 
     // Verify user is the job poster
-    if (profile.wallet_address !== job.poster_wallet) {
+    if (authenticatedWallet !== job.poster_wallet) {
       console.error('[Select Winners] Unauthorized - not job poster')
       return NextResponse.json(
         { error: 'Only job poster can select contest winners' },
