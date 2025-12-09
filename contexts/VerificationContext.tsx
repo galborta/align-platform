@@ -27,10 +27,10 @@ export function VerificationProvider({ children }: { children: ReactNode }) {
   // Cache duration: 5 minutes
   const CACHE_DURATION = 5 * 60 * 1000
 
-  const checkVerificationStatus = useCallback(async (wallet: string) => {
-    // Check cache first
+  const checkVerificationStatus = useCallback(async (wallet: string, forceRefresh = false) => {
+    // Check cache first (skip if forceRefresh)
     const now = Date.now()
-    if (now - lastChecked < CACHE_DURATION && walletAddress === wallet) {
+    if (!forceRefresh && now - lastChecked < CACHE_DURATION && walletAddress === wallet) {
       console.log('[VerificationContext] Using cached verification status')
       return
     }
@@ -61,9 +61,9 @@ export function VerificationProvider({ children }: { children: ReactNode }) {
 
   const refreshStatus = useCallback(async () => {
     if (walletAddress) {
-      // Force refresh by clearing cache
-      setLastChecked(0)
-      await checkVerificationStatus(walletAddress)
+      console.log('[VerificationContext] Force refreshing status for:', walletAddress.slice(0, 8))
+      // Force refresh by passing true - bypasses cache
+      await checkVerificationStatus(walletAddress, true)
     }
   }, [walletAddress, checkVerificationStatus])
 
