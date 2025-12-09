@@ -17,7 +17,6 @@ import toast from 'react-hot-toast'
 import { supabase } from '@/lib/supabase'
 import { formatDistanceToNow } from 'date-fns'
 import { NotificationBell } from '@/components/notifications'
-import { AnimatedLogo } from '@/components/AnimatedLogo'
 
 export function AppHeader() {
   const wallet = useWallet()
@@ -107,7 +106,18 @@ export function AppHeader() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4" style={{ overflow: 'visible', minHeight: '64px' }}>
           <div className="flex items-center justify-between" style={{ overflow: 'visible' }}>
           <Link href="/" className="no-underline">
-            <AnimatedLogo />
+            <h1 
+              className="cursor-pointer hover:opacity-80 transition-opacity"
+              style={{
+                fontFamily: "'Gluten', cursive",
+                fontSize: '28px',
+                fontWeight: 500,
+                color: 'var(--text-primary)',
+                letterSpacing: '-0.02em',
+              }}
+            >
+              ORggly
+            </h1>
           </Link>
           
           <div className="flex items-center gap-2" style={{ overflow: 'visible', isolation: 'isolate' }}>
