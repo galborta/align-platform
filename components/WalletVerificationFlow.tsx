@@ -45,7 +45,7 @@ export function WalletVerificationFlow({
 
   // Session storage helpers - now tracks timestamp to allow re-triggering after timeout
   const getSessionKey = (wallet: string) => `orggly_verification_triggered_${wallet}`
-  const TRIGGER_TIMEOUT = 60 * 1000 // Allow re-trigger after 60 seconds if still unverified
+  const TRIGGER_TIMEOUT = 10 * 1000 // Allow re-trigger after 10 seconds if still unverified
   
   const hasTriggeredThisSession = (wallet: string): boolean => {
     if (typeof window === 'undefined') return false
@@ -136,7 +136,7 @@ export function WalletVerificationFlow({
     
     // Check if already triggered this session
     if (alreadyTriggered) {
-      console.log('[WalletVerificationFlow] ❌ SKIP: already triggered this session (within 60s)')
+      console.log('[WalletVerificationFlow] ❌ SKIP: already triggered this session (within 10s)')
       return
     }
     

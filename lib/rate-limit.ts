@@ -17,7 +17,7 @@ interface RateLimitStore {
 const store: RateLimitStore = {}
 
 export const RATE_LIMITS = {
-  payment: { requests: 5, window: 60000 },   // 5 requests per minute
+  payment: { requests: 6, window: 60000 },   // 6 requests per minute
   admin: { requests: 20, window: 60000 },    // 20 requests per minute
   mutation: { requests: 30, window: 60000 }, // 30 requests per minute
   submission: { requests: 10, window: 60000 }, // 10 submissions per minute
@@ -137,3 +137,4 @@ if (typeof setInterval !== 'undefined') {
     })
   }, 300000)
 }
+
