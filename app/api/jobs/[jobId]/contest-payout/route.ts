@@ -321,12 +321,12 @@ export async function POST(
     transaction.sign(escrowKeypair)
 
     console.log(`[Contest Payout API] Sending transaction...`)
-    const signature = await connection.sendRawTransaction(transaction.serialize())
-    console.log(`[Contest Payout API] Transaction sent: ${signature}`)
+    const txSignature = await connection.sendRawTransaction(transaction.serialize())
+    console.log(`[Contest Payout API] Transaction sent: ${txSignature}`)
 
     // Confirm transaction
     const confirmation = await connection.confirmTransaction({
-      signature,
+      signature: txSignature,
       blockhash,
       lastValidBlockHeight
     }, 'confirmed')
@@ -346,7 +346,7 @@ export async function POST(
         status: 'completed',
         completed_at: new Date().toISOString(),
         escrow_locked: false,
-        escrow_tx_signature: signature,
+        escrow_tx_signature: txSignature,
         updated_at: new Date().toISOString()
       })
       .eq('id', jobId)
@@ -365,7 +365,7 @@ export async function POST(
       amount_tokens: winner.amount_tokens,
       token_mint: job.escrow_token_mint,
       token_symbol: 'TOKEN',
-      tx_signature: signature,
+      tx_signature: txSignature,
       status: 'confirmed' as const,
       confirmed_at: new Date().toISOString()
     }))
@@ -377,7 +377,7 @@ export async function POST(
 
     return NextResponse.json({
       success: true,
-      signature,
+      signature: txSignature,
       totalPaid: totalPrizes,
       feePaid: feeAmount,
       winnersCount: winners.length
