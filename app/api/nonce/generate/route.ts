@@ -13,7 +13,7 @@ import crypto from 'crypto'
 
 // Constants
 const NONCE_EXPIRY_MINUTES = 5
-const MAX_NONCES_PER_HOUR = 5
+const MAX_NONCES_PER_HOUR = 10
 const NONCE_BYTES = 16 // 16 bytes = 32 hex characters
 
 // Solana address validation regex (base58, 32-44 characters)
@@ -262,3 +262,4 @@ export async function DELETE() {
     { status: 405 }
   )
 }
+
