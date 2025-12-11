@@ -167,14 +167,22 @@ export function WalletVerificationFlow({
     return () => clearTimeout(timer)
   }, [connected, publicKey, contextLoading, walletAddress, isVerified, isVerifying, currentStep, startVerification])
 
-  // Handle modal close - cancel the flow
+  // Handle modal close - cancel the flow AND clear trigger flag
   const handleGeoCheckClose = () => {
-    console.log('[WalletVerificationFlow] GeoCheck modal closed')
+    console.log('[WalletVerificationFlow] GeoCheck modal closed - clearing trigger')
+    const currentWallet = publicKey?.toBase58()
+    if (currentWallet) {
+      clearTriggered(currentWallet)
+    }
     cancelVerification()
   }
 
   const handleTermsClose = () => {
-    console.log('[WalletVerificationFlow] Terms modal closed')
+    console.log('[WalletVerificationFlow] Terms modal closed - clearing trigger')
+    const currentWallet = publicKey?.toBase58()
+    if (currentWallet) {
+      clearTriggered(currentWallet)
+    }
     cancelVerification()
   }
 
