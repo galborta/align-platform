@@ -2,9 +2,13 @@
 
 import { useMemo } from 'react'
 import { ConnectionProvider, WalletProvider } from '@solana/wallet-adapter-react'
+import { WalletModalProvider } from '@solana/wallet-adapter-react-ui'
 import { WalletAdapterNetwork } from '@solana/wallet-adapter-base'
 import { PhantomWalletAdapter, SolflareWalletAdapter } from '@solana/wallet-adapter-wallets'
 import { clusterApiUrl } from '@solana/web3.js'
+
+// Import wallet adapter styles
+import '@solana/wallet-adapter-react-ui/styles.css'
 
 /**
  * Get test wallet if in test mode (for Playwright E2E tests)
@@ -68,7 +72,9 @@ export function WalletConfigProvider({ children }: { children: React.ReactNode }
   return (
     <ConnectionProvider endpoint={endpoint}>
       <WalletProvider wallets={wallets} autoConnect={false}>
-        {children}
+        <WalletModalProvider>
+          {children}
+        </WalletModalProvider>
       </WalletProvider>
     </ConnectionProvider>
   )

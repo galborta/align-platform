@@ -45,6 +45,7 @@ import { toast } from 'react-hot-toast'
 import WarningIcon from '@mui/icons-material/Warning'
 import { useConnection, useWallet } from '@solana/wallet-adapter-react'
 import { LAMPORTS_PER_SOL, PublicKey } from '@solana/web3.js'
+import { ProtectedAction } from '@/components/ProtectedAction'
 
 interface CreateJobModalProps {
   isOpen: boolean
@@ -1984,44 +1985,48 @@ export function CreateJobModal({
           >
             Cancel
           </Button>
-          <Button
-            onClick={mode === 'edit' ? handleConfirmAndLock : handleReviewAndLock}
-            disabled={
-              loading || 
-              (mode === 'create' && jobType === 'regular' && (checkingPrice || belowMinimum || priceError)) ||
-              (mode === 'edit' && applicationCount > 0 && !understoodInvalidation)
-            }
-            variant="contained"
-            startIcon={mode === 'create' ? <LockIcon /> : undefined}
-            sx={{
-              backgroundColor: '#7C4DFF',
-              color: '#fff',
-              textTransform: 'none',
-              fontSize: '16px',
-              px: 4,
-              fontWeight: 600,
-              '&:hover': {
-                backgroundColor: '#6B3FEE'
-              },
-              '&:disabled': {
-                backgroundColor: '#E5E7F0',
-                color: '#A3A7B5'
-              }
-            }}
+          <ProtectedAction
+            onAuthorized={mode === 'edit' ? handleConfirmAndLock : handleReviewAndLock}
+            actionName="create a job"
           >
-            {loading ? (
-              <>
-                <CircularProgress size={20} sx={{ mr: 1, color: '#fff' }} />
-                {mode === 'edit' ? 'Updating...' : 'Processing...'}
-              </>
-            ) : mode === 'edit' ? (
-              'Update Job'
-            ) : jobType === 'contest' ? (
-              `🏆 Review & Lock ${calculateTotalWithFee().toFixed(2)} ${tokenSymbol}`
-            ) : (
-              'Review & Lock Tokens'
-            )}
-          </Button>
+            <Button
+              disabled={
+                loading || 
+                (mode === 'create' && jobType === 'regular' && (checkingPrice || belowMinimum || priceError)) ||
+                (mode === 'edit' && applicationCount > 0 && !understoodInvalidation)
+              }
+              variant="contained"
+              startIcon={mode === 'create' ? <LockIcon /> : undefined}
+              sx={{
+                backgroundColor: '#7C4DFF',
+                color: '#fff',
+                textTransform: 'none',
+                fontSize: '16px',
+                px: 4,
+                fontWeight: 600,
+                '&:hover': {
+                  backgroundColor: '#6B3FEE'
+                },
+                '&:disabled': {
+                  backgroundColor: '#E5E7F0',
+                  color: '#A3A7B5'
+                }
+              }}
+            >
+              {loading ? (
+                <>
+                  <CircularProgress size={20} sx={{ mr: 1, color: '#fff' }} />
+                  {mode === 'edit' ? 'Updating...' : 'Processing...'}
+                </>
+              ) : mode === 'edit' ? (
+                'Update Job'
+              ) : jobType === 'contest' ? (
+                `🏆 Review & Lock ${calculateTotalWithFee().toFixed(2)} ${tokenSymbol}`
+              ) : (
+                'Review & Lock Tokens'
+              )}
+            </Button>
+          </ProtectedAction>
         </div>
       </DialogActions>
     </Dialog>

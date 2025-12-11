@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase'
+import { requireVerifiedWallet } from '@/lib/middleware'
 
 export async function POST(request: NextRequest) {
   try {
@@ -41,15 +42,10 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized: You are not a participant in this conversation' }, { status: 403 })
     }
 
-    // Check if sender is verified
-    const { data: profile, error: profileError } = await supabaseAdmin
-      .from('user_profiles')
-      .select('wallet_verified')
-      .eq('wallet_address', senderWallet)
-      .single()
-
-    if (profileError || !profile?.wallet_verified) {
-      return NextResponse.json({ error: 'Unauthorized: Wallet not verified' }, { status: 403 })
+    // Verify wallet is verified before allowing message sending
+    const verificationCheck = await requireVerifiedWallet(senderWallet)
+    if (!verificationCheck.verified) {
+      return NextResponse.json({ error: 'Wallet verification required to send messages' }, { status: 403 })
     }
 
     // Insert the message

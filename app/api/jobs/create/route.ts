@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { Connection, PublicKey } from '@solana/web3.js'
 import { Database } from '@/types/database'
+import { requireVerifiedWallet } from '@/lib/middleware'
 
 // Create Supabase client with service role for server-side operations
 const supabaseAdmin = createClient<Database>(
@@ -45,6 +46,15 @@ export async function POST(request: Request) {
       return NextResponse.json(
         { error: 'Missing required fields' },
         { status: 400 }
+      )
+    }
+
+    // Verify wallet is verified before allowing job creation
+    const verificationCheck = await requireVerifiedWallet(poster_wallet)
+    if (!verificationCheck.verified) {
+      return NextResponse.json(
+        { error: 'Wallet verification required to create jobs' },
+        { status: 403 }
       )
     }
 
@@ -266,6 +276,7 @@ export async function GET() {
     { status: 405 }
   )
 }
+
 
 
 

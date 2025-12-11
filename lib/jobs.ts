@@ -1,6 +1,7 @@
 import { supabase } from './supabase'
 import { Database } from '@/types/database'
 import { notificationService } from '@/lib/services/notificationService'
+import { requireVerifiedWallet } from '@/lib/middleware'
 
 type Job = Database['public']['Tables']['jobs']['Row']
 type JobInsert = Database['public']['Tables']['jobs']['Insert']
@@ -256,6 +257,12 @@ export async function applyToJob(applicationData: {
   committed_completion_date: string
   revisions_offered?: string | null
 }): Promise<JobApplication> {
+  // Verify wallet is verified before allowing job application
+  const verificationCheck = await requireVerifiedWallet(applicationData.applicant_wallet)
+  if (!verificationCheck.verified) {
+    throw new Error('Wallet verification required to apply to jobs')
+  }
+
   // Prepare insert data with revision fields
   const insertData: any = {
     job_id: applicationData.job_id,

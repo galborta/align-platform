@@ -16,6 +16,7 @@ import {
 import SendIcon from '@mui/icons-material/Send'
 import MonetizationOnIcon from '@mui/icons-material/MonetizationOn'
 import dynamic from 'next/dynamic'
+import { ProtectedAction } from '@/components/ProtectedAction'
 
 const TipModal = dynamic(() => import('@/components/TipModal'), { ssr: false })
 
@@ -432,44 +433,49 @@ export function MessageComposer({
       />
 
       {/* Send Button */}
-      <Tooltip
-        title={
-          !canSend
-            ? blockReason || 'Cannot send message'
-            : !message.trim()
-            ? 'Type a message to send'
-            : sending
-            ? 'Sending...'
-            : 'Send message (Enter)'
-        }
-        arrow
+      <ProtectedAction
+        onAuthorized={sendMessage}
+        actionName="send messages"
+        wrapper={false}
       >
-        <span>
-          <IconButton
-            onClick={sendMessage}
-            disabled={isDisabled}
-            sx={{
-              bgcolor: '#7C4DFF',
-              color: 'white',
-              width: 48,
-              height: 48,
-              '&:hover': {
-                bgcolor: '#6C3FEF'
-              },
-              '&:disabled': {
-                bgcolor: 'action.disabledBackground',
-                color: 'action.disabled'
-              }
-            }}
-          >
-            {sending ? (
-              <CircularProgress size={24} sx={{ color: 'white' }} />
-            ) : (
-              <SendIcon />
-            )}
-          </IconButton>
-        </span>
-      </Tooltip>
+        <Tooltip
+          title={
+            !canSend
+              ? blockReason || 'Cannot send message'
+              : !message.trim()
+              ? 'Type a message to send'
+              : sending
+              ? 'Sending...'
+              : 'Send message (Enter)'
+          }
+          arrow
+        >
+          <span>
+            <IconButton
+              disabled={isDisabled}
+              sx={{
+                bgcolor: '#7C4DFF',
+                color: 'white',
+                width: 48,
+                height: 48,
+                '&:hover': {
+                  bgcolor: '#6C3FEF'
+                },
+                '&:disabled': {
+                  bgcolor: 'action.disabledBackground',
+                  color: 'action.disabled'
+                }
+              }}
+            >
+              {sending ? (
+                <CircularProgress size={24} sx={{ color: 'white' }} />
+              ) : (
+                <SendIcon />
+              )}
+            </IconButton>
+          </span>
+        </Tooltip>
+      </ProtectedAction>
       </Box>
 
       {/* Tip Modal */}

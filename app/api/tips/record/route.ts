@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { supabase } from '@/lib/supabase'
 import { getOrCreateConversation, canMessageUser } from '@/lib/messaging'
 import { notificationService } from '@/lib/services/notificationService'
+import { requireVerifiedWallet } from '@/lib/middleware'
 
 /**
  * POST /api/tips/record
@@ -58,6 +59,15 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(
         { error: 'Cannot tip yourself' },
         { status: 400 }
+      )
+    }
+
+    // Verify wallet is verified before allowing tips
+    const verificationCheck = await requireVerifiedWallet(fromWallet)
+    if (!verificationCheck.verified) {
+      return NextResponse.json(
+        { error: 'Wallet verification required to send tips' },
+        { status: 403 }
       )
     }
 

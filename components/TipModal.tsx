@@ -28,6 +28,7 @@ import { useDailyTipKarma } from '@/lib/hooks/useDailyTipKarma'
 import TokenDropdown from './tip/TokenDropdown'
 import PublicPrivateToggle from './tip/PublicPrivateToggle'
 import KarmaPreview from './tip/KarmaPreview'
+import { ProtectedAction } from '@/components/ProtectedAction'
 import AmountInput from './tip/AmountInput'
 import QuickTipButtons from './tip/QuickTipButtons'
 import { TipToken } from '@/types/database'
@@ -1206,48 +1207,52 @@ export default function TipModal({
           >
             Cancel
           </Button>
-          <Button 
-            variant="contained" 
-            onClick={handleSendTip}
-            fullWidth
-            disabled={
-              loading || 
-              loadingTokens || 
-              isProcessing ||
-              !selectedToken || 
-              !amount || 
-              !!amountError ||
-              retryCount >= TIP_RETRY_CONFIG.MAX_RETRIES
-            }
-            sx={{ 
-              minHeight: 48,
-              bgcolor: '#7C4DFF',
-              textTransform: 'none',
-              fontWeight: 600,
-              boxShadow: 'none',
-              '&:hover': {
-                bgcolor: '#6B3FEE',
-                boxShadow: '0 4px 12px rgba(124, 77, 255, 0.3)'
-              },
-              '&:disabled': {
-                bgcolor: '#E5E7F0',
-                color: '#A3A7B5'
-              }
-            }}
+          <ProtectedAction
+            onAuthorized={handleSendTip}
+            actionName="send a tip"
           >
-            {loading ? (
-              <>
-                <CircularProgress size={16} sx={{ mr: 1, color: '#fff' }} />
-                {loadingMessage}
-              </>
-            ) : retryCount > 0 && retryCount < TIP_RETRY_CONFIG.MAX_RETRIES ? (
-              `Retry (${retryCount}/${TIP_RETRY_CONFIG.MAX_RETRIES})`
-            ) : retryCount >= TIP_RETRY_CONFIG.MAX_RETRIES ? (
-              'Max Retries Reached'
-            ) : (
-              'Send Tip'
-            )}
-          </Button>
+            <Button 
+              variant="contained" 
+              fullWidth
+              disabled={
+                loading || 
+                loadingTokens || 
+                isProcessing ||
+                !selectedToken || 
+                !amount || 
+                !!amountError ||
+                retryCount >= TIP_RETRY_CONFIG.MAX_RETRIES
+              }
+              sx={{ 
+                minHeight: 48,
+                bgcolor: '#7C4DFF',
+                textTransform: 'none',
+                fontWeight: 600,
+                boxShadow: 'none',
+                '&:hover': {
+                  bgcolor: '#6B3FEE',
+                  boxShadow: '0 4px 12px rgba(124, 77, 255, 0.3)'
+                },
+                '&:disabled': {
+                  bgcolor: '#E5E7F0',
+                  color: '#A3A7B5'
+                }
+              }}
+            >
+              {loading ? (
+                <>
+                  <CircularProgress size={16} sx={{ mr: 1, color: '#fff' }} />
+                  {loadingMessage}
+                </>
+              ) : retryCount > 0 && retryCount < TIP_RETRY_CONFIG.MAX_RETRIES ? (
+                `Retry (${retryCount}/${TIP_RETRY_CONFIG.MAX_RETRIES})`
+              ) : retryCount >= TIP_RETRY_CONFIG.MAX_RETRIES ? (
+                'Max Retries Reached'
+              ) : (
+                'Send Tip'
+              )}
+            </Button>
+          </ProtectedAction>
         </Box>
       </DialogContent>
 
