@@ -7,6 +7,10 @@ import Select from '@mui/material/Select'
 import MenuItem from '@mui/material/MenuItem'
 import FormControl from '@mui/material/FormControl'
 import InputLabel from '@mui/material/InputLabel'
+import InputAdornment from '@mui/material/InputAdornment'
+import CircularProgress from '@mui/material/CircularProgress'
+import CheckCircleIcon from '@mui/icons-material/CheckCircle'
+import ErrorOutlineIcon from '@mui/icons-material/ErrorOutline'
 import { supabase } from '@/lib/supabase'
 
 const ROLE_OPTIONS = [
@@ -34,6 +38,51 @@ export default function SubmitProjectPage() {
   const validateEmail = (email: string) => {
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
     return emailRegex.test(email)
+  }
+
+  // Helper functions for visual feedback
+  const isFieldValid = (field: keyof typeof formData) => {
+    if (field === 'name') {
+      return formData.name.trim().length > 0 && formData.name.length <= 100
+    }
+    if (field === 'email') {
+      return formData.email.trim().length > 0 && validateEmail(formData.email)
+    }
+    if (field === 'contractAddress') {
+      return formData.contractAddress.trim().length > 0
+    }
+    if (field === 'role') {
+      return formData.role !== ''
+    }
+    return false
+  }
+
+  const isFieldTouched = (field: keyof typeof formData) => {
+    return formData[field].length > 0
+  }
+
+  const getFieldIcon = (field: keyof typeof formData, isRequired: boolean = true) => {
+    if (!isRequired && formData[field].length === 0) {
+      return null
+    }
+    
+    if (errors[field] && isFieldTouched(field)) {
+      return (
+        <InputAdornment position="end">
+          <ErrorOutlineIcon sx={{ color: '#EF4444' }} />
+        </InputAdornment>
+      )
+    }
+    
+    if (isRequired && isFieldValid(field) && isFieldTouched(field)) {
+      return (
+        <InputAdornment position="end">
+          <CheckCircleIcon sx={{ color: 'var(--accent-success)' }} />
+        </InputAdornment>
+      )
+    }
+    
+    return null
   }
 
   const handleChange = (field: string, value: string) => {
@@ -81,6 +130,15 @@ export default function SubmitProjectPage() {
     if (!validateForm()) {
       return
     }
+
+    // Log validated form data
+    console.log('Form validation passed! Submitting data:', {
+      name: formData.name.trim(),
+      email: formData.email.trim().toLowerCase(),
+      contractAddress: formData.contractAddress.trim(),
+      role: formData.role,
+      message: formData.message.trim() || '(no message)',
+    })
 
     setSubmitting(true)
 
@@ -252,6 +310,9 @@ export default function SubmitProjectPage() {
                 error={!!errors.name}
                 helperText={errors.name}
                 inputProps={{ maxLength: 100 }}
+                InputProps={{
+                  endAdornment: getFieldIcon('name', true)
+                }}
                 sx={{
                   '& .MuiOutlinedInput-root': {
                     fontFamily: 'var(--font-body)',
@@ -292,6 +353,9 @@ export default function SubmitProjectPage() {
                 onChange={(e) => handleChange('email', e.target.value)}
                 error={!!errors.email}
                 helperText={errors.email}
+                InputProps={{
+                  endAdornment: getFieldIcon('email', true)
+                }}
                 sx={{
                   '& .MuiOutlinedInput-root': {
                     fontFamily: 'var(--font-body)',
@@ -331,6 +395,9 @@ export default function SubmitProjectPage() {
                 onChange={(e) => handleChange('contractAddress', e.target.value)}
                 error={!!errors.contractAddress}
                 helperText={errors.contractAddress}
+                InputProps={{
+                  endAdornment: getFieldIcon('contractAddress', true)
+                }}
                 sx={{
                   '& .MuiOutlinedInput-root': {
                     fontFamily: 'var(--font-body)',
@@ -381,6 +448,7 @@ export default function SubmitProjectPage() {
                   value={formData.role}
                   label="Your Role in Project"
                   onChange={(e) => handleChange('role', e.target.value)}
+                  endAdornment={getFieldIcon('role', true)}
                   sx={{
                     fontFamily: 'var(--font-body)',
                     backgroundColor: 'white',
@@ -476,7 +544,20 @@ export default function SubmitProjectPage() {
                 disabled={submitting}
                 className="submit-button"
               >
-                {submitting ? 'Submitting...' : 'Submit Application'}
+                {submitting ? (
+                  <>
+                    <CircularProgress 
+                      size={20} 
+                      sx={{ 
+                        color: 'white',
+                        marginRight: '8px'
+                      }} 
+                    />
+                    Submitting...
+                  </>
+                ) : (
+                  'Submit Application'
+                )}
               </button>
             </form>
           </div>
@@ -592,6 +673,10 @@ export default function SubmitProjectPage() {
           box-shadow: var(--shadow-chip);
           transition: all 0.2s ease;
           margin-top: var(--space-md);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          gap: var(--space-xs);
         }
 
         .submit-button:hover:not(:disabled) {
