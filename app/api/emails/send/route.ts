@@ -5,11 +5,27 @@ import AdminNotification from '@/emails/templates/AdminNotification';
 import ProjectApproved from '@/emails/templates/ProjectApproved';
 import ProjectRejected from '@/emails/templates/ProjectRejected';
 
-const resend = new Resend(process.env.RESEND_API_KEY);
 const FROM_EMAIL = process.env.EMAIL_FROM || 'Orggly <notifications@orggly.com>';
+
+// Lazy initialization of Resend client to avoid build-time errors
+function getResendClient() {
+  const apiKey = process.env.RESEND_API_KEY;
+  if (!apiKey) {
+    throw new Error('RESEND_API_KEY environment variable is not set');
+  }
+  return new Resend(apiKey);
+}
 
 export async function POST(request: Request) {
   try {
+    // Check for API key before processing
+    if (!process.env.RESEND_API_KEY) {
+      return NextResponse.json(
+        { error: 'Email service is not configured. RESEND_API_KEY is missing.' },
+        { status: 500 }
+      );
+    }
+
     const body = await request.json();
     const { type, to, data } = body;
     
@@ -71,6 +87,7 @@ export async function POST(request: Request) {
         );
     }
     
+    const resend = getResendClient();
     const result = await resend.emails.send({
       from: FROM_EMAIL,
       to: Array.isArray(to) ? to : [to],
