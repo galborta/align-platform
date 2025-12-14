@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, useRef } from 'react'
+import { useEffect, useState, useRef, Suspense } from 'react'
 import { useSearchParams, useRouter } from 'next/navigation'
 import { validateProjectToken, ProjectToken, saveDraft, getTokenDraft, markTokenAsCompleted } from '@/lib/project-tokens'
 import { AppHeader } from '@/components/AppHeader'
@@ -15,7 +15,7 @@ import TextField from '@mui/material/TextField'
 import InputAdornment from '@mui/material/InputAdornment'
 import { supabase } from '@/lib/supabase'
 
-export default function CreateProjectPage() {
+function CreateProjectPageContent() {
   const searchParams = useSearchParams()
   const router = useRouter()
   const [token, setToken] = useState<ProjectToken | null>(null)
@@ -654,5 +654,40 @@ export default function CreateProjectPage() {
         }
       `}</style>
     </div>
+  )
+}
+
+export default function CreateProjectPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="min-h-screen bg-page-bg">
+          <AppHeader />
+          <div
+            style={{
+              display: 'flex',
+              justifyContent: 'center',
+              alignItems: 'center',
+              minHeight: 'calc(100vh - 80px)',
+              flexDirection: 'column',
+              gap: '20px',
+            }}
+          >
+            <CircularProgress size={60} sx={{ color: 'var(--accent-primary)' }} />
+            <p
+              style={{
+                fontFamily: 'var(--font-body)',
+                fontSize: 'var(--text-body)',
+                color: 'var(--text-secondary)',
+              }}
+            >
+              Loading...
+            </p>
+          </div>
+        </div>
+      }
+    >
+      <CreateProjectPageContent />
+    </Suspense>
   )
 }
