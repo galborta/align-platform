@@ -1,9 +1,9 @@
 'use client'
 
-import { useMemo } from 'react'
+import { useMemo, useCallback } from 'react'
 import { ConnectionProvider, WalletProvider } from '@solana/wallet-adapter-react'
 import { WalletModalProvider } from '@solana/wallet-adapter-react-ui'
-import { WalletAdapterNetwork } from '@solana/wallet-adapter-base'
+import { WalletAdapterNetwork, WalletError } from '@solana/wallet-adapter-base'
 import { PhantomWalletAdapter, SolflareWalletAdapter } from '@solana/wallet-adapter-wallets'
 import { clusterApiUrl } from '@solana/web3.js'
 
@@ -69,9 +69,26 @@ export function WalletConfigProvider({ children }: { children: React.ReactNode }
     []
   )
 
+  // Handle wallet errors gracefully
+  const onError = useCallback((error: WalletError) => {
+    // Error code 4001 means user rejected the request (clicked Cancel)
+    // This is expected behavior and should be silently ignored
+    if ('code' in error && error.code === 4001) {
+      console.debug('Wallet connection cancelled by user')
+      return
+    }
+    
+    // For other wallet errors, log them but don't crash
+    console.error('Wallet error:', error.message || error)
+  }, [])
+
   return (
     <ConnectionProvider endpoint={endpoint}>
-      <WalletProvider wallets={wallets} autoConnect={false}>
+      <WalletProvider 
+        wallets={wallets} 
+        autoConnect={false}
+        onError={onError}
+      >
         <WalletModalProvider>
           {children}
         </WalletModalProvider>

@@ -36,6 +36,7 @@ export function BackgroundShapes() {
           position: absolute;
           border-radius: 50%;
           opacity: 0.12;
+          animation: color-shift 15s ease-in-out infinite;
         }
 
         /* Hero area shapes - Purple tones */
@@ -222,6 +223,22 @@ export function BackgroundShapes() {
           }
           50% {
             opacity: 0.16;
+          }
+        }
+
+        /* Color shifting animation - cycles through purple hues */
+        @keyframes color-shift {
+          0%, 100% {
+            filter: hue-rotate(0deg);
+          }
+          25% {
+            filter: hue-rotate(15deg);
+          }
+          50% {
+            filter: hue-rotate(30deg);
+          }
+          75% {
+            filter: hue-rotate(15deg);
           }
         }
 

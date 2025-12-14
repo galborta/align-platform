@@ -490,13 +490,13 @@ export default function ProjectDetailPage() {
             </Box>
 
             {/* Legal Assets - Compact List */}
-            <Box sx={{ order: { xs: 5, lg: 5 } }}>
-              <Card>
-                <CardHeader>
-                  <CardTitle className="text-lg">Legal Assets</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  {project.legal_assets && project.legal_assets.length > 0 ? (
+            {project.legal_assets && project.legal_assets.length > 0 && (
+              <Box sx={{ order: { xs: 5, lg: 5 } }}>
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="text-lg">Legal Assets</CardTitle>
+                  </CardHeader>
+                  <CardContent>
                     <div className="space-y-2">
                       {project.legal_assets.map((asset) => (
                         <div
@@ -519,14 +519,10 @@ export default function ProjectDetailPage() {
                         </div>
                       ))}
                     </div>
-                  ) : (
-                    <p className="font-body text-text-muted text-center py-4">
-                      No legal assets added
-                    </p>
-                  )}
-                </CardContent>
-              </Card>
-            </Box>
+                  </CardContent>
+                </Card>
+              </Box>
+            )}
           </Box>
 
           {/* Right Column - Activity Feed + Stats & Holders (moves below on mobile) */}

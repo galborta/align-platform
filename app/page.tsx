@@ -204,7 +204,7 @@ export default function Home() {
                         <span>0 Completed</span>
                       </div>
                     </div>
-                    <a href="/create" className="coming-soon-cta">
+                    <a href="/submit-project" className="coming-soon-cta">
                       Add Your Project →
                     </a>
                   </div>

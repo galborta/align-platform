@@ -16,11 +16,23 @@ import {
   Badge,
   Typography,
   Box,
-  CircularProgress
+  CircularProgress,
+  Chip
 } from '@mui/material'
 import PersonIcon from '@mui/icons-material/Person'
 import DeleteIcon from '@mui/icons-material/Delete'
 import FiberManualRecordIcon from '@mui/icons-material/FiberManualRecord'
+import { keyframes } from '@mui/system'
+
+// Pulse animation for unread submission tags
+const pulseAnimation = keyframes`
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.7;
+  }
+`
 
 type Message = Database['public']['Tables']['messages']['Row']
 type Conversation = Database['public']['Tables']['conversations']['Row']
@@ -32,6 +44,8 @@ interface ConversationWithDetails extends Conversation {
   unreadCount: number
   isUnread: boolean
   canSeeStatus: boolean
+  tags?: string[]
+  submission_id?: string | null
 }
 
 interface ConversationListProps {
@@ -72,7 +86,7 @@ export function ConversationList({
       // Only show conversations that have at least one message and are not archived
       const { data: convData, error: convError } = await supabase
         .from('conversations')
-        .select('id, participant_1, participant_2, last_message_at, created_at, updated_at, archived_by_participant_1, archived_by_participant_2')
+        .select('id, participant_1, participant_2, last_message_at, created_at, updated_at, archived_by_participant_1, archived_by_participant_2, tags, submission_id')
         .or(`participant_1.eq.${currentWallet},participant_2.eq.${currentWallet}`)
         .not('last_message_at', 'is', null)
         .order('last_message_at', { ascending: false })
@@ -176,7 +190,9 @@ export function ConversationList({
             otherParticipant: profileData || undefined,
             unreadCount,
             isUnread: unreadCount > 0,
-            canSeeStatus: statusCheck
+            canSeeStatus: statusCheck,
+            tags: conv.tags || [],
+            submission_id: conv.submission_id
           }
         })
       )
@@ -475,7 +491,7 @@ export function ConversationList({
 
               <ListItemText
                 primary={
-                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
                     <Typography
                       variant="subtitle1"
                       component="span"
@@ -486,6 +502,31 @@ export function ConversationList({
                     >
                       {displayName}
                     </Typography>
+                    
+                    {/* Project Submission Tag */}
+                    {conv.tags && conv.tags.includes('Project Submission') && (
+                      <Chip
+                        label="PROJECT SUBMISSION"
+                        size="small"
+                        sx={{
+                          background: 'linear-gradient(135deg, #7C4DFF, #9D6CFF)',
+                          color: 'white',
+                          borderRadius: '20px',
+                          height: '20px',
+                          fontSize: '11px',
+                          fontWeight: 600,
+                          textTransform: 'uppercase',
+                          letterSpacing: '0.5px',
+                          padding: '4px 12px',
+                          '& .MuiChip-label': {
+                            padding: '0 8px',
+                            lineHeight: '20px'
+                          },
+                          animation: conv.isUnread ? `${pulseAnimation} 2s ease-in-out infinite` : 'none'
+                        }}
+                      />
+                    )}
+                    
                     {conv.isUnread && (
                       <FiberManualRecordIcon
                         sx={{

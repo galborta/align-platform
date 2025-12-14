@@ -8,6 +8,9 @@ import { useMessaging } from '@/lib/MessagingContext'
 import { canSeeOnlineStatus } from '@/lib/privacy'
 import { UserProfileView } from '@/components/UserProfileView'
 import { BlockUserModal } from '@/components/BlockUserModal'
+import SubmissionActionButtons from '@/components/admin/SubmissionActionButtons'
+import { isAdminWallet } from '@/lib/admin-auth'
+import { useWallet } from '@solana/wallet-adapter-react'
 import { 
   format, 
   isToday, 
@@ -56,6 +59,7 @@ export function MessageThread({
   recipientWallet
 }: MessageThreadProps) {
   const { refreshUnreadCount } = useMessaging()
+  const { publicKey } = useWallet()
   const [messages, setMessages] = useState<Message[]>([])
   const [recipientProfile, setRecipientProfile] = useState<UserProfile | null>(null)
   const [loading, setLoading] = useState(true)
@@ -73,6 +77,10 @@ export function MessageThread({
     blockedUser?: string
   }>({ isBlocked: false })
   const [canSeeStatus, setCanSeeStatus] = useState(true)
+  const [conversationTags, setConversationTags] = useState<string[]>([])
+  const [submissionData, setSubmissionData] = useState<any>(null)
+  const [allSubmissions, setAllSubmissions] = useState<any[]>([])
+  const [isAdminUser, setIsAdminUser] = useState(false)
   
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const messagesContainerRef = useRef<HTMLDivElement>(null)
@@ -82,6 +90,13 @@ export function MessageThread({
   
   const MESSAGES_PER_PAGE = 50
   const menuOpen = Boolean(menuAnchorEl)
+
+  // Check if current user is admin
+  useEffect(() => {
+    if (publicKey) {
+      setIsAdminUser(isAdminWallet(publicKey))
+    }
+  }, [publicKey])
 
   // Scroll to bottom
   const scrollToBottom = (smooth = true) => {
@@ -137,12 +152,46 @@ export function MessageThread({
     return format(parseISO(timestamp), 'HH:mm')
   }
 
+  // Load conversation details (tags and submission data)
+  const loadConversationDetails = useCallback(async () => {
+    try {
+      // Fetch conversation with tags
+      const { data: conversation, error: convError } = await supabase
+        .from('conversations')
+        .select('*')
+        .eq('id', conversationId)
+        .single()
+
+      if (!convError && conversation) {
+        setConversationTags(conversation.tags || [])
+        
+        // Load ALL submissions for this conversation (not just one)
+        const { data: submissions, error: submissionsError } = await supabase
+          .from('project_submissions')
+          .select('id, name, email, contract_address, token_symbol, token_name, role, message, status')
+          .eq('conversation_id', conversationId)
+        
+        if (!submissionsError && submissions) {
+          setAllSubmissions(submissions)
+          // Keep submissionData for backwards compatibility (use first submission)
+          if (submissions.length > 0) {
+            setSubmissionData(submissions[0])
+          }
+        }
+      }
+    } catch (error) {
+      console.error('Error loading conversation details:', error)
+    }
+  }, [conversationId])
+
   // Load messages with cursor-based pagination
   const loadMessages = useCallback(async (cursor?: string) => {
     const isInitialLoad = !cursor
     
     if (isInitialLoad) {
       setLoading(true)
+      // Also load conversation details on initial load
+      loadConversationDetails()
     } else {
       setLoadingMore(true)
     }
@@ -232,6 +281,7 @@ export function MessageThread({
   // Initial load
   useEffect(() => {
     loadMessages()
+    loadConversationDetails()
     
     // Mark conversation as read and refresh unread count
     const markAsRead = async () => {
@@ -241,7 +291,7 @@ export function MessageThread({
       }
     }
     markAsRead()
-  }, [conversationId, currentWallet, loadMessages, refreshUnreadCount])
+  }, [conversationId, currentWallet, loadMessages, loadConversationDetails, refreshUnreadCount])
 
   // Real-time subscription for new messages (only when conversation is active)
   useEffect(() => {
@@ -669,75 +719,116 @@ export function MessageThread({
               {/* Messages for this date */}
               {group.messages.map((msg, index) => {
                 const isSent = msg.sender_wallet === currentWallet
+                const isSystemMessage = msg.sender_wallet === 'project-submissions'
                 const showTime = hoveredMessageId === msg.id
+                
+                // Extract contract address from message to identify which submission this is
+                const contractMatch = msg.content.match(/Token Contract:\s*([A-Za-z0-9]{32,44})/)
+                const messageContractAddress = contractMatch ? contractMatch[1] : null
+                
+                // Find the submission that matches this message's contract address
+                const messageSubmission = messageContractAddress 
+                  ? allSubmissions.find(sub => sub.contract_address === messageContractAddress)
+                  : null
+                
+                // Show buttons if this message has a pending submission
+                const hasMatchingPendingSubmission = isSystemMessage && 
+                  messageSubmission && 
+                  messageSubmission.status === 'pending'
 
                 return (
-                  <Box
-                    key={msg.id}
-                    onMouseEnter={() => setHoveredMessageId(msg.id)}
-                    onMouseLeave={() => setHoveredMessageId(null)}
-                    sx={{
-                      display: 'flex',
-                      justifyContent: isSent ? 'flex-end' : 'flex-start',
-                      mb: 1.5,
-                      alignItems: 'flex-end',
-                      gap: 0.5
-                    }}
-                  >
-                    {/* Message Bubble */}
-                    <Tooltip 
-                      title={formatTime(msg.created_at)}
-                      placement={isSent ? 'left' : 'right'}
-                      open={showTime}
+                  <Box key={msg.id}>
+                    <Box
+                      onMouseEnter={() => setHoveredMessageId(msg.id)}
+                      onMouseLeave={() => setHoveredMessageId(null)}
+                      sx={{
+                        display: 'flex',
+                        justifyContent: isSystemMessage ? 'center' : (isSent ? 'flex-end' : 'flex-start'),
+                        mb: 1.5,
+                        alignItems: 'flex-end',
+                        gap: 0.5
+                      }}
                     >
-                      <Box
-                        sx={{
-                          maxWidth: '70%',
-                          bgcolor: isSent ? '#7C4DFF' : '#2A2A2A',
-                          color: '#FFFFFF',
-                          px: 2,
-                          py: 1.5,
-                          borderRadius: 2,
-                          borderTopRightRadius: isSent ? 0 : 2,
-                          borderTopLeftRadius: isSent ? 2 : 0,
-                          wordWrap: 'break-word',
-                          position: 'relative'
-                        }}
+                      {/* Message Bubble */}
+                      <Tooltip 
+                        title={formatTime(msg.created_at)}
+                        placement={isSent ? 'left' : 'right'}
+                        open={showTime}
                       >
-                        <Typography
-                          variant="body2"
-                          sx={{ 
-                            whiteSpace: 'pre-wrap',
-                            wordBreak: 'break-word'
+                        <Box
+                          sx={{
+                            maxWidth: isSystemMessage ? '85%' : '70%',
+                            bgcolor: isSystemMessage ? '#FFF4E6' : (isSent ? '#7C4DFF' : '#2A2A2A'),
+                            color: isSystemMessage ? '#1A1A1E' : '#FFFFFF',
+                            px: 2,
+                            py: 1.5,
+                            borderRadius: 2,
+                            borderTopRightRadius: isSent ? 0 : 2,
+                            borderTopLeftRadius: isSent ? 2 : 0,
+                            wordWrap: 'break-word',
+                            position: 'relative',
+                            border: isSystemMessage ? '1px solid #FFD700' : 'none'
                           }}
                         >
-                          {msg.content}
-                        </Typography>
-                      </Box>
-                    </Tooltip>
+                          <Typography
+                            variant="body2"
+                            sx={{ 
+                              whiteSpace: 'pre-wrap',
+                              wordBreak: 'break-word'
+                            }}
+                          >
+                            {msg.content}
+                          </Typography>
+                        </Box>
+                      </Tooltip>
 
-                    {/* Read Receipt for sent messages */}
-                    {isSent && (
-                      <Box sx={{ display: 'flex', alignItems: 'center', mb: 0.5 }}>
-                        {msg.is_read ? (
-                          <Tooltip title="Read">
-                            <DoneAllIcon 
-                              sx={{ 
-                                fontSize: 16, 
-                                color: '#7C4DFF' 
-                              }} 
-                            />
-                          </Tooltip>
-                        ) : (
-                          <Tooltip title="Sent">
-                            <DoneIcon 
-                              sx={{ 
-                                fontSize: 16, 
-                                color: 'text.secondary' 
-                              }} 
-                            />
-                          </Tooltip>
-                        )}
+                      {/* Read Receipt for sent messages */}
+                      {isSent && !isSystemMessage && (
+                        <Box sx={{ display: 'flex', alignItems: 'center', mb: 0.5 }}>
+                          {msg.is_read ? (
+                            <Tooltip title="Read">
+                              <DoneAllIcon 
+                                sx={{ 
+                                  fontSize: 16, 
+                                  color: '#7C4DFF' 
+                                }} 
+                              />
+                            </Tooltip>
+                          ) : (
+                            <Tooltip title="Sent">
+                              <DoneIcon 
+                                sx={{ 
+                                  fontSize: 16, 
+                                  color: 'text.secondary' 
+                                }} 
+                              />
+                            </Tooltip>
+                          )}
+                        </Box>
+                      )}
+                    </Box>
+
+                    {/* Show action buttons for each pending submission message */}
+                    {hasMatchingPendingSubmission && 
+                     isAdminUser && 
+                     messageSubmission && 
+                     conversationTags.includes('Project Submission') && (
+                      <Box sx={{ display: 'flex', justifyContent: 'center', my: 2 }}>
+                        <SubmissionActionButtons
+                          submissionId={messageSubmission.id}
+                          conversationId={conversationId}
+                          contractAddress={messageSubmission.contract_address}
+                          email={messageSubmission.email}
+                          tokenSymbol={messageSubmission.token_symbol}
+                          tokenName={messageSubmission.token_name}
+                          adminWallet={currentWallet}
+                          submissionStatus={messageSubmission.status}
+                          onActionComplete={() => {
+                            // Refresh conversation details to hide buttons
+                            loadConversationDetails()
+                            // No need to reload messages since approval/rejection is email-only
+                          }}
+                        />
                       </Box>
                     )}
                   </Box>

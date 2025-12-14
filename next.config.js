@@ -42,6 +42,30 @@ const nextConfig = {
         protocol: 'https',
         hostname: '*.ipfs.io',
       },
+      {
+        protocol: 'https',
+        hostname: 'raw.githubusercontent.com',
+      },
+      {
+        protocol: 'https',
+        hostname: '*.ipfs.nftstorage.link',
+      },
+      {
+        protocol: 'https',
+        hostname: '*.ipfs.dweb.link',
+      },
+      {
+        protocol: 'https',
+        hostname: 'nftstorage.link',
+      },
+      {
+        protocol: 'https',
+        hostname: 'dweb.link',
+      },
+      {
+        protocol: 'https',
+        hostname: 'cdn.dexscreener.com',
+      },
     ],
   },
 }

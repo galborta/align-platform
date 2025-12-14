@@ -506,12 +506,18 @@ export default function AdminPage() {
             <CardTitle className="font-display text-xl">Quick Access</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="flex gap-4">
+            <div className="flex gap-4 flex-wrap">
               <Button
                 onClick={() => router.push('/admin/escrow-releases')}
                 className="bg-purple-600 hover:bg-purple-700 text-white"
               >
                 🔄 Escrow Releases Dashboard
+              </Button>
+              <Button
+                onClick={() => router.push('/create')}
+                className="bg-accent-primary hover:bg-accent-primary-hover text-white"
+              >
+                ➕ Create New Project
               </Button>
             </div>
           </CardContent>

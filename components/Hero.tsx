@@ -20,7 +20,7 @@ export function Hero() {
                 Browse Projects
               </Button>
             </Link>
-            <Link href="/create">
+            <Link href="/submit-project">
               <Button variant="outline" size="lg" className="bg-card-bg">
                 Add Your Project
               </Button>
