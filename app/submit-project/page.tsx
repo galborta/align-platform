@@ -185,14 +185,9 @@ export default function SubmitProjectPage() {
         
         <main className="relative z-10">
           <div className="submit-container">
-            {/* Logo Placeholder */}
-            <div className="logo-placeholder">
-              <svg width="120" height="40" viewBox="0 0 120 40" xmlns="http://www.w3.org/2000/svg">
-                <rect width="8" height="32" x="4" y="4" fill="var(--text-primary)" rx="2"/>
-                <rect width="8" height="32" x="24" y="4" fill="var(--text-primary)" rx="2"/>
-                <rect width="12" height="4" x="12" y="18" fill="var(--text-primary)" rx="2"/>
-                <text x="45" y="28" fill="var(--text-primary)" fontFamily="var(--font-heading)" fontSize="20" fontWeight="700">ALIGN</text>
-              </svg>
+            {/* Logo */}
+            <div className="logo-container">
+              <h1 className="logo-text">ORggly</h1>
             </div>
 
             {/* Success Message */}
@@ -200,7 +195,7 @@ export default function SubmitProjectPage() {
               <div className="success-icon">✓</div>
               <h1 className="text-title">Application Submitted!</h1>
               <p className="text-body">
-                Thank you for your interest in joining Align. We've received your application and will review it within 48 hours.
+                Thank you for your interest in joining ORggly. We've received your application and will review it within 48 hours.
               </p>
               <p className="text-body-small">
                 You'll receive an email at <strong>{formData.email}</strong> with next steps.
@@ -278,21 +273,16 @@ export default function SubmitProjectPage() {
       
       <main className="relative z-10">
         <div className="submit-container">
-          {/* Logo Placeholder */}
-          <div className="logo-placeholder">
-            <svg width="120" height="40" viewBox="0 0 120 40" xmlns="http://www.w3.org/2000/svg">
-              <rect width="8" height="32" x="4" y="4" fill="var(--text-primary)" rx="2"/>
-              <rect width="8" height="32" x="24" y="4" fill="var(--text-primary)" rx="2"/>
-              <rect width="12" height="4" x="12" y="18" fill="var(--text-primary)" rx="2"/>
-              <text x="45" y="28" fill="var(--text-primary)" fontFamily="var(--font-heading)" fontSize="20" fontWeight="700">ALIGN</text>
-            </svg>
+          {/* Logo */}
+          <div className="logo-container">
+            <h1 className="logo-text">ORggly</h1>
           </div>
 
           {/* Header */}
           <div className="header-section">
             <h1 className="text-title">Submit Your Project</h1>
             <p className="text-body">
-              Join the Align community. We'll review your application and get back to you within 48 hours.
+              Join the ORggly community. We'll review your application and get back to you within 48 hours.
             </p>
           </div>
 
@@ -586,10 +576,20 @@ export default function SubmitProjectPage() {
           margin: 0 auto;
         }
 
-        .logo-placeholder {
+        .logo-container {
           display: flex;
           justify-content: center;
           margin-bottom: var(--space-xl);
+        }
+
+        .logo-text {
+          font-family: 'Gluten', cursive;
+          font-size: 28px;
+          font-weight: 500;
+          color: var(--text-primary);
+          letter-spacing: -0.02em;
+          margin: 0;
+          cursor: default;
         }
 
         .header-section {
