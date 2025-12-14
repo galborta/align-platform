@@ -259,6 +259,8 @@ export type Database = {
           participant_1: string
           participant_2: string
           updated_at: string | null
+          tags: string[] | null
+          submission_id: string | null
         }
         Insert: {
           archived_by_participant_1?: boolean | null
@@ -269,6 +271,8 @@ export type Database = {
           participant_1: string
           participant_2: string
           updated_at?: string | null
+          tags?: string[] | null
+          submission_id?: string | null
         }
         Update: {
           archived_by_participant_1?: boolean | null
@@ -279,8 +283,18 @@ export type Database = {
           participant_1?: string
           participant_2?: string
           updated_at?: string | null
+          tags?: string[] | null
+          submission_id?: string | null
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "conversations_submission_id_fkey"
+            columns: ["submission_id"]
+            isOneToOne: false
+            referencedRelation: "project_submissions"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       creative_assets: {
         Row: {
@@ -1211,6 +1225,144 @@ export type Database = {
           updated_by?: string
         }
         Relationships: []
+      }
+      project_creation_tokens: {
+        Row: {
+          id: string
+          token: string
+          contract_address: string
+          email: string
+          submission_id: string
+          created_by: string
+          created_at: string | null
+          expires_at: string | null
+          status: string
+          completed_at: string | null
+        }
+        Insert: {
+          id?: string
+          token: string
+          contract_address: string
+          email: string
+          submission_id: string
+          created_by: string
+          created_at?: string | null
+          expires_at?: string | null
+          status?: string
+          completed_at?: string | null
+        }
+        Update: {
+          id?: string
+          token?: string
+          contract_address?: string
+          email?: string
+          submission_id?: string
+          created_by?: string
+          created_at?: string | null
+          expires_at?: string | null
+          status?: string
+          completed_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "project_creation_tokens_submission_id_fkey"
+            columns: ["submission_id"]
+            isOneToOne: false
+            referencedRelation: "project_submissions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      project_drafts: {
+        Row: {
+          id: string
+          token_id: string
+          contract_address: string
+          form_data: Json
+          last_saved: string | null
+          completed: boolean | null
+        }
+        Insert: {
+          id?: string
+          token_id: string
+          contract_address: string
+          form_data: Json
+          last_saved?: string | null
+          completed?: boolean | null
+        }
+        Update: {
+          id?: string
+          token_id?: string
+          contract_address?: string
+          form_data?: Json
+          last_saved?: string | null
+          completed?: boolean | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "project_drafts_token_id_fkey"
+            columns: ["token_id"]
+            isOneToOne: false
+            referencedRelation: "project_creation_tokens"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      project_submissions: {
+        Row: {
+          id: string
+          name: string
+          email: string
+          contract_address: string
+          token_symbol: string | null
+          token_name: string | null
+          role: string
+          message: string | null
+          status: string
+          conversation_id: string | null
+          submitted_at: string | null
+          reviewed_at: string | null
+          reviewed_by: string | null
+        }
+        Insert: {
+          id?: string
+          name: string
+          email: string
+          contract_address: string
+          token_symbol?: string | null
+          token_name?: string | null
+          role: string
+          message?: string | null
+          status?: string
+          conversation_id?: string | null
+          submitted_at?: string | null
+          reviewed_at?: string | null
+          reviewed_by?: string | null
+        }
+        Update: {
+          id?: string
+          name?: string
+          email?: string
+          contract_address?: string
+          token_symbol?: string | null
+          token_name?: string | null
+          role?: string
+          message?: string | null
+          status?: string
+          conversation_id?: string | null
+          submitted_at?: string | null
+          reviewed_at?: string | null
+          reviewed_by?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "project_submissions_conversation_id_fkey"
+            columns: ["conversation_id"]
+            isOneToOne: false
+            referencedRelation: "conversations"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       projects: {
         Row: {
