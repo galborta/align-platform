@@ -265,6 +265,8 @@ export default function AdminMessagesPage() {
                     <MessageThread
                       conversationId={selectedConversationId}
                       currentWallet={publicKey.toBase58()}
+                      recipientWallet={recipientWallet}
+                      onRefreshList={handleRefresh}
                     />
                   </Box>
                   
@@ -348,6 +350,8 @@ export default function AdminMessagesPage() {
                       <MessageThread
                         conversationId={selectedConversationId}
                         currentWallet={publicKey.toBase58()}
+                        recipientWallet={recipientWallet}
+                        onRefreshList={handleRefresh}
                       />
                     </Box>
                     

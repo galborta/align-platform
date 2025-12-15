@@ -46,6 +46,7 @@ interface MessageThreadProps {
   conversationId: string
   currentWallet: string
   recipientWallet: string
+  onRefreshList?: () => void
 }
 
 interface GroupedMessages {
@@ -56,7 +57,8 @@ interface GroupedMessages {
 export function MessageThread({
   conversationId,
   currentWallet,
-  recipientWallet
+  recipientWallet,
+  onRefreshList
 }: MessageThreadProps) {
   const { refreshUnreadCount } = useMessaging()
   const { publicKey } = useWallet()
@@ -826,6 +828,10 @@ export function MessageThread({
                           onActionComplete={() => {
                             // Refresh conversation details to hide buttons
                             loadConversationDetails()
+                            // Refresh the conversation list to update other conversations
+                            if (onRefreshList) {
+                              onRefreshList()
+                            }
                             // No need to reload messages since approval/rejection is email-only
                           }}
                         />
