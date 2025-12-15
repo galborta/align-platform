@@ -525,6 +525,7 @@ export async function POST(request: NextRequest) {
     // ==================== BACKGROUND PROCESSING ====================
     // Process everything else asynchronously in the background
     // This allows us to return success to the user immediately
+    console.log('[Create Submission] Starting background processing for submission:', submission.id)
     processSubmissionBackground(submission.id, {
       name: trimmedName,
       email: trimmedEmail,
@@ -535,7 +536,10 @@ export async function POST(request: NextRequest) {
       message: message?.trim() || null
     }).catch(error => {
       // Log background processing errors but don't fail the request
-      console.error('[Create Submission] Background processing error:', error)
+      console.error('[Create Submission] ❌ Background processing error:', error)
+      if (error instanceof Error) {
+        console.error('[Create Submission] ❌ Error stack:', error.stack)
+      }
     })
     
     const duration = Date.now() - startTime
@@ -640,49 +644,73 @@ async function processSubmissionBackground(
   }
   
   // ==================== SEND ADMIN EMAIL NOTIFICATION ====================
+  // Support both ADMIN_EMAIL (singular) and ADMIN_EMAILS (comma-separated)
   const adminEmail = process.env.ADMIN_EMAIL
-  if (adminEmail && conversationId) {
+  const adminEmailsEnv = process.env.ADMIN_EMAILS
+  const adminEmailsList: string[] = []
+  
+  console.log('[Background] Email configuration check:')
+  console.log('[Background] - ADMIN_EMAIL:', adminEmail ? `${adminEmail.slice(0, 3)}***` : 'NOT SET')
+  console.log('[Background] - ADMIN_EMAILS:', adminEmailsEnv ? `${adminEmailsEnv.slice(0, 10)}***` : 'NOT SET')
+  console.log('[Background] - RESEND_API_KEY:', process.env.RESEND_API_KEY ? 'SET' : 'NOT SET')
+  console.log('[Background] - EMAIL_FROM:', process.env.EMAIL_FROM || 'NOT SET')
+  
+  if (adminEmailsEnv) {
+    // Parse comma-separated list
+    adminEmailsList.push(...adminEmailsEnv.split(',').map(e => e.trim()).filter(Boolean))
+  } else if (adminEmail) {
+    // Fall back to single email
+    adminEmailsList.push(adminEmail.trim())
+  }
+  
+  if (adminEmailsList.length > 0) {
     try {
-      console.log('[Background] Sending admin email...')
+      console.log('[Background] 📧 Sending admin email to:', adminEmailsList.length, 'recipient(s)')
+      console.log('[Background] 📧 Recipients:', adminEmailsList.map(e => e.slice(0, 3) + '***').join(', '))
       const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
-      const emailResponse = await fetch(`${baseUrl}/api/emails/send`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          type: 'admin_notification',
-          to: adminEmail,
-          data: {
-            submitterName: data.name,
-            submitterEmail: data.email,
-            tokenSymbol: data.tokenSymbol,
-            tokenName: data.tokenName,
-            contractAddress: data.contractAddress,
-            role: data.role,
-            message: data.message || undefined,
-            submittedAt: new Date().toLocaleString('en-US', {
-              dateStyle: 'long',
-              timeStyle: 'short'
-            }),
-            conversationUrl: `${baseUrl}/messages`
-          }
-        })
+      
+      // Import the direct email function
+      const { sendEmailDirect } = await import('@/app/api/emails/send/route')
+      
+      const emailResult = await sendEmailDirect({
+        type: 'admin_notification',
+        to: adminEmailsList.length === 1 ? adminEmailsList[0] : adminEmailsList,
+        data: {
+          submitterName: data.name,
+          submitterEmail: data.email,
+          tokenSymbol: data.tokenSymbol,
+          tokenName: data.tokenName,
+          contractAddress: data.contractAddress,
+          role: data.role,
+          message: data.message || undefined,
+          submittedAt: new Date().toLocaleString('en-US', {
+            dateStyle: 'long',
+            timeStyle: 'short'
+          }),
+          conversationUrl: conversationId ? `${baseUrl}/messages` : `${baseUrl}/admin`
+        }
       })
       
-      if (emailResponse.ok) {
-        console.log('[Background] ✅ Admin email notification sent')
+      if (emailResult.success) {
+        console.log('[Background] ✅ Admin email notification sent successfully!')
+        console.log('[Background] ✅ Message ID:', emailResult.messageId)
+        console.log('[Background] ✅ Check Resend dashboard: https://resend.com/emails')
       } else {
-        console.warn('[Background] Admin email failed:', await emailResponse.text())
+        console.error('[Background] ❌ Admin email failed!')
+        console.error('[Background] ❌ Error:', emailResult.error)
+        console.error('[Background] ❌ Details:', JSON.stringify(emailResult.details, null, 2))
       }
     } catch (emailError) {
-      console.error('[Background] Failed to send admin notification email:', emailError)
+      console.error('[Background] ❌ Exception sending admin notification email:')
+      console.error('[Background] ❌ Error:', emailError)
+      if (emailError instanceof Error) {
+        console.error('[Background] ❌ Stack:', emailError.stack)
+      }
     }
   } else {
-    if (!adminEmail) {
-      console.warn('[Background] ADMIN_EMAIL not configured, skipping email notification')
-    }
-    if (!conversationId) {
-      console.warn('[Background] No conversation ID, skipping email notification')
-    }
+    console.error('[Background] ❌ ADMIN_EMAIL or ADMIN_EMAILS not configured!')
+    console.error('[Background] ❌ Set ADMIN_EMAIL=galborta@protonmail.com in your .env.local file')
+    console.error('[Background] ❌ Skipping email notification')
   }
   
   const duration = Date.now() - startTime

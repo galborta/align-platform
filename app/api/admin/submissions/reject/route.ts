@@ -192,26 +192,23 @@ export async function POST(request: NextRequest) {
     // Note: Rejection is ONLY sent via email (not posted to conversation)
     // Send rejection email to submitter
     try {
-      const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://orggly.com'
+      // Import the direct email function
+      const { sendEmailDirect } = await import('@/app/api/emails/send/route')
       
-      const emailResponse = await fetch(`${baseUrl}/api/emails/send`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          type: 'project_rejected',
-          to: submission.email,
-          data: {
-            submitterName: submission.name,
-            tokenSymbol: submission.token_symbol,
-            tokenName: submission.token_name
-          }
-        })
+      const emailResult = await sendEmailDirect({
+        type: 'project_rejected',
+        to: submission.email,
+        data: {
+          submitterName: submission.name,
+          tokenSymbol: submission.token_symbol,
+          tokenName: submission.token_name
+        }
       })
       
-      if (emailResponse.ok) {
-        console.log('[Reject Submission] Rejection email sent to submitter')
+      if (emailResult.success) {
+        console.log('[Reject Submission] ✅ Rejection email sent to submitter:', emailResult.messageId)
       } else {
-        console.warn('[Reject Submission] Rejection email failed:', await emailResponse.text())
+        console.warn('[Reject Submission] Rejection email failed:', emailResult.error, emailResult.details)
       }
     } catch (emailError) {
       // Don't fail rejection if email fails

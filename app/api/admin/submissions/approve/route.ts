@@ -239,25 +239,24 @@ export async function POST(request: NextRequest) {
       const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://orggly.com'
       const creationLink = `${baseUrl}/projects/create?token=${uniqueToken}`
       
-      const emailResponse = await fetch(`${baseUrl}/api/emails/send`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          type: 'project_approved',
-          to: submission.email,
-          data: {
-            submitterName: submission.name,
-            tokenSymbol: submission.token_symbol,
-            tokenName: submission.token_name,
-            creationLink
-          }
-        })
+      // Import the direct email function
+      const { sendEmailDirect } = await import('@/app/api/emails/send/route')
+      
+      const emailResult = await sendEmailDirect({
+        type: 'project_approved',
+        to: submission.email,
+        data: {
+          submitterName: submission.name,
+          tokenSymbol: submission.token_symbol,
+          tokenName: submission.token_name,
+          creationLink
+        }
       })
       
-      if (emailResponse.ok) {
-        console.log('[Approve Submission] Approval email sent to submitter')
+      if (emailResult.success) {
+        console.log('[Approve Submission] ✅ Approval email sent to submitter:', emailResult.messageId)
       } else {
-        console.warn('[Approve Submission] Approval email failed:', await emailResponse.text())
+        console.warn('[Approve Submission] Approval email failed:', emailResult.error, emailResult.details)
       }
     } catch (emailError) {
       // Don't fail approval if email fails
