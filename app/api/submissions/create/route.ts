@@ -193,9 +193,21 @@ async function createAdminConversation(submissionData: {
     })
     
     if (tagError) {
-      console.warn('[Create Submission] Failed to add tag (non-critical):', tagError.message)
+      console.warn('[Create Submission] RPC add_conversation_tag failed:', tagError.message)
+      // Fallback: Directly update tags array
+      console.log('[Create Submission] Attempting direct tag update fallback...')
+      const { error: directTagError } = await supabase
+        .from('conversations')
+        .update({ tags: ['Project Submission'] })
+        .eq('id', conversationId)
+      
+      if (directTagError) {
+        console.error('[Create Submission] CRITICAL: Failed to add tag via fallback:', directTagError.message)
+      } else {
+        console.log('[Create Submission] ✓ Tag added via direct update fallback')
+      }
     } else {
-      console.log('[Create Submission] Added "Project Submission" tag')
+      console.log('[Create Submission] ✓ Added "Project Submission" tag via RPC')
     }
     
     // Step 3: Set submission_id on the conversation
