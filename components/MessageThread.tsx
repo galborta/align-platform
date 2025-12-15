@@ -157,6 +157,8 @@ export function MessageThread({
   // Load conversation details (tags and submission data)
   const loadConversationDetails = useCallback(async () => {
     try {
+      console.log('[MessageThread] Loading conversation details for:', conversationId)
+      
       // Fetch conversation with tags
       const { data: conversation, error: convError } = await supabase
         .from('conversations')
@@ -165,6 +167,7 @@ export function MessageThread({
         .single()
 
       if (!convError && conversation) {
+        console.log('[MessageThread] Conversation tags:', conversation.tags)
         setConversationTags(conversation.tags || [])
         
         // Load ALL submissions for this conversation (not just one)
@@ -174,15 +177,23 @@ export function MessageThread({
           .eq('conversation_id', conversationId)
         
         if (!submissionsError && submissions) {
+          console.log('[MessageThread] Found submissions:', submissions.length)
+          console.log('[MessageThread] Submission statuses:', submissions.map(s => `${s.token_symbol}: ${s.status}`).join(', '))
           setAllSubmissions(submissions)
           // Keep submissionData for backwards compatibility (use first submission)
           if (submissions.length > 0) {
             setSubmissionData(submissions[0])
           }
+        } else {
+          console.log('[MessageThread] No submissions found or error:', submissionsError)
+          setAllSubmissions([])
+          setSubmissionData(null)
         }
+      } else {
+        console.log('[MessageThread] Conversation fetch error:', convError)
       }
     } catch (error) {
-      console.error('Error loading conversation details:', error)
+      console.error('[MessageThread] Error loading conversation details:', error)
     }
   }, [conversationId])
 
@@ -737,6 +748,15 @@ export function MessageThread({
                 const hasMatchingPendingSubmission = isSystemMessage && 
                   messageSubmission && 
                   messageSubmission.status === 'pending'
+                
+                // Debug logging for first message in conversation
+                if (index === 0 && isSystemMessage && messageContractAddress) {
+                  console.log('[MessageThread] First system message - Contract:', messageContractAddress?.slice(0, 8))
+                  console.log('[MessageThread] - Found submission:', !!messageSubmission)
+                  console.log('[MessageThread] - Submission status:', messageSubmission?.status)
+                  console.log('[MessageThread] - Has pending:', hasMatchingPendingSubmission)
+                  console.log('[MessageThread] - Conversation tags:', conversationTags)
+                }
 
                 return (
                   <Box key={msg.id}>
