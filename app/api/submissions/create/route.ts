@@ -679,7 +679,7 @@ async function processSubmissionBackground(
     try {
       console.log('[Background] 📧 Sending admin email to:', adminEmailsList.length, 'recipient(s)')
       console.log('[Background] 📧 Recipients:', adminEmailsList.map(e => e.slice(0, 3) + '***').join(', '))
-      const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
+      const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://orggly.com'
       
       // Import the direct email function
       const { sendEmailDirect } = await import('@/app/api/emails/send/route')

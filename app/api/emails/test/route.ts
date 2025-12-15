@@ -48,7 +48,7 @@ export async function GET(request: NextRequest) {
           dateStyle: 'long',
           timeStyle: 'short'
         }),
-        conversationUrl: `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/admin`
+        conversationUrl: `${process.env.NEXT_PUBLIC_APP_URL || 'https://orggly.com'}/admin`
       }
     });
 
