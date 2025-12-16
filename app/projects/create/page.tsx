@@ -80,6 +80,7 @@ function CreateProjectPageContent() {
   
   // Multi-step form state
   const [currentStep, setCurrentStep] = useState<1 | 2 | 3 | 4>(1)
+  const [stepValidationErrors, setStepValidationErrors] = useState<Record<string, string>>({})
   
   // Image upload state
   const [uploadingImage, setUploadingImage] = useState(false)
@@ -287,6 +288,29 @@ function CreateProjectPageContent() {
     } finally {
       setUploadingImage(false)
     }
+  }
+
+  // Step validation function
+  const validateCurrentStep = (): boolean => {
+    const errors: Record<string, string> = {}
+    
+    if (currentStep === 1) {
+      if (!formData.tokenSymbol?.trim()) {
+        errors.tokenSymbol = 'Token symbol is required'
+      }
+      if (!formData.tokenName?.trim()) {
+        errors.tokenName = 'Token name is required'
+      }
+      if (!formData.description?.trim()) {
+        errors.description = 'Description is required'
+      } else if (formData.description.trim().length < 50) {
+        errors.description = 'Description must be at least 50 characters'
+      }
+    }
+    // Steps 2, 3, 4 have no required fields (all optional)
+    
+    setStepValidationErrors(errors)
+    return Object.keys(errors).length === 0
   }
 
   // Helper function to generate verification code
@@ -688,32 +712,32 @@ function CreateProjectPageContent() {
 
       <main className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {/* Header */}
-        <div className="text-center mb-8">
+        <div className="text-center mb-6 sm:mb-8">
           <h1
             style={{
               fontFamily: 'var(--font-heading)',
-              fontSize: 'var(--text-display)',
               fontWeight: 'var(--weight-bold)',
               color: 'var(--text-primary)',
               marginBottom: 'var(--space-sm)',
             }}
+            className="text-3xl sm:text-4xl lg:text-5xl"
           >
             Create Your Project
           </h1>
           <p
             style={{
               fontFamily: 'var(--font-body)',
-              fontSize: 'var(--text-body)',
               color: 'var(--text-secondary)',
             }}
+            className="text-sm sm:text-base"
           >
             Complete your project setup with your approved token
           </p>
         </div>
 
-        {/* Step Progress Indicator */}
+        {/* Step Progress Indicator - Mobile Responsive */}
         <div className="mb-8">
-          <div className="flex items-center justify-center gap-4">
+          <div className="flex items-center justify-center gap-2 sm:gap-4">
             {[
               { num: 1, label: 'Token Info' },
               { num: 2, label: 'Social Assets' },
@@ -724,8 +748,8 @@ function CreateProjectPageContent() {
                 <div className="flex flex-col items-center">
                   <div
                     style={{
-                      width: '40px',
-                      height: '40px',
+                      width: '36px',
+                      height: '36px',
                       borderRadius: '50%',
                       backgroundColor: currentStep >= step.num ? 'var(--accent-primary)' : 'var(--subtle-background)',
                       border: currentStep === step.num ? '2px solid var(--accent-primary)' : '1px solid var(--border-subtle)',
@@ -735,19 +759,23 @@ function CreateProjectPageContent() {
                       fontFamily: 'var(--font-heading)',
                       fontWeight: 'var(--weight-bold)',
                       color: currentStep >= step.num ? 'white' : 'var(--text-secondary)',
-                      fontSize: '16px',
+                      fontSize: '14px',
                     }}
+                    className="sm:w-[40px] sm:h-[40px] sm:text-base"
                   >
                     {step.num}
                   </div>
                   <span
                     style={{
-                      marginTop: '8px',
-                      fontSize: '12px',
+                      marginTop: '6px',
+                      fontSize: '10px',
                       fontFamily: 'var(--font-body)',
                       color: currentStep === step.num ? 'var(--accent-primary)' : 'var(--text-secondary)',
                       fontWeight: currentStep === step.num ? 600 : 400,
+                      textAlign: 'center',
+                      whiteSpace: 'nowrap',
                     }}
+                    className="hidden sm:block sm:text-xs"
                   >
                     {step.label}
                   </span>
@@ -755,11 +783,12 @@ function CreateProjectPageContent() {
                 {index < 3 && (
                   <div
                     style={{
-                      width: '60px',
+                      width: '20px',
                       height: '2px',
                       backgroundColor: currentStep > step.num ? 'var(--accent-primary)' : 'var(--border-subtle)',
-                      marginBottom: '24px',
+                      marginBottom: '0px',
                     }}
+                    className="sm:w-[60px] sm:mb-[24px]"
                   />
                 )}
               </div>
@@ -768,7 +797,7 @@ function CreateProjectPageContent() {
         </div>
 
         {/* Project Creation Form */}
-        <Card className="p-6">
+        <Card className="p-4 sm:p-6">
           <CardHeader className="p-0 mb-6">
             <CardTitle className="text-2xl">
               Step {currentStep}: {
@@ -792,117 +821,123 @@ function CreateProjectPageContent() {
             {/* STEP 1: TOKEN INFORMATION */}
             {currentStep === 1 && (
               <>
-                {/* Contract Address Locked Info Box */}
-                <div
-                  style={{
-                    backgroundColor: 'var(--accent-primary-soft)',
-                    borderRadius: '12px',
-                    padding: 'var(--space-md)',
-                    border: '1px solid var(--accent-primary)',
-                  }}
-                >
-                  <p
-                    style={{
-                      margin: 0,
-                      fontFamily: 'var(--font-body)',
-                      fontSize: 'var(--text-body-small)',
-                      color: 'var(--text-primary)',
-                      lineHeight: '1.5',
-                    }}
-                  >
-                    <strong>Contract Address Locked:</strong> This address was
-                    verified during your submission and cannot be changed. If you
-                    need to use a different address, please submit a new project.
-                  </p>
-                </div>
+            {/* Contract Address Locked Info Box */}
+            <div
+              style={{
+                backgroundColor: 'var(--accent-primary-soft)',
+                borderRadius: '12px',
+                padding: 'var(--space-md)',
+                border: '1px solid var(--accent-primary)',
+              }}
+            >
+              <p
+                style={{
+                  margin: 0,
+                  fontFamily: 'var(--font-body)',
+                  fontSize: 'var(--text-body-small)',
+                  color: 'var(--text-primary)',
+                  lineHeight: '1.5',
+                }}
+              >
+                <strong>Contract Address Locked:</strong> This address was
+                verified during your submission and cannot be changed. If you
+                need to use a different address, please submit a new project.
+              </p>
+            </div>
 
-                {/* Locked Contract Address Field */}
-                <TextField
-                  label="Token Contract Address"
-                  name="contractAddress"
-                  value={token?.contract_address || ''}
-                  disabled={true}
-                  fullWidth
-                  required
-                  helperText="This contract address is locked and cannot be changed."
-                  InputProps={{
-                    readOnly: true,
-                    startAdornment: (
-                      <InputAdornment position="start">
-                        <LockIcon style={{ color: 'var(--accent-primary)' }} />
-                      </InputAdornment>
-                    ),
-                  }}
-                  sx={{
-                    '& .MuiInputBase-input.Mui-disabled': {
-                      WebkitTextFillColor: 'var(--text-primary)',
-                      cursor: 'not-allowed',
-                    },
-                    '& .MuiOutlinedInput-root.Mui-disabled': {
-                      backgroundColor: 'var(--subtle-background)',
-                    },
-                    '& .MuiOutlinedInput-root': {
-                      fontFamily: 'var(--font-body)',
-                      '& fieldset': {
-                        borderColor: 'var(--border-subtle)',
-                      },
-                    },
-                    '& .MuiInputLabel-root': {
-                      fontFamily: 'var(--font-body)',
-                      color: 'var(--text-secondary)',
-                      '&.Mui-focused': {
-                        color: 'var(--accent-primary)',
-                      },
-                    },
-                    '& .MuiFormHelperText-root': {
-                      fontFamily: 'var(--font-body)',
-                      fontSize: 'var(--text-caption)',
-                    },
-                  }}
-                />
+            {/* Locked Contract Address Field */}
+            <TextField
+              label="Token Contract Address"
+              name="contractAddress"
+              value={token?.contract_address || ''}
+              disabled={true}
+              fullWidth
+              required
+              helperText="This contract address is locked and cannot be changed."
+              InputProps={{
+                readOnly: true,
+                startAdornment: (
+                  <InputAdornment position="start">
+                    <LockIcon style={{ color: 'var(--accent-primary)' }} />
+                  </InputAdornment>
+                ),
+              }}
+              sx={{
+                '& .MuiInputBase-input.Mui-disabled': {
+                  WebkitTextFillColor: 'var(--text-primary)',
+                  cursor: 'not-allowed',
+                },
+                '& .MuiOutlinedInput-root.Mui-disabled': {
+                  backgroundColor: 'var(--subtle-background)',
+                },
+                '& .MuiOutlinedInput-root': {
+                  fontFamily: 'var(--font-body)',
+                  '& fieldset': {
+                    borderColor: 'var(--border-subtle)',
+                  },
+                },
+                '& .MuiInputLabel-root': {
+                  fontFamily: 'var(--font-body)',
+                  color: 'var(--text-secondary)',
+                  '&.Mui-focused': {
+                    color: 'var(--accent-primary)',
+                  },
+                },
+                '& .MuiFormHelperText-root': {
+                  fontFamily: 'var(--font-body)',
+                  fontSize: 'var(--text-caption)',
+                },
+              }}
+            />
 
-                {/* Email Field (Display Only) */}
-                <TextField
-                  label="Contact Email"
-                  name="email"
-                  value={token?.email || ''}
-                  disabled={true}
-                  fullWidth
-                  helperText="Email address from your submission"
-                  sx={{
-                    '& .MuiInputBase-input.Mui-disabled': {
-                      WebkitTextFillColor: 'var(--text-primary)',
-                    },
-                    '& .MuiOutlinedInput-root.Mui-disabled': {
-                      backgroundColor: 'var(--subtle-background)',
-                    },
-                    '& .MuiOutlinedInput-root': {
-                      fontFamily: 'var(--font-body)',
-                      '& fieldset': {
-                        borderColor: 'var(--border-subtle)',
-                      },
-                    },
-                    '& .MuiInputLabel-root': {
-                      fontFamily: 'var(--font-body)',
-                      color: 'var(--text-secondary)',
-                    },
-                    '& .MuiFormHelperText-root': {
-                      fontFamily: 'var(--font-body)',
-                      fontSize: 'var(--text-caption)',
-                    },
-                  }}
-                />
+            {/* Email Field (Display Only) */}
+            <TextField
+              label="Contact Email"
+              name="email"
+              value={token?.email || ''}
+              disabled={true}
+              fullWidth
+              helperText="Email address from your submission"
+              sx={{
+                '& .MuiInputBase-input.Mui-disabled': {
+                  WebkitTextFillColor: 'var(--text-primary)',
+                },
+                '& .MuiOutlinedInput-root.Mui-disabled': {
+                  backgroundColor: 'var(--subtle-background)',
+                },
+                '& .MuiOutlinedInput-root': {
+                  fontFamily: 'var(--font-body)',
+                  '& fieldset': {
+                    borderColor: 'var(--border-subtle)',
+                  },
+                },
+                '& .MuiInputLabel-root': {
+                  fontFamily: 'var(--font-body)',
+                  color: 'var(--text-secondary)',
+                },
+                '& .MuiFormHelperText-root': {
+                  fontFamily: 'var(--font-body)',
+                  fontSize: 'var(--text-caption)',
+                },
+              }}
+            />
 
                 {/* Token Symbol */}
                 <TextField
                   label="Token Symbol"
                   name="tokenSymbol"
                   value={formData.tokenSymbol || ''}
-                  onChange={(e) => setFormData({ ...formData, tokenSymbol: e.target.value })}
+                  onChange={(e) => {
+                    setFormData({ ...formData, tokenSymbol: e.target.value })
+                    // Clear validation error on change
+                    if (stepValidationErrors.tokenSymbol) {
+                      setStepValidationErrors({ ...stepValidationErrors, tokenSymbol: '' })
+                    }
+                  }}
                   fullWidth
                   required
-                  error={!!submitErrors.tokenSymbol}
-                  helperText={submitErrors.tokenSymbol || "The ticker symbol for your token (e.g., GOAT, FWOG)"}
+                  error={!!submitErrors.tokenSymbol || !!stepValidationErrors.tokenSymbol}
+                  helperText={submitErrors.tokenSymbol || stepValidationErrors.tokenSymbol || "The ticker symbol for your token (e.g., GOAT, FWOG)"}
                   inputProps={{ maxLength: 10 }}
                   sx={{
                     '& .MuiOutlinedInput-root': {
@@ -927,11 +962,17 @@ function CreateProjectPageContent() {
               label="Token Name"
               name="tokenName"
               value={formData.tokenName || ''}
-              onChange={(e) => setFormData({ ...formData, tokenName: e.target.value })}
+              onChange={(e) => {
+                setFormData({ ...formData, tokenName: e.target.value })
+                // Clear validation error on change
+                if (stepValidationErrors.tokenName) {
+                  setStepValidationErrors({ ...stepValidationErrors, tokenName: '' })
+                }
+              }}
               fullWidth
               required
-              error={!!submitErrors.tokenName}
-              helperText={submitErrors.tokenName || "The full name of your token project"}
+              error={!!submitErrors.tokenName || !!stepValidationErrors.tokenName}
+              helperText={submitErrors.tokenName || stepValidationErrors.tokenName || "The full name of your token project"}
               inputProps={{ maxLength: 50 }}
               sx={{
                 '& .MuiOutlinedInput-root': {
@@ -956,13 +997,19 @@ function CreateProjectPageContent() {
               label="Project Description"
               name="description"
               value={formData.description || ''}
-              onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+              onChange={(e) => {
+                setFormData({ ...formData, description: e.target.value })
+                // Clear validation error on change
+                if (stepValidationErrors.description) {
+                  setStepValidationErrors({ ...stepValidationErrors, description: '' })
+                }
+              }}
               fullWidth
               multiline
               rows={4}
               required
-              error={!!submitErrors.description}
-              helperText={submitErrors.description || "Tell the community about your project (min 50 characters, 200-500 recommended)"}
+              error={!!submitErrors.description || !!stepValidationErrors.description}
+              helperText={submitErrors.description || stepValidationErrors.description || `Tell the community about your project (min 50 characters, 200-500 recommended) - ${formData.description?.length || 0} characters`}
               inputProps={{ maxLength: 1000 }}
               sx={{
                 '& .MuiOutlinedInput-root': {
@@ -985,26 +1032,26 @@ function CreateProjectPageContent() {
                 {/* Profile Image Upload */}
                 <div>
                   <label
-                    style={{
+              style={{
                       display: 'block',
                       fontFamily: 'var(--font-body)',
                       fontSize: '14px',
                       fontWeight: 600,
                       color: 'var(--text-primary)',
                       marginBottom: '8px',
-                    }}
-                  >
+              }}
+            >
                     Profile Image
                   </label>
-                  <p
-                    style={{
-                      fontFamily: 'var(--font-body)',
+              <p
+                style={{
+                  fontFamily: 'var(--font-body)',
                       fontSize: '13px',
                       color: 'var(--text-secondary)',
                       marginBottom: '12px',
                       marginTop: 0,
-                    }}
-                  >
+                }}
+              >
                     Upload your project logo (min 400x400px, max 5MB)
                   </p>
                   <input
@@ -1020,7 +1067,7 @@ function CreateProjectPageContent() {
                       <span className="font-body text-sm text-text-secondary">Uploading...</span>
                     </div>
                   )}
-                </div>
+            </div>
 
                 {/* Image Preview */}
                 {imagePreview && imageUrl && (
@@ -1125,13 +1172,17 @@ function CreateProjectPageContent() {
                 />
 
                 {/* Step 1 Navigation */}
-                <div style={{ display: 'flex', justifyContent: 'flex-end', paddingTop: 'var(--space-md)' }}>
+                <div className="flex justify-end pt-4">
                   <Button
                     type="button"
                     variant="primary"
                     size="lg"
-                    onClick={() => setCurrentStep(2)}
-                    style={{ minWidth: '200px' }}
+                    onClick={() => {
+                      if (validateCurrentStep()) {
+                        setCurrentStep(2)
+                      }
+                    }}
+                    className="w-full sm:w-auto sm:min-w-[200px]"
                   >
                     Continue to Social Assets →
                   </Button>
@@ -1232,12 +1283,13 @@ function CreateProjectPageContent() {
                 </div>
 
                 {/* Step 2 Navigation */}
-                <div style={{ display: 'flex', justifyContent: 'space-between', paddingTop: 'var(--space-md)' }}>
+                <div className="flex flex-col sm:flex-row gap-3 sm:justify-between pt-4">
                   <Button
                     type="button"
                     variant="secondary"
                     size="lg"
                     onClick={() => setCurrentStep(1)}
+                    className="w-full sm:w-auto order-2 sm:order-1"
                   >
                     ← Back
                   </Button>
@@ -1246,6 +1298,7 @@ function CreateProjectPageContent() {
                     variant="primary"
                     size="lg"
                     onClick={() => setCurrentStep(3)}
+                    className="w-full sm:w-auto order-1 sm:order-2"
                   >
                     Continue to Creative Assets →
                   </Button>
@@ -1316,12 +1369,13 @@ function CreateProjectPageContent() {
                 </div>
 
                 {/* Step 3 Navigation */}
-                <div style={{ display: 'flex', justifyContent: 'space-between', paddingTop: 'var(--space-md)' }}>
+                <div className="flex flex-col sm:flex-row gap-3 sm:justify-between pt-4">
                   <Button
                     type="button"
                     variant="secondary"
                     size="lg"
                     onClick={() => setCurrentStep(2)}
+                    className="w-full sm:w-auto order-2 sm:order-1"
                   >
                     ← Back
                   </Button>
@@ -1330,6 +1384,7 @@ function CreateProjectPageContent() {
                     variant="primary"
                     size="lg"
                     onClick={() => setCurrentStep(4)}
+                    className="w-full sm:w-auto order-1 sm:order-2"
                   >
                     Continue to IP Assets →
                   </Button>
@@ -1504,12 +1559,13 @@ function CreateProjectPageContent() {
                 </div>
 
                 {/* Step 4 Navigation */}
-                <div style={{ display: 'flex', justifyContent: 'space-between', paddingTop: 'var(--space-md)' }}>
+                <div className="flex justify-start pt-4">
                   <Button
                     type="button"
                     variant="secondary"
                     size="lg"
                     onClick={() => setCurrentStep(3)}
+                    className="w-full sm:w-auto"
                   >
                     ← Back
                   </Button>
@@ -1547,24 +1603,24 @@ function CreateProjectPageContent() {
 
             {/* Submit Button (only on Step 4) */}
             {currentStep === 4 && (
-              <div style={{ display: 'flex', justifyContent: 'flex-end', paddingTop: 'var(--space-md)' }}>
-                <Button
-                  type="submit"
-                  variant="primary"
-                  size="lg"
-                  disabled={isSubmitting}
-                  style={{ minWidth: '200px' }}
-                >
-                  {isSubmitting ? (
-                    <>
-                      <CircularProgress size={20} sx={{ color: 'white', marginRight: '8px' }} />
-                      Creating Project...
-                    </>
-                  ) : (
-                    'Create Project'
-                  )}
-                </Button>
-              </div>
+            <div className="flex justify-end pt-4">
+              <Button
+                type="submit"
+                variant="primary"
+                size="lg"
+                disabled={isSubmitting}
+                className="w-full sm:w-auto sm:min-w-[200px]"
+              >
+                {isSubmitting ? (
+                  <>
+                    <CircularProgress size={20} sx={{ color: 'white', marginRight: '8px' }} />
+                    Creating Project...
+                  </>
+                ) : (
+                  'Create Project'
+                )}
+              </Button>
+            </div>
             )}
           </form>
           </CardContent>
