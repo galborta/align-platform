@@ -12,14 +12,16 @@ export async function POST(request: NextRequest) {
       tokenSymbol,
       description,
       profileImageUrl,
+      website,
+      twitter,
+      telegram,
       creatorWallet,
-      // Add other form fields as needed
     } = body
 
     // Validate required fields
-    if (!contractAddress || !tokenId || !tokenName || !tokenSymbol) {
+    if (!contractAddress || !tokenId || !tokenName || !tokenSymbol || !description) {
       return NextResponse.json(
-        { error: 'Missing required fields' },
+        { error: 'Missing required fields (contract, token info, and description required)' },
         { status: 400 }
       )
     }
@@ -68,10 +70,10 @@ export async function POST(request: NextRequest) {
         token_mint: contractAddress,
         token_name: tokenName,
         token_symbol: tokenSymbol,
-        description: description || null,
+        description: description,
         profile_image_url: profileImageUrl || null,
         creator_wallet: creatorWallet || tokenData.created_by,
-        status: 'live', // Set to live immediately
+        status: 'live', // Set to live immediately so it appears on homepage
       })
       .select()
       .single()
@@ -82,6 +84,25 @@ export async function POST(request: NextRequest) {
         { error: 'Failed to create project', details: projectError.message },
         { status: 500 }
       )
+    }
+
+    // Create social_assets record (required for homepage display)
+    const { error: socialError } = await supabase
+      .from('social_assets')
+      .insert({
+        project_id: newProject.id,
+        website: website || null,
+        twitter: twitter || null,
+        telegram: telegram || null,
+        verified: false, // Admin can verify later
+      })
+
+    if (socialError) {
+      console.error('Error creating social assets:', socialError)
+      // Don't fail the project creation, but log the error
+      console.warn('Project created but social assets not added')
+    } else {
+      console.log(`✅ Social assets created for project: ${tokenSymbol}`)
     }
 
     // Mark token as completed

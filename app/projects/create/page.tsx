@@ -57,6 +57,13 @@ function CreateProjectPageContent() {
       // Token is valid
       setToken(validatedToken)
 
+      // Fetch submission data to pre-fill form
+      const { data: submissionData } = await supabase
+        .from('project_submissions')
+        .select('token_symbol, token_name, name, role, message')
+        .eq('id', validatedToken.submission_id)
+        .single()
+
       // Load saved draft if exists
       const savedDraft = await getTokenDraft(validatedToken.id)
 
@@ -68,6 +75,16 @@ function CreateProjectPageContent() {
         // Show notification to user
         setShowDraftNotification(true)
         setTimeout(() => setShowDraftNotification(false), 5000)
+      } else if (submissionData) {
+        // Pre-fill with submission data if no draft exists
+        setFormData({
+          tokenSymbol: submissionData.token_symbol,
+          tokenName: submissionData.token_name,
+          submitterName: submissionData.name,
+          submitterRole: submissionData.role,
+          description: submissionData.message || '',
+        })
+        console.log('Pre-filled with submission data:', submissionData)
       }
 
       setIsValidating(false)
@@ -126,9 +143,19 @@ function CreateProjectPageContent() {
   function validateForm() {
     const errors: Record<string, string> = {}
 
-    // Add validation for required fields here
-    // For now, just a placeholder that returns no errors
-    // Will be expanded when actual form fields are added
+    if (!formData.tokenSymbol || formData.tokenSymbol.trim() === '') {
+      errors.tokenSymbol = 'Token symbol is required'
+    }
+
+    if (!formData.tokenName || formData.tokenName.trim() === '') {
+      errors.tokenName = 'Token name is required'
+    }
+
+    if (!formData.description || formData.description.trim() === '') {
+      errors.description = 'Project description is required'
+    } else if (formData.description.length < 50) {
+      errors.description = 'Description must be at least 50 characters'
+    }
 
     return errors
   }
@@ -157,15 +184,17 @@ function CreateProjectPageContent() {
     try {
       // Create the project via API
       const projectData = {
-        ...formData,
         contractAddress: token.contract_address,
         email: token.email,
         tokenId: token.id,
-        tokenName: formData.tokenName || 'Project Name', // TODO: Get from form when fields are added
-        tokenSymbol: formData.tokenSymbol || 'TOKEN', // TODO: Get from form when fields are added
-        description: formData.description || '',
+        tokenName: formData.tokenName,
+        tokenSymbol: formData.tokenSymbol,
+        description: formData.description,
         profileImageUrl: formData.profileImageUrl || null,
-        creatorWallet: formData.creatorWallet || token.created_by,
+        website: formData.website || null,
+        twitter: formData.twitter || null,
+        telegram: formData.telegram || null,
+        creatorWallet: token.created_by,
       }
 
       console.log('Project data to submit:', projectData)
@@ -504,31 +533,201 @@ function CreateProjectPageContent() {
               }}
             />
 
-            {/* Placeholder for rest of form */}
-            <div
-              style={{
-                padding: 'var(--space-lg)',
-                background: 'var(--accent-success-soft)',
-                borderRadius: 'var(--radius-control)',
-                textAlign: 'center',
-                border: '1px solid var(--accent-success)',
-              }}
-            >
-              <p
-                style={{
+            {/* Token Symbol */}
+            <TextField
+              label="Token Symbol"
+              name="tokenSymbol"
+              value={formData.tokenSymbol || ''}
+              onChange={(e) => setFormData({ ...formData, tokenSymbol: e.target.value })}
+              fullWidth
+              required
+              error={!!submitErrors.tokenSymbol}
+              helperText={submitErrors.tokenSymbol || "The ticker symbol for your token (e.g., GOAT, FWOG)"}
+              inputProps={{ maxLength: 10 }}
+              sx={{
+                '& .MuiOutlinedInput-root': {
                   fontFamily: 'var(--font-body)',
-                  fontSize: 'var(--text-body-small)',
-                  color: 'var(--text-primary)',
-                  margin: 0,
-                }}
-              >
-                ✅ Contract address locked successfully
-                <br />
-                <br />
-                Additional form fields (token info, profile image, IP assets)
-                will be added in future tasks
-              </p>
-            </div>
+                  '& fieldset': { borderColor: 'var(--border-subtle)' },
+                  '&:hover fieldset': { borderColor: 'var(--accent-primary)' },
+                  '&.Mui-focused fieldset': { borderColor: 'var(--accent-primary)' },
+                },
+                '& .MuiInputLabel-root': {
+                  fontFamily: 'var(--font-body)',
+                  '&.Mui-focused': { color: 'var(--accent-primary)' },
+                },
+                '& .MuiFormHelperText-root': {
+                  fontFamily: 'var(--font-body)',
+                  fontSize: 'var(--text-caption)',
+                },
+              }}
+            />
+
+            {/* Token Name */}
+            <TextField
+              label="Token Name"
+              name="tokenName"
+              value={formData.tokenName || ''}
+              onChange={(e) => setFormData({ ...formData, tokenName: e.target.value })}
+              fullWidth
+              required
+              error={!!submitErrors.tokenName}
+              helperText={submitErrors.tokenName || "The full name of your token project"}
+              inputProps={{ maxLength: 50 }}
+              sx={{
+                '& .MuiOutlinedInput-root': {
+                  fontFamily: 'var(--font-body)',
+                  '& fieldset': { borderColor: 'var(--border-subtle)' },
+                  '&:hover fieldset': { borderColor: 'var(--accent-primary)' },
+                  '&.Mui-focused fieldset': { borderColor: 'var(--accent-primary)' },
+                },
+                '& .MuiInputLabel-root': {
+                  fontFamily: 'var(--font-body)',
+                  '&.Mui-focused': { color: 'var(--accent-primary)' },
+                },
+                '& .MuiFormHelperText-root': {
+                  fontFamily: 'var(--font-body)',
+                  fontSize: 'var(--text-caption)',
+                },
+              }}
+            />
+
+            {/* Description */}
+            <TextField
+              label="Project Description"
+              name="description"
+              value={formData.description || ''}
+              onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+              fullWidth
+              multiline
+              rows={4}
+              required
+              error={!!submitErrors.description}
+              helperText={submitErrors.description || "Tell the community about your project (min 50 characters, 200-500 recommended)"}
+              inputProps={{ maxLength: 1000 }}
+              sx={{
+                '& .MuiOutlinedInput-root': {
+                  fontFamily: 'var(--font-body)',
+                  '& fieldset': { borderColor: 'var(--border-subtle)' },
+                  '&:hover fieldset': { borderColor: 'var(--accent-primary)' },
+                  '&.Mui-focused fieldset': { borderColor: 'var(--accent-primary)' },
+                },
+                '& .MuiInputLabel-root': {
+                  fontFamily: 'var(--font-body)',
+                  '&.Mui-focused': { color: 'var(--accent-primary)' },
+                },
+                '& .MuiFormHelperText-root': {
+                  fontFamily: 'var(--font-body)',
+                  fontSize: 'var(--text-caption)',
+                },
+              }}
+            />
+
+            {/* Profile Image URL */}
+            <TextField
+              label="Profile Image URL"
+              name="profileImageUrl"
+              value={formData.profileImageUrl || ''}
+              onChange={(e) => setFormData({ ...formData, profileImageUrl: e.target.value })}
+              fullWidth
+              helperText="Direct link to your project's logo/avatar (optional)"
+              type="url"
+              sx={{
+                '& .MuiOutlinedInput-root': {
+                  fontFamily: 'var(--font-body)',
+                  '& fieldset': { borderColor: 'var(--border-subtle)' },
+                  '&:hover fieldset': { borderColor: 'var(--accent-primary)' },
+                  '&.Mui-focused fieldset': { borderColor: 'var(--accent-primary)' },
+                },
+                '& .MuiInputLabel-root': {
+                  fontFamily: 'var(--font-body)',
+                  '&.Mui-focused': { color: 'var(--accent-primary)' },
+                },
+                '& .MuiFormHelperText-root': {
+                  fontFamily: 'var(--font-body)',
+                  fontSize: 'var(--text-caption)',
+                },
+              }}
+            />
+
+            {/* Website URL */}
+            <TextField
+              label="Website"
+              name="website"
+              value={formData.website || ''}
+              onChange={(e) => setFormData({ ...formData, website: e.target.value })}
+              fullWidth
+              helperText="Your project's official website (optional)"
+              type="url"
+              sx={{
+                '& .MuiOutlinedInput-root': {
+                  fontFamily: 'var(--font-body)',
+                  '& fieldset': { borderColor: 'var(--border-subtle)' },
+                  '&:hover fieldset': { borderColor: 'var(--accent-primary)' },
+                  '&.Mui-focused fieldset': { borderColor: 'var(--accent-primary)' },
+                },
+                '& .MuiInputLabel-root': {
+                  fontFamily: 'var(--font-body)',
+                  '&.Mui-focused': { color: 'var(--accent-primary)' },
+                },
+                '& .MuiFormHelperText-root': {
+                  fontFamily: 'var(--font-body)',
+                  fontSize: 'var(--text-caption)',
+                },
+              }}
+            />
+
+            {/* Twitter */}
+            <TextField
+              label="Twitter/X Handle"
+              name="twitter"
+              value={formData.twitter || ''}
+              onChange={(e) => setFormData({ ...formData, twitter: e.target.value })}
+              fullWidth
+              helperText="Your Twitter/X username (without @, optional)"
+              placeholder="example: goatmaximus"
+              sx={{
+                '& .MuiOutlinedInput-root': {
+                  fontFamily: 'var(--font-body)',
+                  '& fieldset': { borderColor: 'var(--border-subtle)' },
+                  '&:hover fieldset': { borderColor: 'var(--accent-primary)' },
+                  '&.Mui-focused fieldset': { borderColor: 'var(--accent-primary)' },
+                },
+                '& .MuiInputLabel-root': {
+                  fontFamily: 'var(--font-body)',
+                  '&.Mui-focused': { color: 'var(--accent-primary)' },
+                },
+                '& .MuiFormHelperText-root': {
+                  fontFamily: 'var(--font-body)',
+                  fontSize: 'var(--text-caption)',
+                },
+              }}
+            />
+
+            {/* Telegram */}
+            <TextField
+              label="Telegram Group"
+              name="telegram"
+              value={formData.telegram || ''}
+              onChange={(e) => setFormData({ ...formData, telegram: e.target.value })}
+              fullWidth
+              helperText="Your Telegram group link or username (optional)"
+              sx={{
+                '& .MuiOutlinedInput-root': {
+                  fontFamily: 'var(--font-body)',
+                  '& fieldset': { borderColor: 'var(--border-subtle)' },
+                  '&:hover fieldset': { borderColor: 'var(--accent-primary)' },
+                  '&.Mui-focused fieldset': { borderColor: 'var(--accent-primary)' },
+                },
+                '& .MuiInputLabel-root': {
+                  fontFamily: 'var(--font-body)',
+                  '&.Mui-focused': { color: 'var(--accent-primary)' },
+                },
+                '& .MuiFormHelperText-root': {
+                  fontFamily: 'var(--font-body)',
+                  fontSize: 'var(--text-caption)',
+                },
+              }}
+            />
 
             {/* Error Display */}
             {submitErrors.general && (
