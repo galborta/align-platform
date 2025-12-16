@@ -1012,14 +1012,7 @@ function CreateProjectPageContent() {
                     accept="image/*"
                     onChange={handleImageUpload}
                     disabled={uploadingImage}
-                    className="block w-full text-sm text-text-secondary
-                      file:mr-4 file:py-2 file:px-4
-                      file:rounded-lg file:border-0
-                      file:text-sm file:font-semibold
-                      file:bg-primary file:text-white
-                      hover:file:bg-primary-hover
-                      file:cursor-pointer
-                      disabled:opacity-50 disabled:cursor-not-allowed"
+                    className="block w-full text-sm text-text-secondary file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-primary file:text-white hover:file:bg-primary-hover file:cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                   />
                   {uploadingImage && (
                     <div className="flex items-center mt-2">
@@ -1278,14 +1271,7 @@ function CreateProjectPageContent() {
                       accept="image/*,application/pdf,.doc,.docx"
                       onChange={handleCreativeUpload}
                       disabled={uploadingCreative}
-                      className="block w-full text-sm text-text-secondary
-                        file:mr-4 file:py-2 file:px-4
-                        file:rounded-lg file:border-0
-                        file:text-sm file:font-semibold
-                        file:bg-primary file:text-white
-                        hover:file:bg-primary-hover
-                        file:cursor-pointer
-                        disabled:opacity-50 disabled:cursor-not-allowed"
+                      className="block w-full text-sm text-text-secondary file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-primary file:text-white hover:file:bg-primary-hover file:cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                     />
                     {uploadingCreative && (
                       <div className="flex items-center mt-2">
