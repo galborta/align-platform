@@ -501,7 +501,6 @@ function CreateProjectPageContent() {
         description: formData.description,
         profileImageUrl: imageUrl || formData.profileImageUrl || null,
         website: formData.website || null,
-        twitter: formData.twitter || null,
         telegram: formData.telegram || null,
         creatorWallet: token.created_by,
         // Include all assets from steps 2-4
@@ -1118,15 +1117,14 @@ function CreateProjectPageContent() {
               }}
             />
 
-            {/* Twitter */}
+            {/* Telegram */}
             <TextField
-              label="Twitter/X Handle"
-              name="twitter"
-              value={formData.twitter || ''}
-              onChange={(e) => setFormData({ ...formData, twitter: e.target.value })}
+              label="Telegram Group"
+              name="telegram"
+              value={formData.telegram || ''}
+              onChange={(e) => setFormData({ ...formData, telegram: e.target.value })}
               fullWidth
-              helperText="Your Twitter/X username (without @, optional)"
-              placeholder="example: goatmaximus"
+              helperText="Your Telegram community link or username (optional)"
               sx={{
                 '& .MuiOutlinedInput-root': {
                   fontFamily: 'var(--font-body)',
@@ -1144,32 +1142,6 @@ function CreateProjectPageContent() {
                 },
               }}
             />
-
-            {/* Telegram */}
-            <TextField
-              label="Telegram Group"
-              name="telegram"
-              value={formData.telegram || ''}
-              onChange={(e) => setFormData({ ...formData, telegram: e.target.value })}
-              fullWidth
-              helperText="Your Telegram group link or username (optional)"
-              sx={{
-                '& .MuiOutlinedInput-root': {
-                  fontFamily: 'var(--font-body)',
-                  '& fieldset': { borderColor: 'var(--border-subtle)' },
-                  '&:hover fieldset': { borderColor: 'var(--accent-primary)' },
-                  '&.Mui-focused fieldset': { borderColor: 'var(--accent-primary)' },
-                },
-                '& .MuiInputLabel-root': {
-                  fontFamily: 'var(--font-body)',
-                  '&.Mui-focused': { color: 'var(--accent-primary)' },
-                },
-                '& .MuiFormHelperText-root': {
-                  fontFamily: 'var(--font-body)',
-                  fontSize: 'var(--text-caption)',
-                },
-                }}
-                />
 
                 {/* Step 1 Navigation */}
                 <div className="flex justify-end pt-4">

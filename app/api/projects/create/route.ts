@@ -13,7 +13,6 @@ export async function POST(request: NextRequest) {
       description,
       profileImageUrl,
       website,
-      twitter,
       telegram,
       creatorWallet,
       socialAssets = [],
@@ -90,15 +89,15 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Create basic social_assets record (required for homepage display)
+    // Create basic social_assets record with website and telegram from Step 1
+    // These show immediately on profile (website near description, telegram in social section)
     const { error: socialError } = await supabase
       .from('social_assets')
       .insert({
         project_id: newProject.id,
         website: website || null,
-        twitter: twitter || null,
         telegram: telegram || null,
-        verified: false, // Admin can verify later
+        verified: false, // Not strictly "verified" but shows immediately
       })
 
     if (socialError) {

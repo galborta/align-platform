@@ -338,9 +338,24 @@ export default function ProjectDetailPage() {
                 </div>
                 {/* Description */}
                 {project.description && (
-                  <p className="font-body text-base text-text-secondary leading-relaxed">
+                  <p className="font-body text-base text-text-secondary leading-relaxed mb-3">
                     {project.description}
                   </p>
+                )}
+                
+                {/* Website Link */}
+                {project.social_assets && project.social_assets[0]?.website && (
+                  <a
+                    href={project.social_assets[0].website.startsWith('http') 
+                      ? project.social_assets[0].website 
+                      : `https://${project.social_assets[0].website}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-2 font-body text-sm text-accent-primary hover:underline"
+                  >
+                    🌐 Visit Website
+                    <OpenInNewIcon sx={{ fontSize: 14 }} />
+                  </a>
                 )}
               </div>
             </div>
@@ -421,25 +436,48 @@ export default function ProjectDetailPage() {
                 <CardContent>
                   {project.social_assets && project.social_assets.length > 0 ? (
                     <div className="flex flex-wrap gap-2">
-                      {project.social_assets.map((social) => (
+                      {/* Show Telegram from basic social_assets record */}
+                      {project.social_assets[0]?.telegram && (
                         <a
-                          key={social.id}
-                          href={getPlatformUrl(social.platform, social.handle)}
+                          href={project.social_assets[0].telegram.startsWith('http') 
+                            ? project.social_assets[0].telegram 
+                            : `https://t.me/${project.social_assets[0].telegram}`}
                           target="_blank"
                           rel="noopener noreferrer"
                           className="flex items-center gap-2 px-3 py-2 bg-white rounded-lg border border-border-subtle hover:border-accent-primary transition-colors"
                         >
-                          <div className="text-accent-primary">
-                            {platformIcons[social.platform] || '🌐'}
+                          <div className="text-accent-primary text-xl">
+                            ✈️
                           </div>
                           <span className="font-body text-sm text-text-primary">
-                            @{social.handle}
+                            Telegram
                           </span>
-                          {social.verified && (
-                            <CheckCircleIcon sx={{ color: '#7C4DFF', fontSize: 16 }} />
-                          )}
                         </a>
-                      ))}
+                      )}
+                      
+                      {/* Show verified social accounts with platform/handle */}
+                      {project.social_assets
+                        .filter(social => social.platform && social.handle)
+                        .map((social) => (
+                          <a
+                            key={social.id}
+                            href={getPlatformUrl(social.platform, social.handle)}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="flex items-center gap-2 px-3 py-2 bg-white rounded-lg border border-border-subtle hover:border-accent-primary transition-colors"
+                          >
+                            <div className="text-accent-primary">
+                              {platformIcons[social.platform] || '🌐'}
+                            </div>
+                            <span className="font-body text-sm text-text-primary">
+                              @{social.handle}
+                            </span>
+                            {social.verified && (
+                              <CheckCircleIcon sx={{ color: '#7C4DFF', fontSize: 16 }} />
+                            )}
+                          </a>
+                        ))
+                      }
                     </div>
                   ) : (
                     <p className="font-body text-text-muted text-center py-4">
