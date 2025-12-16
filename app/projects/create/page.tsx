@@ -1275,7 +1275,7 @@ function CreateProjectPageContent() {
                     </label>
                     <input
                       type="file"
-                      accept="image/*,.pdf,.doc,.docx"
+                      accept="image/*,application/pdf,.doc,.docx"
                       onChange={handleCreativeUpload}
                       disabled={uploadingCreative}
                       className="block w-full text-sm text-text-secondary
