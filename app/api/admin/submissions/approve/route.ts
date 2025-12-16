@@ -243,14 +243,14 @@ export async function POST(request: NextRequest) {
       const { sendEmailDirect } = await import('@/app/api/emails/send/route')
       
       const emailResult = await sendEmailDirect({
-        type: 'project_approved',
-        to: submission.email,
-        data: {
-          submitterName: submission.name,
-          tokenSymbol: submission.token_symbol,
-          tokenName: submission.token_name,
-          creationLink
-        }
+          type: 'project_approved',
+          to: submission.email,
+          data: {
+            submitterName: submission.name,
+            tokenSymbol: submission.token_symbol,
+            tokenName: submission.token_name,
+            creationLink
+          }
       })
       
       if (emailResult.success) {

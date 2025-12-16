@@ -685,22 +685,22 @@ async function processSubmissionBackground(
       const { sendEmailDirect } = await import('@/app/api/emails/send/route')
       
       const emailResult = await sendEmailDirect({
-        type: 'admin_notification',
+          type: 'admin_notification',
         to: adminEmailsList.length === 1 ? adminEmailsList[0] : adminEmailsList,
-        data: {
-          submitterName: data.name,
-          submitterEmail: data.email,
-          tokenSymbol: data.tokenSymbol,
-          tokenName: data.tokenName,
-          contractAddress: data.contractAddress,
-          role: data.role,
-          message: data.message || undefined,
-          submittedAt: new Date().toLocaleString('en-US', {
-            dateStyle: 'long',
-            timeStyle: 'short'
-          }),
+          data: {
+            submitterName: data.name,
+            submitterEmail: data.email,
+            tokenSymbol: data.tokenSymbol,
+            tokenName: data.tokenName,
+            contractAddress: data.contractAddress,
+            role: data.role,
+            message: data.message || undefined,
+            submittedAt: new Date().toLocaleString('en-US', {
+              dateStyle: 'long',
+              timeStyle: 'short'
+            }),
           conversationUrl: conversationId ? `${baseUrl}/messages` : `${baseUrl}/admin`
-        }
+          }
       })
       
       if (emailResult.success) {

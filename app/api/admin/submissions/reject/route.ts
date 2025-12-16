@@ -196,13 +196,13 @@ export async function POST(request: NextRequest) {
       const { sendEmailDirect } = await import('@/app/api/emails/send/route')
       
       const emailResult = await sendEmailDirect({
-        type: 'project_rejected',
-        to: submission.email,
-        data: {
-          submitterName: submission.name,
-          tokenSymbol: submission.token_symbol,
-          tokenName: submission.token_name
-        }
+          type: 'project_rejected',
+          to: submission.email,
+          data: {
+            submitterName: submission.name,
+            tokenSymbol: submission.token_symbol,
+            tokenName: submission.token_name
+          }
       })
       
       if (emailResult.success) {

@@ -16,6 +16,10 @@ export async function POST(request: NextRequest) {
       twitter,
       telegram,
       creatorWallet,
+      socialAssets = [],
+      creativeAssets = [],
+      legalAssets = [],
+      teamWallets = [],
     } = body
 
     // Validate required fields
@@ -86,7 +90,7 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Create social_assets record (required for homepage display)
+    // Create basic social_assets record (required for homepage display)
     const { error: socialError } = await supabase
       .from('social_assets')
       .insert({
@@ -99,10 +103,93 @@ export async function POST(request: NextRequest) {
 
     if (socialError) {
       console.error('Error creating social assets:', socialError)
-      // Don't fail the project creation, but log the error
       console.warn('Project created but social assets not added')
     } else {
       console.log(`✅ Social assets created for project: ${tokenSymbol}`)
+    }
+
+    // Insert additional social assets from Step 2 (Instagram, Twitter, TikTok, YouTube with verification)
+    if (socialAssets && socialAssets.length > 0) {
+      const socialAssetsToInsert = socialAssets.map((asset: any) => ({
+        project_id: newProject.id,
+        platform: asset.platform,
+        handle: asset.handle,
+        follower_tier: asset.followerTier,
+        profile_url: asset.profileUrl,
+        verification_code: asset.verificationCode,
+        status: 'pending',
+        verified: false,
+      }))
+
+      const { error: socialAssetsError } = await supabase
+        .from('social_assets')
+        .insert(socialAssetsToInsert)
+
+      if (socialAssetsError) {
+        console.error('Error inserting social assets:', socialAssetsError)
+      } else {
+        console.log(`✅ Added ${socialAssets.length} social assets`)
+      }
+    }
+
+    // Insert creative assets
+    if (creativeAssets && creativeAssets.length > 0) {
+      const creativeAssetsToInsert = creativeAssets.map((asset: any) => ({
+        project_id: newProject.id,
+        file_name: asset.fileName,
+        file_url: asset.fileUrl,
+        file_type: asset.fileName.split('.').pop() || 'unknown',
+      }))
+
+      const { error: creativeError } = await supabase
+        .from('creative_assets')
+        .insert(creativeAssetsToInsert)
+
+      if (creativeError) {
+        console.error('Error inserting creative assets:', creativeError)
+      } else {
+        console.log(`✅ Added ${creativeAssets.length} creative assets`)
+      }
+    }
+
+    // Insert legal assets
+    if (legalAssets && legalAssets.length > 0) {
+      const legalAssetsToInsert = legalAssets.map((asset: any) => ({
+        project_id: newProject.id,
+        asset_type: asset.assetType.toLowerCase(),
+        name: asset.name,
+        status: asset.status.toLowerCase(),
+        jurisdiction: asset.jurisdiction || null,
+      }))
+
+      const { error: legalError } = await supabase
+        .from('legal_assets')
+        .insert(legalAssetsToInsert)
+
+      if (legalError) {
+        console.error('Error inserting legal assets:', legalError)
+      } else {
+        console.log(`✅ Added ${legalAssets.length} legal assets`)
+      }
+    }
+
+    // Insert team wallets
+    if (teamWallets && teamWallets.length > 0) {
+      const teamWalletsToInsert = teamWallets.map((wallet: any) => ({
+        project_id: newProject.id,
+        wallet_address: wallet.address,
+        label: wallet.label,
+      }))
+
+      const { error: walletError } = await supabase
+        .from('team_wallets')
+        .insert(teamWalletsToInsert)
+
+      if (walletError) {
+        console.error('Error inserting team wallets:', walletError)
+      } else {
+        console.log(`✅ Added ${teamWallets.length} team wallets`)
+      }
     }
 
     // Mark token as completed
