@@ -20,7 +20,7 @@ import InputLabel from '@mui/material/InputLabel'
 import Image from 'next/image'
 import { supabase } from '@/lib/supabase'
 
-type SocialPlatform = 'Instagram' | 'Twitter' | 'TikTok' | 'YouTube'
+type SocialPlatform = 'Instagram' | 'Twitter' | 'TikTok' | 'YouTube' | 'Facebook'
 type FollowerTier = '<10k' | '10k-50k' | '50k-100k' | '100k-500k' | '500k-1m' | '1m-5m' | '5m+'
 type LegalAssetType = 'Domain' | 'Trademark' | 'Copyright'
 type LegalAssetStatus = 'Registered' | 'Pending' | 'None'
@@ -1183,6 +1183,7 @@ function CreateProjectPageContent() {
                         <MenuItem value="Twitter">Twitter / X</MenuItem>
                         <MenuItem value="TikTok">TikTok</MenuItem>
                         <MenuItem value="YouTube">YouTube</MenuItem>
+                        <MenuItem value="Facebook">Facebook</MenuItem>
                       </Select>
                     </FormControl>
 

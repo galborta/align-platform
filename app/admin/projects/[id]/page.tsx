@@ -145,6 +145,13 @@ export default function AdminProjectPage() {
   }>({ assetType: 'artwork', name: '', description: '' })
   const [uploadingCreative, setUploadingCreative] = useState(false)
 
+  // New social asset state
+  const [newSocialFormData, setNewSocialFormData] = useState<{
+    platform: string
+    handle: string
+    followerTier: string
+  }>({ platform: 'instagram', handle: '', followerTier: '' })
+
   // Pending Assets tab state
   interface PendingAssetWithVotes extends PendingAsset {
     votes: AssetVote[]
@@ -1745,6 +1752,72 @@ export default function AdminProjectPage() {
     setNewCreativeFormData({ assetType: 'artwork', name: '', description: '' })
   }
 
+  // Add new social asset
+  const handleAddSocialAsset = async () => {
+    if (!project) return
+    if (!newSocialFormData.handle || !newSocialFormData.platform) {
+      toast.error('Please provide platform and handle')
+      return
+    }
+
+    try {
+      setProcessingAsset(true)
+
+      // Generate verification code
+      const verificationCode = Math.random().toString(36).substring(2, 8).toUpperCase()
+
+      // Insert social asset
+      const { data, error } = await supabase
+        .from('social_assets')
+        .insert({
+          project_id: project.id,
+          platform: newSocialFormData.platform.toLowerCase(),
+          handle: newSocialFormData.handle.trim(),
+          follower_tier: newSocialFormData.followerTier || null,
+          verification_code: verificationCode,
+          verified: true, // Auto-verify since admin is adding
+          verified_at: new Date().toISOString()
+        })
+        .select()
+        .single()
+
+      if (error) throw error
+
+      // Log admin action
+      await logAdminAction(
+        'social_asset_added',
+        data.id,
+        {
+          assetType: 'social',
+          assetData: {
+            platform: newSocialFormData.platform,
+            handle: newSocialFormData.handle
+          }
+        }
+      )
+
+      toast.success('Social asset added!')
+
+      // Reset form
+      setAddingSocial(false)
+      setNewSocialFormData({ platform: 'instagram', handle: '', followerTier: '' })
+
+      // Reload assets
+      await loadVerifiedAssets()
+    } catch (error) {
+      console.error('Error adding social asset:', error)
+      toast.error('Failed to add social asset')
+    } finally {
+      setProcessingAsset(false)
+    }
+  }
+
+  // Close add social modal
+  const handleCloseAddSocial = () => {
+    setAddingSocial(false)
+    setNewSocialFormData({ platform: 'instagram', handle: '', followerTier: '' })
+  }
+
   // Legal Asset Handlers
   const handleEditLegalAsset = (asset: LegalAsset) => {
     setEditingLegalAsset(asset)
@@ -1960,6 +2033,7 @@ export default function AdminProjectPage() {
       instagram: '📷',
       youtube: '📺',
       tiktok: '🎵',
+      facebook: '📘',
       linkedin: '💼',
       discord: '💬'
     }
@@ -5596,6 +5670,87 @@ export default function AdminProjectPage() {
                         </div>
                       )}
                     </Card>
+
+                    {/* Add Social Asset Modal */}
+                    <Dialog open={addingSocial} onClose={handleCloseAddSocial} maxWidth="sm" fullWidth>
+                      <DialogTitle>
+                        <div className="flex items-center gap-2">
+                          🌐 Add Social Asset
+                        </div>
+                      </DialogTitle>
+                      <DialogContent>
+                        <div className="space-y-4 mt-2">
+                          <FormControl fullWidth>
+                            <InputLabel>Platform</InputLabel>
+                            <Select
+                              value={newSocialFormData.platform}
+                              label="Platform"
+                              onChange={(e) => setNewSocialFormData({ ...newSocialFormData, platform: e.target.value })}
+                            >
+                              <MenuItem value="instagram">Instagram</MenuItem>
+                              <MenuItem value="twitter">Twitter / X</MenuItem>
+                              <MenuItem value="tiktok">TikTok</MenuItem>
+                              <MenuItem value="youtube">YouTube</MenuItem>
+                              <MenuItem value="facebook">Facebook</MenuItem>
+                              <MenuItem value="linkedin">LinkedIn</MenuItem>
+                              <MenuItem value="discord">Discord</MenuItem>
+                            </Select>
+                          </FormControl>
+
+                          <TextField
+                            label="Handle / Username"
+                            fullWidth
+                            placeholder="@username or username"
+                            value={newSocialFormData.handle}
+                            onChange={(e) => setNewSocialFormData({ ...newSocialFormData, handle: e.target.value })}
+                            helperText="Enter the social media handle without @ (will be added automatically)"
+                          />
+
+                          <FormControl fullWidth>
+                            <InputLabel>Follower Tier (Optional)</InputLabel>
+                            <Select
+                              value={newSocialFormData.followerTier}
+                              label="Follower Tier (Optional)"
+                              onChange={(e) => setNewSocialFormData({ ...newSocialFormData, followerTier: e.target.value })}
+                            >
+                              <MenuItem value="">None</MenuItem>
+                              <MenuItem value="Nano">Nano (1K-10K)</MenuItem>
+                              <MenuItem value="Micro">Micro (10K-50K)</MenuItem>
+                              <MenuItem value="Mid">Mid (50K-500K)</MenuItem>
+                              <MenuItem value="Macro">Macro (500K-1M)</MenuItem>
+                              <MenuItem value="Mega">Mega (1M+)</MenuItem>
+                            </Select>
+                          </FormControl>
+
+                          <div className="p-3 bg-blue-50 rounded text-sm">
+                            <p className="text-blue-800 mb-1">
+                              <strong>Note:</strong> Social assets added by admins are automatically verified.
+                            </p>
+                            <p className="text-blue-700 text-xs">
+                              A verification code will be generated for reference purposes.
+                            </p>
+                          </div>
+                        </div>
+                      </DialogContent>
+                      <DialogActions>
+                        <MuiButton onClick={handleCloseAddSocial}>Cancel</MuiButton>
+                        <MuiButton 
+                          variant="contained" 
+                          onClick={handleAddSocialAsset} 
+                          disabled={processingAsset || !newSocialFormData.handle || !newSocialFormData.platform}
+                          sx={{ bgcolor: '#7C4DFF' }}
+                        >
+                          {processingAsset ? (
+                            <span className="flex items-center gap-2">
+                              <CircularProgress size={16} color="inherit" />
+                              Adding...
+                            </span>
+                          ) : (
+                            '🌐 Add Social Asset'
+                          )}
+                        </MuiButton>
+                      </DialogActions>
+                    </Dialog>
 
                     {/* Edit Social Asset Modal */}
                     <Dialog open={!!editingSocialAsset} onClose={() => setEditingSocialAsset(null)} maxWidth="sm" fullWidth>

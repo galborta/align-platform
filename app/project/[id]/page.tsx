@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
+import Image from 'next/image'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { AppHeader } from '@/components/AppHeader'
@@ -21,10 +22,7 @@ import { Box } from '@mui/material'
 import VerifiedIcon from '@mui/icons-material/Verified'
 import CheckCircleIcon from '@mui/icons-material/CheckCircle'
 import ArrowBackIcon from '@mui/icons-material/ArrowBack'
-import InstagramIcon from '@mui/icons-material/Instagram'
-import YouTubeIcon from '@mui/icons-material/YouTube'
 import OpenInNewIcon from '@mui/icons-material/OpenInNew'
-import XIcon from '@mui/icons-material/X'
 import { WalletAddressWithMessage } from '@/components/WalletAddressWithMessage'
 
 type Project = Database['public']['Tables']['projects']['Row']
@@ -41,18 +39,13 @@ interface ProjectDetails extends Project {
 }
 
 
-const TikTokIcon = () => (
-  <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
-    <path d="M19.59 6.69a4.83 4.83 0 0 1-3.77-4.25V2h-3.45v13.67a2.89 2.89 0 0 1-5.2 1.74 2.89 2.89 0 0 1 2.31-4.64 2.93 2.93 0 0 1 .88.13V9.4a6.84 6.84 0 0 0-1-.05A6.33 6.33 0 0 0 5 20.1a6.34 6.34 0 0 0 10.86-4.43v-7a8.16 8.16 0 0 0 4.77 1.52v-3.4a4.85 4.85 0 0 1-1-.1z"/>
-  </svg>
-)
-
 const platformIcons: Record<string, React.ReactNode> = {
-  twitter: <XIcon sx={{ fontSize: 20 }} />,
-  x: <XIcon sx={{ fontSize: 20 }} />,
-  instagram: <InstagramIcon sx={{ fontSize: 20 }} />,
-  youtube: <YouTubeIcon sx={{ fontSize: 20 }} />,
-  tiktok: <TikTokIcon />,
+  twitter: <Image src="/logos/xlogo.png" alt="X" width={20} height={20} className="object-contain" />,
+  x: <Image src="/logos/xlogo.png" alt="X" width={20} height={20} className="object-contain" />,
+  instagram: <Image src="/logos/instagram logo.png" alt="Instagram" width={20} height={20} className="object-contain" />,
+  youtube: <Image src="/logos/youtubelogo.png" alt="YouTube" width={20} height={20} className="object-contain" />,
+  tiktok: <Image src="/logos/tiktoklogo.png" alt="TikTok" width={20} height={20} className="object-contain" />,
+  facebook: <Image src="/logos/facebook logo.png" alt="Facebook" width={20} height={20} className="object-contain" />,
 }
 
 const getPlatformUrl = (platform: string, handle: string): string => {
@@ -65,6 +58,7 @@ const getPlatformUrl = (platform: string, handle: string): string => {
     instagram: `https://instagram.com/${cleanHandle}`,
     youtube: `https://youtube.com/@${cleanHandle}`,
     tiktok: `https://tiktok.com/@${cleanHandle}`,
+    facebook: `https://facebook.com/${cleanHandle}`,
   }
   return urls[platform] || `https://${platform}.com/${cleanHandle}`
 }
@@ -336,6 +330,56 @@ export default function ProjectDetailPage() {
                     </div>
                   )}
                 </div>
+
+                {/* Social Assets - Inline */}
+                {project.social_assets && project.social_assets.length > 0 && (
+                  <div className="flex flex-wrap gap-2 mb-4">
+                    {/* Show Telegram from basic social_assets record */}
+                    {project.social_assets[0]?.telegram && (
+                      <a
+                        href={project.social_assets[0].telegram.startsWith('http') 
+                          ? project.social_assets[0].telegram 
+                          : `https://t.me/${project.social_assets[0].telegram}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex items-center gap-2 px-3 py-2 bg-white rounded-lg border border-border-subtle hover:border-accent-primary transition-colors"
+                      >
+                        <Image 
+                          src="/logos/telegramlogo.png" 
+                          alt="Telegram" 
+                          width={20} 
+                          height={20} 
+                          className="object-contain"
+                        />
+                        <span className="font-body text-sm text-text-primary">
+                          Telegram
+                        </span>
+                      </a>
+                    )}
+                    
+                    {/* Show verified social accounts with platform/handle */}
+                    {project.social_assets
+                      .filter(social => social.platform && social.handle)
+                      .map((social) => (
+                        <a
+                          key={social.id}
+                          href={getPlatformUrl(social.platform, social.handle)}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="flex items-center gap-2 px-3 py-2 bg-white rounded-lg border border-border-subtle hover:border-accent-primary transition-colors"
+                        >
+                          {platformIcons[social.platform] || '🌐'}
+                          <span className="font-body text-sm text-text-primary">
+                            @{social.handle}
+                          </span>
+                          {social.verified && (
+                            <CheckCircleIcon sx={{ color: '#7C4DFF', fontSize: 16 }} />
+                          )}
+                        </a>
+                      ))
+                    }
+                  </div>
+                )}
                 {/* Description */}
                 {project.description && (
                   <p className="font-body text-base text-text-secondary leading-relaxed mb-3">
@@ -427,69 +471,8 @@ export default function ProjectDetailPage() {
               />
             )}
 
-            {/* Social Assets - Compact */}
-            <Box sx={{ order: { xs: 3, lg: 3 } }}>
-              <Card>
-                <CardHeader>
-                  <CardTitle className="text-lg">Social Assets</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  {project.social_assets && project.social_assets.length > 0 ? (
-                    <div className="flex flex-wrap gap-2">
-                      {/* Show Telegram from basic social_assets record */}
-                      {project.social_assets[0]?.telegram && (
-                        <a
-                          href={project.social_assets[0].telegram.startsWith('http') 
-                            ? project.social_assets[0].telegram 
-                            : `https://t.me/${project.social_assets[0].telegram}`}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="flex items-center gap-2 px-3 py-2 bg-white rounded-lg border border-border-subtle hover:border-accent-primary transition-colors"
-                        >
-                          <div className="text-accent-primary text-xl">
-                            ✈️
-                          </div>
-                          <span className="font-body text-sm text-text-primary">
-                            Telegram
-                          </span>
-                        </a>
-                      )}
-                      
-                      {/* Show verified social accounts with platform/handle */}
-                      {project.social_assets
-                        .filter(social => social.platform && social.handle)
-                        .map((social) => (
-                          <a
-                            key={social.id}
-                            href={getPlatformUrl(social.platform, social.handle)}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="flex items-center gap-2 px-3 py-2 bg-white rounded-lg border border-border-subtle hover:border-accent-primary transition-colors"
-                          >
-                            <div className="text-accent-primary">
-                              {platformIcons[social.platform] || '🌐'}
-                            </div>
-                            <span className="font-body text-sm text-text-primary">
-                              @{social.handle}
-                            </span>
-                            {social.verified && (
-                              <CheckCircleIcon sx={{ color: '#7C4DFF', fontSize: 16 }} />
-                            )}
-                          </a>
-                        ))
-                      }
-                    </div>
-                  ) : (
-                    <p className="font-body text-text-muted text-center py-4">
-                      No social accounts added
-                    </p>
-                  )}
-                </CardContent>
-              </Card>
-            </Box>
-
             {/* Creative Assets - Album Style */}
-            <Box sx={{ order: { xs: 4, lg: 4 } }}>
+            <Box sx={{ order: { xs: 3, lg: 3 } }}>
               <Card>
                 <CardHeader>
                   <CardTitle className="text-lg">Creative Assets</CardTitle>
@@ -529,7 +512,7 @@ export default function ProjectDetailPage() {
 
             {/* Legal Assets - Compact List */}
             {project.legal_assets && project.legal_assets.length > 0 && (
-              <Box sx={{ order: { xs: 5, lg: 5 } }}>
+              <Box sx={{ order: { xs: 4, lg: 4 } }}>
                 <Card>
                   <CardHeader>
                     <CardTitle className="text-lg">Legal Assets</CardTitle>
