@@ -126,22 +126,50 @@ export async function saveDraft(
   formData: any
 ): Promise<boolean> {
   try {
-    // Upsert the draft (insert or update)
-    const { error } = await supabase
+    // Check if draft already exists for this token
+    const { data: existingDraft } = await supabase
       .from('project_drafts')
-      .upsert({
-        token_id: tokenId,
-        contract_address: contractAddress,
-        form_data: formData,
-        last_saved: new Date().toISOString(),
-        completed: false
-      }, {
-        onConflict: 'token_id'
-      })
+      .select('id')
+      .eq('token_id', tokenId)
+      .order('last_saved', { ascending: false })
+      .limit(1)
+      .maybeSingle()
     
-    if (error) {
-      console.error('Error saving draft:', error)
-      return false
+    if (existingDraft) {
+      // Update existing draft
+      const { error } = await supabase
+        .from('project_drafts')
+        .update({
+          form_data: formData,
+          last_saved: new Date().toISOString(),
+          completed: false
+        })
+        .eq('id', existingDraft.id)
+      
+      if (error) {
+        console.error('Error updating draft:', error)
+        return false
+      }
+      
+      console.log('Draft updated successfully for token:', tokenId)
+    } else {
+      // Insert new draft
+      const { error } = await supabase
+        .from('project_drafts')
+        .insert({
+          token_id: tokenId,
+          contract_address: contractAddress,
+          form_data: formData,
+          last_saved: new Date().toISOString(),
+          completed: false
+        })
+      
+      if (error) {
+        console.error('Error inserting draft:', error)
+        return false
+      }
+      
+      console.log('Draft created successfully for token:', tokenId)
     }
     
     return true

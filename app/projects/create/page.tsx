@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, useRef, Suspense } from 'react'
+import { useEffect, useState, useRef, Suspense, useCallback } from 'react'
 import { useSearchParams, useRouter } from 'next/navigation'
 import { validateProjectToken, ProjectToken, saveDraft, getTokenDraft, markTokenAsCompleted } from '@/lib/project-tokens'
 import { AppHeader } from '@/components/AppHeader'
@@ -149,7 +149,38 @@ function CreateProjectPageContent() {
       if (savedDraft) {
         // Pre-fill form with saved draft data
         setFormData(savedDraft)
-        console.log('Loaded saved draft:', savedDraft)
+        console.log('[Draft] Loaded saved draft:', savedDraft)
+        
+        // Restore image URL and preview if they exist in the draft
+        if (savedDraft.profileImageUrl) {
+          setImageUrl(savedDraft.profileImageUrl)
+          setImagePreview(savedDraft.profileImageUrl)
+          console.log('[Draft] Restored profile image:', savedDraft.profileImageUrl)
+        }
+        
+        // Restore social assets if they exist in the draft
+        if (savedDraft.socialAssets && Array.isArray(savedDraft.socialAssets)) {
+          setSocialAssets(savedDraft.socialAssets)
+          console.log('[Draft] Restored social assets:', savedDraft.socialAssets.length)
+        }
+        
+        // Restore creative assets if they exist in the draft
+        if (savedDraft.creativeAssets && Array.isArray(savedDraft.creativeAssets)) {
+          setCreativeAssets(savedDraft.creativeAssets)
+          console.log('[Draft] Restored creative assets:', savedDraft.creativeAssets.length)
+        }
+        
+        // Restore legal assets if they exist in the draft
+        if (savedDraft.legalAssets && Array.isArray(savedDraft.legalAssets)) {
+          setLegalAssets(savedDraft.legalAssets)
+          console.log('[Draft] Restored legal assets:', savedDraft.legalAssets.length)
+        }
+        
+        // Restore team wallets if they exist in the draft
+        if (savedDraft.teamWallets && Array.isArray(savedDraft.teamWallets)) {
+          setTeamWallets(savedDraft.teamWallets)
+          console.log('[Draft] Restored team wallets:', savedDraft.teamWallets.length)
+        }
 
         // Show notification to user
         setShowDraftNotification(true)
@@ -172,10 +203,56 @@ function CreateProjectPageContent() {
     checkToken()
   }, [searchParams, router])
 
+  // Save draft function (memoized to avoid recreation on every render)
+  const saveFormDraft = useCallback(async () => {
+    if (!token || isSaving) {
+      console.log('[Auto-save] Skipping save - no token or already saving')
+      return
+    }
+
+    // Combine all form data and assets into one object for saving
+    const draftData = {
+      ...formData,
+      socialAssets: socialAssets,
+      creativeAssets: creativeAssets,
+      legalAssets: legalAssets,
+      teamWallets: teamWallets
+    }
+
+    console.log('[Auto-save] Saving draft...', {
+      tokenId: token.id,
+      formDataKeys: Object.keys(formData),
+      hasDescription: !!formData.description,
+      descriptionLength: formData.description?.length || 0,
+      socialAssetsCount: socialAssets.length,
+      creativeAssetsCount: creativeAssets.length,
+      legalAssetsCount: legalAssets.length,
+      teamWalletsCount: teamWallets.length
+    })
+
+    setIsSaving(true)
+
+    const success = await saveDraft(token.id, token.contract_address, draftData)
+
+    if (success) {
+      setLastSaved(new Date())
+      console.log('[Auto-save] ✓ Draft saved successfully at:', new Date().toLocaleTimeString())
+    } else {
+      console.error('[Auto-save] ✗ Failed to save draft')
+    }
+
+    setIsSaving(false)
+  }, [token, formData, isSaving, socialAssets, creativeAssets, legalAssets, teamWallets])
+
   // Auto-save effect
   useEffect(() => {
     // Don't auto-save if no token or form is empty
-    if (!token || Object.keys(formData).length === 0) return
+    if (!token || Object.keys(formData).length === 0) {
+      console.log('[Auto-save] Skipping auto-save setup - no token or empty form')
+      return
+    }
+
+    console.log('[Auto-save] Setting up auto-save timer (30s)')
 
     // Clear existing timer
     if (autoSaveTimerRef.current) {
@@ -183,8 +260,9 @@ function CreateProjectPageContent() {
     }
 
     // Set new timer for 30 seconds
-    autoSaveTimerRef.current = setTimeout(async () => {
-      await saveFormDraft()
+    autoSaveTimerRef.current = setTimeout(() => {
+      console.log('[Auto-save] Timer fired, saving draft...')
+      saveFormDraft()
     }, 30000) // 30 seconds
 
     // Cleanup on unmount
@@ -193,25 +271,7 @@ function CreateProjectPageContent() {
         clearTimeout(autoSaveTimerRef.current)
       }
     }
-  }, [formData, token])
-
-  // Save draft function
-  async function saveFormDraft() {
-    if (!token || isSaving) return
-
-    setIsSaving(true)
-
-    const success = await saveDraft(token.id, token.contract_address, formData)
-
-    if (success) {
-      setLastSaved(new Date())
-      console.log('Draft saved at:', new Date().toLocaleTimeString())
-    } else {
-      console.error('Failed to save draft')
-    }
-
-    setIsSaving(false)
-  }
+  }, [formData, token, saveFormDraft])
 
   // Manual save handler (for future use)
   async function handleManualSave() {
