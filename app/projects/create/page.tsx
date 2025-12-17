@@ -242,7 +242,7 @@ function CreateProjectPageContent() {
     }
 
     setIsSaving(false)
-  }, [token, formData, isSaving, socialAssets, creativeAssets, legalAssets, teamWallets])
+  }, [token, formData, socialAssets, creativeAssets, legalAssets, teamWallets])
 
   // Auto-save effect
   useEffect(() => {
