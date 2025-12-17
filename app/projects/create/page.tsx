@@ -306,6 +306,11 @@ function CreateProjectPageContent() {
       } else if (formData.description.trim().length < 50) {
         errors.description = 'Description must be at least 50 characters'
       }
+
+      // Require a profile image before moving past Step 1
+      if (!imageUrl && !formData.profileImageUrl) {
+        errors.profileImageUrl = 'Profile image is required'
+      }
     }
     // Steps 2, 3, 4 have no required fields (all optional)
     
@@ -318,19 +323,136 @@ function CreateProjectPageContent() {
     return Math.random().toString(36).substring(2, 8).toUpperCase()
   }
 
+  // Normalize social handle/URL - extract handle from URL or clean handle
+  const normalizeSocialHandle = (input: string, platform: string): { handle: string; profileUrl: string } => {
+    const trimmed = input.trim()
+    if (!trimmed) {
+      return { handle: '', profileUrl: '' }
+    }
+
+    // Try to parse as URL
+    try {
+      const url = new URL(trimmed.startsWith('http') ? trimmed : `https://${trimmed}`)
+      const hostname = url.hostname.toLowerCase()
+      
+      // Extract handle from URL based on platform
+      let extractedHandle = ''
+      
+      if (platform === 'Twitter' || platform === 'X') {
+        // x.com/username or twitter.com/username
+        if (hostname.includes('x.com') || hostname.includes('twitter.com')) {
+          extractedHandle = url.pathname.replace(/^\//, '').replace(/\/$/, '')
+        }
+      } else if (platform === 'Instagram') {
+        // instagram.com/username
+        if (hostname.includes('instagram.com')) {
+          extractedHandle = url.pathname.replace(/^\//, '').replace(/\/$/, '')
+        }
+      } else if (platform === 'TikTok') {
+        // tiktok.com/@username
+        if (hostname.includes('tiktok.com')) {
+          extractedHandle = url.pathname.replace(/^\/@?/, '').replace(/\/$/, '')
+        }
+      } else if (platform === 'YouTube') {
+        // youtube.com/@username or youtube.com/c/username or youtube.com/user/username
+        if (hostname.includes('youtube.com') || hostname.includes('youtu.be')) {
+          const path = url.pathname
+          if (path.startsWith('/@')) {
+            extractedHandle = path.replace(/^\/@/, '').replace(/\/$/, '')
+          } else if (path.startsWith('/c/')) {
+            extractedHandle = path.replace(/^\/c\//, '').replace(/\/$/, '')
+          } else if (path.startsWith('/user/')) {
+            extractedHandle = path.replace(/^\/user\//, '').replace(/\/$/, '')
+          } else {
+            extractedHandle = path.replace(/^\//, '').replace(/\/$/, '')
+          }
+        }
+      } else if (platform === 'Facebook') {
+        // facebook.com/username
+        if (hostname.includes('facebook.com')) {
+          extractedHandle = url.pathname.replace(/^\//, '').replace(/\/$/, '')
+        }
+      }
+      
+      if (extractedHandle) {
+        // Remove @ if present
+        extractedHandle = extractedHandle.replace(/^@/, '')
+        return { handle: extractedHandle, profileUrl: generateProfileUrl(platform, extractedHandle) }
+      }
+    } catch {
+      // Not a valid URL, treat as handle
+    }
+
+    // Treat as handle - remove @ if present
+    const cleanHandle = trimmed.replace(/^@/, '').replace(/^https?:\/\//, '').split('/').pop() || trimmed.replace(/^@/, '')
+    return { handle: cleanHandle, profileUrl: generateProfileUrl(platform, cleanHandle) }
+  }
+
+  // Generate proper profile URL for each platform
+  const generateProfileUrl = (platform: string, handle: string): string => {
+    const cleanHandle = handle.replace(/^@/, '')
+    
+    switch (platform) {
+      case 'Twitter':
+      case 'X':
+        return `https://x.com/${cleanHandle}`
+      case 'Instagram':
+        return `https://instagram.com/${cleanHandle}`
+      case 'TikTok':
+        return `https://tiktok.com/@${cleanHandle}`
+      case 'YouTube':
+        return `https://youtube.com/@${cleanHandle}`
+      case 'Facebook':
+        return `https://facebook.com/${cleanHandle}`
+      default:
+        return `https://${platform.toLowerCase()}.com/${cleanHandle}`
+    }
+  }
+
+  // Normalize Telegram input - extract handle from URL or clean handle
+  const normalizeTelegram = (input: string): string => {
+    const trimmed = input.trim()
+    if (!trimmed) return ''
+    
+    // If it's already a full URL, return as-is
+    if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
+      return trimmed
+    }
+    
+    // If it's a t.me link without protocol
+    if (trimmed.startsWith('t.me/')) {
+      return `https://${trimmed}`
+    }
+    
+    // If it starts with @, remove it and create t.me link
+    if (trimmed.startsWith('@')) {
+      return `https://t.me/${trimmed.slice(1)}`
+    }
+    
+    // Otherwise, treat as username and create t.me link
+    return `https://t.me/${trimmed}`
+  }
+
   // Add social asset
   const handleAddSocialAsset = () => {
     if (!socialHandle.trim()) {
-      setError('Please enter a social media handle')
+      setError('Please enter a social media handle or URL')
+      return
+    }
+
+    const { handle, profileUrl } = normalizeSocialHandle(socialHandle, socialPlatform)
+    
+    if (!handle) {
+      setError('Could not extract handle from input. Please enter a valid handle or URL.')
       return
     }
 
     const newAsset: SocialAsset = {
       id: Date.now().toString(),
       platform: socialPlatform,
-      handle: socialHandle.trim(),
+      handle: handle,
       followerTier: socialFollowerTier,
-      profileUrl: `https://${socialPlatform.toLowerCase()}.com/${socialHandle.trim()}`,
+      profileUrl: profileUrl,
       verificationCode: generateVerificationCode(),
       status: 'pending'
     }
@@ -466,6 +588,11 @@ function CreateProjectPageContent() {
       errors.description = 'Description must be at least 50 characters'
     }
 
+    // Require a profile image for the project
+    if (!imageUrl && !formData.profileImageUrl) {
+      errors.profileImageUrl = 'Profile image is required'
+    }
+
     return errors
   }
 
@@ -491,6 +618,20 @@ function CreateProjectPageContent() {
     setIsSubmitting(true)
 
     try {
+      // Normalize website URL (ensure it has a protocol so links always work)
+      const normalizeWebsite = (url: string | null | undefined) => {
+        if (!url) return null
+        const trimmed = url.trim()
+        if (!trimmed) return null
+        if (/^https?:\/\//i.test(trimmed)) return trimmed
+        return `https://${trimmed}`
+      }
+
+      const normalizedWebsite = normalizeWebsite(formData.website)
+      
+      // Normalize Telegram URL
+      const normalizedTelegram = formData.telegram ? normalizeTelegram(formData.telegram) : null
+
       // Create the project via API
       const projectData = {
         contractAddress: token.contract_address,
@@ -500,8 +641,8 @@ function CreateProjectPageContent() {
         tokenSymbol: formData.tokenSymbol,
         description: formData.description,
         profileImageUrl: imageUrl || formData.profileImageUrl || null,
-        website: formData.website || null,
-        telegram: formData.telegram || null,
+        website: normalizedWebsite,
+        telegram: normalizedTelegram,
         creatorWallet: token.created_by,
         // Include all assets from steps 2-4
         socialAssets: socialAssets,
@@ -1066,6 +1207,11 @@ function CreateProjectPageContent() {
                       <span className="font-body text-sm text-text-secondary">Uploading...</span>
                     </div>
                   )}
+                  {stepValidationErrors.profileImageUrl && (
+                    <p className="font-body text-xs text-red-600 mt-2">
+                      {stepValidationErrors.profileImageUrl}
+                    </p>
+                  )}
             </div>
 
                 {/* Image Preview */}
@@ -1099,32 +1245,6 @@ function CreateProjectPageContent() {
               fullWidth
               helperText="Your project's official website (optional)"
               type="url"
-              sx={{
-                '& .MuiOutlinedInput-root': {
-                  fontFamily: 'var(--font-body)',
-                  '& fieldset': { borderColor: 'var(--border-subtle)' },
-                  '&:hover fieldset': { borderColor: 'var(--accent-primary)' },
-                  '&.Mui-focused fieldset': { borderColor: 'var(--accent-primary)' },
-                },
-                '& .MuiInputLabel-root': {
-                  fontFamily: 'var(--font-body)',
-                  '&.Mui-focused': { color: 'var(--accent-primary)' },
-                },
-                '& .MuiFormHelperText-root': {
-                  fontFamily: 'var(--font-body)',
-                  fontSize: 'var(--text-caption)',
-                },
-              }}
-            />
-
-            {/* Telegram */}
-            <TextField
-              label="Telegram Group"
-              name="telegram"
-              value={formData.telegram || ''}
-              onChange={(e) => setFormData({ ...formData, telegram: e.target.value })}
-              fullWidth
-              helperText="Your Telegram community link or username (optional)"
               sx={{
                 '& .MuiOutlinedInput-root': {
                   fontFamily: 'var(--font-body)',
@@ -1188,12 +1308,12 @@ function CreateProjectPageContent() {
                     </FormControl>
 
                     <TextField
-                      label="Handle / Username"
+                      label="Handle / Username or URL"
                       value={socialHandle}
                       onChange={(e) => setSocialHandle(e.target.value)}
                       fullWidth
-                      placeholder="@yourhandle"
-                      helperText="Your social media username or handle"
+                      placeholder="@yourhandle or https://x.com/yourhandle"
+                      helperText="Enter your handle (@username or username) or full profile URL"
                     />
 
                     <FormControl fullWidth>
@@ -1212,6 +1332,35 @@ function CreateProjectPageContent() {
                         <MenuItem value="5m+">5M+</MenuItem>
                       </Select>
                     </FormControl>
+
+                    {/* Telegram (grouped with social assets) */}
+                    <TextField
+                      label="Telegram Group"
+                      name="telegram"
+                      value={formData.telegram || ''}
+                      onChange={(e) => {
+                        const normalized = normalizeTelegram(e.target.value)
+                        setFormData({ ...formData, telegram: normalized })
+                      }}
+                      fullWidth
+                      helperText="Enter @username, t.me/username, or full Telegram link"
+                      sx={{
+                        '& .MuiOutlinedInput-root': {
+                          fontFamily: 'var(--font-body)',
+                          '& fieldset': { borderColor: 'var(--border-subtle)' },
+                          '&:hover fieldset': { borderColor: 'var(--accent-primary)' },
+                          '&.Mui-focused fieldset': { borderColor: 'var(--accent-primary)' },
+                        },
+                        '& .MuiInputLabel-root': {
+                          fontFamily: 'var(--font-body)',
+                          '&.Mui-focused': { color: 'var(--accent-primary)' },
+                        },
+                        '& .MuiFormHelperText-root': {
+                          fontFamily: 'var(--font-body)',
+                          fontSize: 'var(--text-caption)',
+                        },
+                      }}
+                    />
 
                     <Button
                       type="button"

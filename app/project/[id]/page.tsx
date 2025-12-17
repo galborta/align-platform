@@ -308,9 +308,27 @@ export default function ProjectDetailPage() {
                 <h1 className="font-display text-3xl font-bold text-text-primary mb-1">
                   {project.token_name}
                 </h1>
-                <p className="font-body text-lg text-text-secondary mb-3">
+                <p className="font-body text-lg text-text-secondary">
                   ${project.token_symbol}
                 </p>
+                {/* Website domain inline under name/symbol, if available */}
+                {project.social_assets && (project.social_assets[0] as any)?.website && (() => {
+                  const rawWebsite = (project.social_assets[0] as any).website as string
+                  const href = rawWebsite.startsWith('http')
+                    ? rawWebsite
+                    : `https://${rawWebsite}`
+                  try {
+                    const url = new URL(href)
+                    const hostname = url.hostname.replace(/^www\./i, '')
+                    return (
+                      <p className="font-body text-sm text-text-secondary mb-3">
+                        {hostname}
+                      </p>
+                    )
+                  } catch {
+                    return null
+                  }
+                })()}
                 <div className="flex flex-wrap items-center gap-2 justify-center sm:justify-start mb-4">
                   {getVerifiedSocialsCount() > 0 && (
                     <div className="flex items-center gap-1 px-3 py-1 bg-accent-primary-soft text-accent-primary rounded-full text-sm font-medium">
@@ -335,11 +353,11 @@ export default function ProjectDetailPage() {
                 {project.social_assets && project.social_assets.length > 0 && (
                   <div className="flex flex-wrap gap-2 mb-4">
                     {/* Show Telegram from basic social_assets record */}
-                    {project.social_assets[0]?.telegram && (
+                    {(project.social_assets[0] as any)?.telegram && (
                       <a
-                        href={project.social_assets[0].telegram.startsWith('http') 
-                          ? project.social_assets[0].telegram 
-                          : `https://t.me/${project.social_assets[0].telegram}`}
+                        href={(project.social_assets[0] as any).telegram.startsWith('http') 
+                          ? (project.social_assets[0] as any).telegram 
+                          : `https://t.me/${(project.social_assets[0] as any).telegram}`}
                         target="_blank"
                         rel="noopener noreferrer"
                         className="flex items-center gap-2 px-3 py-2 bg-white rounded-lg border border-border-subtle hover:border-accent-primary transition-colors"
@@ -388,11 +406,11 @@ export default function ProjectDetailPage() {
                 )}
                 
                 {/* Website Link */}
-                {project.social_assets && project.social_assets[0]?.website && (
+                {project.social_assets && (project.social_assets[0] as any)?.website && (
                   <a
-                    href={project.social_assets[0].website.startsWith('http') 
-                      ? project.social_assets[0].website 
-                      : `https://${project.social_assets[0].website}`}
+                    href={(project.social_assets[0] as any).website.startsWith('http') 
+                      ? (project.social_assets[0] as any).website 
+                      : `https://${(project.social_assets[0] as any).website}`}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="inline-flex items-center gap-2 font-body text-sm text-accent-primary hover:underline"
@@ -448,7 +466,7 @@ export default function ProjectDetailPage() {
                       <Button
                         onClick={() => setShowAddAssetModal(true)}
                         disabled={!wallet.publicKey}
-                        variant="contained"
+                        variant="primary"
                         className="bg-purple-600 hover:bg-purple-700 w-full sm:w-auto"
                       >
                         + Add Asset

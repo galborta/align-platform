@@ -50,11 +50,6 @@ export default function SubmissionActionButtons({
   const [creationLink, setCreationLink] = useState<string | null>(null)
   const [linkCopied, setLinkCopied] = useState(false)
 
-  // Hide buttons if submission is not pending
-  if (submissionStatus !== 'pending') {
-    return null
-  }
-
   // Handle accept button click
   const handleAcceptClick = () => {
     setShowAcceptModal(true)
@@ -241,7 +236,71 @@ export default function SubmissionActionButtons({
         </Alert>
       )}
 
-      {/* Action Buttons */}
+      {/* Status Indicator for Approved/Rejected */}
+      {submissionStatus === 'approved' && (
+        <Box
+          sx={{
+            display: 'flex',
+            justifyContent: 'center',
+            mt: 'var(--space-lg)',
+            mb: 'var(--space-md)'
+          }}
+        >
+          <Box
+            sx={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 'var(--space-sm)',
+              bgcolor: 'var(--accent-success-soft)',
+              border: '1px solid var(--accent-success)',
+              borderRadius: 'var(--radius-control)',
+              padding: 'var(--space-md) var(--space-lg)',
+              color: 'var(--accent-success)',
+              fontWeight: 'var(--weight-semibold)',
+              fontSize: 'var(--text-label)'
+            }}
+          >
+            <CheckCircleIcon sx={{ fontSize: 20 }} />
+            <Typography variant="body2" sx={{ fontWeight: 'inherit', fontSize: 'inherit' }}>
+              ✓ Approved
+            </Typography>
+          </Box>
+        </Box>
+      )}
+
+      {submissionStatus === 'rejected' && (
+        <Box
+          sx={{
+            display: 'flex',
+            justifyContent: 'center',
+            mt: 'var(--space-lg)',
+            mb: 'var(--space-md)'
+          }}
+        >
+          <Box
+            sx={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 'var(--space-sm)',
+              bgcolor: '#FEF2F2',
+              border: '1px solid #EF4444',
+              borderRadius: 'var(--radius-control)',
+              padding: 'var(--space-md) var(--space-lg)',
+              color: '#EF4444',
+              fontWeight: 'var(--weight-semibold)',
+              fontSize: 'var(--text-label)'
+            }}
+          >
+            <CancelIcon sx={{ fontSize: 20 }} />
+            <Typography variant="body2" sx={{ fontWeight: 'inherit', fontSize: 'inherit' }}>
+              ✕ Rejected
+            </Typography>
+          </Box>
+        </Box>
+      )}
+
+      {/* Action Buttons - Only show when pending */}
+      {submissionStatus === 'pending' && (
       <Box
         sx={{
           display: 'flex',
@@ -328,6 +387,7 @@ export default function SubmissionActionButtons({
           ✕ Reject Project
         </Button>
       </Box>
+      )}
 
       {/* Success Snackbar */}
       <Snackbar

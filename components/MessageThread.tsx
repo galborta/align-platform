@@ -173,8 +173,9 @@ export function MessageThread({
         // Load ALL submissions for this conversation (not just one)
         const { data: submissions, error: submissionsError } = await supabase
           .from('project_submissions')
-          .select('id, name, email, contract_address, token_symbol, token_name, role, message, status')
+          .select('id, name, email, contract_address, token_symbol, token_name, role, message, status, submitted_at')
           .eq('conversation_id', conversationId)
+          .order('submitted_at', { ascending: false }) // Most recent first
         
         if (!submissionsError && submissions) {
           console.log('[MessageThread] Found submissions:', submissions.length)
@@ -735,14 +736,65 @@ export function MessageThread({
                 const isSystemMessage = msg.sender_wallet === 'project-submissions'
                 const showTime = hoveredMessageId === msg.id
                 
-                // Extract contract address from message to identify which submission this is
+                // Extract submission ID from message (preferred method for accurate matching)
+                const submissionIdMatch = msg.content.match(/Submission ID:\s*([a-f0-9-]{36})/i)
+                const messageSubmissionId = submissionIdMatch ? submissionIdMatch[1] : null
+                
+                // Fallback: Extract contract address from message for older messages without submission ID
                 const contractMatch = msg.content.match(/Token Contract:\s*([A-Za-z0-9]{32,44})/)
                 const messageContractAddress = contractMatch ? contractMatch[1] : null
                 
-                // Find the submission that matches this message's contract address
-                const messageSubmission = messageContractAddress 
-                  ? allSubmissions.find(sub => sub.contract_address === messageContractAddress)
-                  : null
+                // Find the submission that matches this message
+                // Priority: submission ID (most accurate) > contract address with smart matching
+                let messageSubmission: any = null
+                
+                if (messageSubmissionId) {
+                  // Direct ID match (most accurate)
+                  messageSubmission = allSubmissions.find(sub => sub.id === messageSubmissionId)
+                } else if (messageContractAddress) {
+                  // Fallback: match by contract address
+                  // For old messages without submission ID, find the best match by timestamp proximity
+                  // (messages are created immediately after submissions, so timestamps should be very close)
+                  const matchingSubmissions = allSubmissions.filter(
+                    sub => sub.contract_address === messageContractAddress
+                  )
+                  
+                  if (matchingSubmissions.length > 0) {
+                    const messageTime = new Date(msg.created_at).getTime()
+                    
+                    // Special case: If message is after a pending submission's submitted_at,
+                    // it's likely for that pending submission (new resubmission)
+                    const pendingAfterMessage = matchingSubmissions.find(sub => 
+                      sub.status === 'pending' && 
+                      new Date(sub.submitted_at || 0).getTime() <= messageTime
+                    )
+                    
+                    if (pendingAfterMessage) {
+                      messageSubmission = pendingAfterMessage
+                    } else {
+                      // Find submission with timestamp closest to message timestamp
+                      // This is the most accurate way to match old messages to their submissions
+                      const submissionsWithDiff = matchingSubmissions.map(sub => ({
+                        submission: sub,
+                        timeDiff: Math.abs(messageTime - new Date(sub.submitted_at || 0).getTime())
+                      }))
+                      
+                      // Sort by time difference (closest first)
+                      submissionsWithDiff.sort((a, b) => a.timeDiff - b.timeDiff)
+                      
+                      // If timestamps are very close (within 5 minutes), use the closest one
+                      // Otherwise, if there's a pending submission, prioritize it
+                      if (submissionsWithDiff[0].timeDiff < 5 * 60 * 1000) {
+                        // Timestamps are close, use the closest match
+                        messageSubmission = submissionsWithDiff[0].submission
+                      } else {
+                        // Timestamps are far apart, prioritize pending if exists
+                        const pendingSubmission = matchingSubmissions.find(sub => sub.status === 'pending')
+                        messageSubmission = pendingSubmission || submissionsWithDiff[0].submission
+                      }
+                    }
+                  }
+                }
                 
                 // Show buttons if this message has a pending submission
                 const hasMatchingPendingSubmission = isSystemMessage && 
@@ -750,12 +802,13 @@ export function MessageThread({
                   messageSubmission.status === 'pending'
                 
                 // Debug logging for first message in conversation
-                if (index === 0 && isSystemMessage && messageContractAddress) {
-                  console.log('[MessageThread] First system message - Contract:', messageContractAddress?.slice(0, 8))
+                if (index === 0 && isSystemMessage) {
+                  console.log('[MessageThread] First system message')
+                  console.log('[MessageThread] - Submission ID:', messageSubmissionId?.slice(0, 8) || 'none')
+                  console.log('[MessageThread] - Contract:', messageContractAddress?.slice(0, 8) || 'none')
                   console.log('[MessageThread] - Found submission:', !!messageSubmission)
                   console.log('[MessageThread] - Submission status:', messageSubmission?.status)
                   console.log('[MessageThread] - Has pending:', hasMatchingPendingSubmission)
-                  console.log('[MessageThread] - Conversation tags:', conversationTags)
                 }
 
                 return (
@@ -830,11 +883,12 @@ export function MessageThread({
                       )}
                     </Box>
 
-                    {/* Show action buttons for each pending submission message */}
-                    {hasMatchingPendingSubmission && 
+                    {/* Show action buttons/status for each submission message */}
+                    {/* Show for all submissions (pending shows buttons, approved/rejected show status) */}
+                    {isSystemMessage && 
                      isAdminUser && 
                      messageSubmission && 
-                     conversationTags.includes('Project Submission') && (
+                     allSubmissions.length > 0 && (
                       <Box sx={{ display: 'flex', justifyContent: 'center', my: 2 }}>
                         <SubmissionActionButtons
                           submissionId={messageSubmission.id}
@@ -846,7 +900,7 @@ export function MessageThread({
                           adminWallet={currentWallet}
                           submissionStatus={messageSubmission.status}
                           onActionComplete={() => {
-                            // Refresh conversation details to hide buttons
+                            // Refresh conversation details to update status
                             loadConversationDetails()
                             // Refresh the conversation list to update other conversations
                             if (onRefreshList) {

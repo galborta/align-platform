@@ -225,6 +225,8 @@ async function createAdminConversation(submissionData: {
     // Step 4: Create initial message with submission details
     const messageContent = `🚀 New Project Submission
 
+Submission ID: ${submissionData.submissionId}
+
 Name: ${submissionData.name}
 Email: ${submissionData.email}
 Token Contract: ${submissionData.contractAddress}
