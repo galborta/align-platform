@@ -259,3 +259,5 @@ SELECT
 - ✅ Email-only approval/rejection flow active
 
 **You can now submit fresh projects and test the full flow!** 🎉
+
+

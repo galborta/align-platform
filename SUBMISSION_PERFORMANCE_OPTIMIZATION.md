@@ -384,3 +384,5 @@ Consider enhancements when:
 - `app/submit-project/page.tsx` - Frontend form
 - `components/SubmissionSuccessModal.tsx` - Success modal
 - `emails/templates/AdminNotification.tsx` - Admin email template
+
+

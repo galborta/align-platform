@@ -259,3 +259,5 @@ SELECT * FROM notifications WHERE reference_id = 'uuid';
 For full technical documentation, see:
 - `ADMIN_CONVERSATION_INTEGRATION_COMPLETE.md`
 - `SPRINT_ADMIN_INTEGRATION_FINAL.md`
+
+

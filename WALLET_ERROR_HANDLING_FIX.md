@@ -190,3 +190,5 @@ Added to `app/layout.tsx`:
 **Created**: December 14, 2024  
 **Issue**: Wallet rejection errors showing as "Uncaught"  
 **Fix**: Two-layer error handling (adapter + global)
+
+

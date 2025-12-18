@@ -84,3 +84,5 @@ const footerText = {
   margin: '4px 0',
   textAlign: 'center' as const,
 };
+
+

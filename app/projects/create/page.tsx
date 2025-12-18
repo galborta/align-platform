@@ -242,7 +242,7 @@ function CreateProjectPageContent() {
     }
 
     setIsSaving(false)
-  }, [token, formData, socialAssets, creativeAssets, legalAssets, teamWallets])
+  }, [token, formData, isSaving, socialAssets, creativeAssets, legalAssets, teamWallets])
 
   // Auto-save effect
   useEffect(() => {
@@ -284,7 +284,7 @@ function CreateProjectPageContent() {
     if (!file) return
 
     setUploadingImage(true)
-    setError(null)
+    setStepValidationErrors({ ...stepValidationErrors, profileImageUrl: '' })
 
     try {
       // 1. Validate: image only
@@ -305,7 +305,7 @@ function CreateProjectPageContent() {
       await new Promise((resolve, reject) => {
         img.onload = () => {
           if (img.width < 400 || img.height < 400) {
-            reject(new Error('Image must be at least 400x400 pixels'))
+            reject(new Error(`Image is too small (${img.width}x${img.height}). Please upload an image that is at least 400x400 pixels.`))
           } else {
             resolve(true)
           }
@@ -340,10 +340,14 @@ function CreateProjectPageContent() {
       setImageUrl(publicUrl)
       setImagePreview(imageObjectUrl)
       setFormData({ ...formData, profileImageUrl: publicUrl })
+      
+      // Clear any previous validation errors
+      setStepValidationErrors({ ...stepValidationErrors, profileImageUrl: '' })
 
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to upload image')
-      // Clear the file input
+      const errorMessage = err instanceof Error ? err.message : 'Failed to upload image'
+      setStepValidationErrors({ ...stepValidationErrors, profileImageUrl: errorMessage })
+      // Clear the file input to allow user to select a different file
       event.target.value = ''
     } finally {
       setUploadingImage(false)
@@ -527,52 +531,100 @@ function CreateProjectPageContent() {
     setSocialAssets(socialAssets.filter(asset => asset.id !== id))
   }
 
-  // Creative asset upload
+  // Creative asset upload - supports multiple files
   const handleCreativeUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0]
-    if (!file) return
+    const files = event.target.files
+    if (!files || files.length === 0) return
+
+    // Check if adding these files would exceed the limit (max 20)
+    const MAX_CREATIVE_ASSETS = 20
+    const remainingSlots = MAX_CREATIVE_ASSETS - creativeAssets.length
+    if (remainingSlots === 0) {
+      setError('Maximum of 20 creative assets allowed')
+      event.target.value = ''
+      return
+    }
+
+    const filesToUpload = Array.from(files).slice(0, remainingSlots)
+    if (files.length > remainingSlots) {
+      setError(`Only uploading ${remainingSlots} file(s) - maximum of 20 assets allowed`)
+    }
 
     setUploadingCreative(true)
     setError(null)
 
-    try {
-      const maxSize = 10 * 1024 * 1024 // 10MB
-      if (file.size > maxSize) {
-        throw new Error('File must be less than 10MB')
+    const maxSize = 10 * 1024 * 1024 // 10MB per file
+    const projectId = token?.contract_address || 'unknown'
+    const newAssets: CreativeAsset[] = []
+    const skippedFiles: string[] = []
+    const failedFiles: string[] = []
+
+    // Process each file individually
+    for (const file of filesToUpload) {
+      try {
+        // Check file size
+        if (file.size > maxSize) {
+          const sizeMB = (file.size / (1024 * 1024)).toFixed(1)
+          skippedFiles.push(`${file.name} (${sizeMB}MB - exceeds 10MB limit)`)
+          continue // Skip this file but continue with others
+        }
+
+        // Upload file
+        const timestamp = Date.now() + Math.random() // Ensure unique filenames
+        const fileExt = file.name.split('.').pop()
+        const fileName = `${projectId}-creative-${timestamp}.${fileExt}`
+
+        const { error: uploadError } = await supabase.storage
+          .from('project-assets')
+          .upload(fileName, file, {
+            upsert: true,
+            contentType: file.type,
+          })
+
+        if (uploadError) {
+          failedFiles.push(`${file.name} (${uploadError.message})`)
+          continue
+        }
+
+        const { data: { publicUrl } } = supabase.storage
+          .from('project-assets')
+          .getPublicUrl(fileName)
+
+        const newAsset: CreativeAsset = {
+          id: `${Date.now()}-${Math.random()}`,
+          fileName: file.name,
+          fileUrl: publicUrl,
+          previewUrl: file.type.startsWith('image/') ? URL.createObjectURL(file) : ''
+        }
+
+        newAssets.push(newAsset)
+      } catch (err) {
+        failedFiles.push(`${file.name} (unexpected error)`)
       }
-
-      const projectId = token?.contract_address || 'unknown'
-      const timestamp = Date.now()
-      const fileExt = file.name.split('.').pop()
-      const fileName = `${projectId}-creative-${timestamp}.${fileExt}`
-
-      const { error: uploadError } = await supabase.storage
-        .from('project-assets')
-        .upload(fileName, file, {
-          upsert: true,
-          contentType: file.type,
-        })
-
-      if (uploadError) throw new Error(`Upload failed: ${uploadError.message}`)
-
-      const { data: { publicUrl } } = supabase.storage
-        .from('project-assets')
-        .getPublicUrl(fileName)
-
-      const newAsset: CreativeAsset = {
-        id: Date.now().toString(),
-        fileName: file.name,
-        fileUrl: publicUrl,
-        previewUrl: file.type.startsWith('image/') ? URL.createObjectURL(file) : ''
-      }
-
-      setCreativeAssets([...creativeAssets, newAsset])
-      event.target.value = ''
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to upload file')
-    } finally {
-      setUploadingCreative(false)
     }
+
+    // Update assets with successfully uploaded files
+    if (newAssets.length > 0) {
+      setCreativeAssets([...creativeAssets, ...newAssets])
+    }
+
+    // Show feedback about skipped/failed files
+    if (skippedFiles.length > 0 || failedFiles.length > 0) {
+      const messages: string[] = []
+      if (newAssets.length > 0) {
+        messages.push(`✓ Successfully uploaded ${newAssets.length} file(s)`)
+      }
+      if (skippedFiles.length > 0) {
+        messages.push(`Skipped (too large): ${skippedFiles.join(', ')}`)
+      }
+      if (failedFiles.length > 0) {
+        messages.push(`Failed: ${failedFiles.join(', ')}`)
+      }
+      setError(messages.join('. '))
+    }
+
+    event.target.value = ''
+    setUploadingCreative(false)
   }
 
   // Remove creative asset
@@ -1345,57 +1397,108 @@ function CreateProjectPageContent() {
             {/* STEP 2: SOCIAL ASSETS */}
             {currentStep === 2 && (
               <>
-                <div className="space-y-4">
-                  <p className="font-body text-sm text-text-secondary">
-                    Connect your social media accounts to build trust with the community. We'll help verify ownership.
-                  </p>
+                <div className="space-y-6">
+                  <div className="space-y-4">
+                    <p className="font-body text-sm text-text-secondary">
+                      Connect your social media accounts to build trust with the community. We'll help verify ownership.
+                    </p>
 
-                  {/* Add Social Asset Form */}
-                  <div className="space-y-4 p-4 bg-subtle-bg rounded-lg">
-                    <FormControl fullWidth>
-                      <InputLabel>Platform</InputLabel>
-                      <Select
-                        value={socialPlatform}
-                        onChange={(e) => setSocialPlatform(e.target.value as SocialPlatform)}
-                        label="Platform"
+                    {/* Add Social Asset Form */}
+                    <div className="space-y-4 p-4 bg-subtle-bg rounded-lg">
+                      <FormControl fullWidth>
+                        <InputLabel>Platform</InputLabel>
+                        <Select
+                          value={socialPlatform}
+                          onChange={(e) => setSocialPlatform(e.target.value as SocialPlatform)}
+                          label="Platform"
+                        >
+                          <MenuItem value="Instagram">Instagram</MenuItem>
+                          <MenuItem value="Twitter">Twitter / X</MenuItem>
+                          <MenuItem value="TikTok">TikTok</MenuItem>
+                          <MenuItem value="YouTube">YouTube</MenuItem>
+                          <MenuItem value="Facebook">Facebook</MenuItem>
+                        </Select>
+                      </FormControl>
+
+                      <TextField
+                        label="Handle / Username or URL"
+                        value={socialHandle}
+                        onChange={(e) => setSocialHandle(e.target.value)}
+                        fullWidth
+                        placeholder="@yourhandle or https://x.com/yourhandle"
+                        helperText="Enter your handle (@username or username) or full profile URL"
+                      />
+
+                      <FormControl fullWidth>
+                        <InputLabel>Follower Count</InputLabel>
+                        <Select
+                          value={socialFollowerTier}
+                          onChange={(e) => setSocialFollowerTier(e.target.value as FollowerTier)}
+                          label="Follower Count"
+                        >
+                          <MenuItem value="<10k">Less than 10k</MenuItem>
+                          <MenuItem value="10k-50k">10k - 50k</MenuItem>
+                          <MenuItem value="50k-100k">50k - 100k</MenuItem>
+                          <MenuItem value="100k-500k">100k - 500k</MenuItem>
+                          <MenuItem value="500k-1m">500k - 1M</MenuItem>
+                          <MenuItem value="1m-5m">1M - 5M</MenuItem>
+                          <MenuItem value="5m+">5M+</MenuItem>
+                        </Select>
+                      </FormControl>
+
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        size="md"
+                        onClick={handleAddSocialAsset}
+                        style={{ width: '100%' }}
                       >
-                        <MenuItem value="Instagram">Instagram</MenuItem>
-                        <MenuItem value="Twitter">Twitter / X</MenuItem>
-                        <MenuItem value="TikTok">TikTok</MenuItem>
-                        <MenuItem value="YouTube">YouTube</MenuItem>
-                        <MenuItem value="Facebook">Facebook</MenuItem>
-                      </Select>
-                    </FormControl>
+                        Add Social Account
+                      </Button>
+                    </div>
 
+                    {/* Social Assets List */}
+                    {socialAssets.length > 0 && (
+                      <div className="space-y-2">
+                        <h4 className="font-heading text-md font-semibold">Added Accounts ({socialAssets.length})</h4>
+                        {socialAssets.map((asset) => (
+                          <div
+                            key={asset.id}
+                            className="flex items-center justify-between p-3 bg-white rounded-lg border border-border-subtle"
+                          >
+                            <div className="flex-1">
+                              <p className="font-body text-sm font-medium">
+                                {asset.platform}: @{asset.handle}
+                              </p>
+                              <p className="font-body text-xs text-text-muted">
+                                {asset.followerTier} followers
+                              </p>
+                            </div>
+                            <Button
+                              type="button"
+                              variant="danger"
+                              size="sm"
+                              onClick={() => handleRemoveSocialAsset(asset.id)}
+                            >
+                              Remove
+                            </Button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Telegram Community (Separate Section) */}
+                  <div className="space-y-4">
+                    <div>
+                      <h4 className="font-heading text-md font-semibold mb-1">Telegram Community (Optional)</h4>
+                      <p className="font-body text-sm text-text-secondary">
+                        Add your project's Telegram group link for the community.
+                      </p>
+                    </div>
+                    
                     <TextField
-                      label="Handle / Username or URL"
-                      value={socialHandle}
-                      onChange={(e) => setSocialHandle(e.target.value)}
-                      fullWidth
-                      placeholder="@yourhandle or https://x.com/yourhandle"
-                      helperText="Enter your handle (@username or username) or full profile URL"
-                    />
-
-                    <FormControl fullWidth>
-                      <InputLabel>Follower Count</InputLabel>
-                      <Select
-                        value={socialFollowerTier}
-                        onChange={(e) => setSocialFollowerTier(e.target.value as FollowerTier)}
-                        label="Follower Count"
-                      >
-                        <MenuItem value="<10k">Less than 10k</MenuItem>
-                        <MenuItem value="10k-50k">10k - 50k</MenuItem>
-                        <MenuItem value="50k-100k">50k - 100k</MenuItem>
-                        <MenuItem value="100k-500k">100k - 500k</MenuItem>
-                        <MenuItem value="500k-1m">500k - 1M</MenuItem>
-                        <MenuItem value="1m-5m">1M - 5M</MenuItem>
-                        <MenuItem value="5m+">5M+</MenuItem>
-                      </Select>
-                    </FormControl>
-
-                    {/* Telegram (grouped with social assets) */}
-                    <TextField
-                      label="Telegram Group"
+                      label="Telegram Group Link"
                       name="telegram"
                       value={formData.telegram || ''}
                       onChange={(e) => {
@@ -1403,7 +1506,8 @@ function CreateProjectPageContent() {
                         setFormData({ ...formData, telegram: normalized })
                       }}
                       fullWidth
-                      helperText="Enter @username, t.me/username, or full Telegram link"
+                      placeholder="@username, t.me/username, or full link"
+                      helperText="Enter your Telegram group username or full link (optional)"
                       sx={{
                         '& .MuiOutlinedInput-root': {
                           fontFamily: 'var(--font-body)',
@@ -1421,47 +1525,7 @@ function CreateProjectPageContent() {
                         },
                       }}
                     />
-
-                    <Button
-                      type="button"
-                      variant="secondary"
-                      size="md"
-                      onClick={handleAddSocialAsset}
-                      style={{ width: '100%' }}
-                    >
-                      Add Social Account
-                    </Button>
                   </div>
-
-                  {/* Social Assets List */}
-                  {socialAssets.length > 0 && (
-                    <div className="space-y-2">
-                      <h4 className="font-heading text-md font-semibold">Added Accounts ({socialAssets.length})</h4>
-                      {socialAssets.map((asset) => (
-                        <div
-                          key={asset.id}
-                          className="flex items-center justify-between p-3 bg-white rounded-lg border border-border-subtle"
-                        >
-                          <div className="flex-1">
-                            <p className="font-body text-sm font-medium">
-                              {asset.platform}: @{asset.handle}
-                            </p>
-                            <p className="font-body text-xs text-text-muted">
-                              {asset.followerTier} followers • Code: {asset.verificationCode}
-                            </p>
-                          </div>
-                          <Button
-                            type="button"
-                            variant="danger"
-                            size="sm"
-                            onClick={() => handleRemoveSocialAsset(asset.id)}
-                          >
-                            Remove
-                          </Button>
-                        </div>
-                      ))}
-                    </div>
-                  )}
                 </div>
 
                 {/* Step 2 Navigation */}
@@ -1493,19 +1557,23 @@ function CreateProjectPageContent() {
               <>
                 <div className="space-y-4">
                   <p className="font-body text-sm text-text-secondary">
-                    Upload branding materials, logos, artwork, or any creative assets for your project.
+                    Upload branding materials, logos, artwork, or any creative assets for your project. You can upload up to 20 assets (the first 3 will be featured on your project page).
                   </p>
 
                   {/* Upload Creative Assets */}
                   <div className="p-4 bg-subtle-bg rounded-lg">
                     <label className="block mb-2 font-body text-sm font-medium">
-                      Upload Files (Images, PDFs, etc.)
+                      Upload Files (Images, GIFs, PDFs, etc.)
                     </label>
+                    <p className="font-body text-xs text-text-secondary mb-3">
+                      Select multiple files at once. Max 20 assets total, 10MB per file.
+                    </p>
                     <input
                       type="file"
-                      accept="image/*,application/pdf,.doc,.docx"
+                      accept="image/*,.gif,application/pdf,.doc,.docx"
                       onChange={handleCreativeUpload}
-                      disabled={uploadingCreative}
+                      disabled={uploadingCreative || creativeAssets.length >= 20}
+                      multiple
                       className="block w-full text-sm text-text-secondary file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-primary file:text-white hover:file:bg-primary-hover file:cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                     />
                     {uploadingCreative && (
@@ -1514,12 +1582,24 @@ function CreateProjectPageContent() {
                         <span className="font-body text-sm text-text-secondary">Uploading...</span>
                       </div>
                     )}
+                    {creativeAssets.length >= 20 && (
+                      <p className="font-body text-xs text-orange-600 mt-2">
+                        Maximum of 20 assets reached. Remove an asset to upload more.
+                      </p>
+                    )}
                   </div>
 
                   {/* Creative Assets List */}
                   {creativeAssets.length > 0 && (
                     <div className="space-y-2">
-                      <h4 className="font-heading text-md font-semibold">Uploaded Files ({creativeAssets.length})</h4>
+                      <h4 className="font-heading text-md font-semibold">
+                        Uploaded Files ({creativeAssets.length}/20)
+                      </h4>
+                      {creativeAssets.length > 3 && (
+                        <p className="font-body text-xs text-text-secondary">
+                          The first 3 assets will be featured on your project page.
+                        </p>
+                      )}
                       {creativeAssets.map((asset) => (
                         <div
                           key={asset.id}

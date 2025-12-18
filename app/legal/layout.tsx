@@ -102,3 +102,5 @@ export default function LegalLayout({ children }: { children: ReactNode }) {
     </div>
   )
 }
+
+

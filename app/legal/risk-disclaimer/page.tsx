@@ -17,3 +17,5 @@ export const metadata: Metadata = {
 export default function RiskDisclaimerPage() {
   return <RiskContent />
 }
+
+
