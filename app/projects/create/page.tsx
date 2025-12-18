@@ -82,6 +82,9 @@ function CreateProjectPageContent() {
   const [currentStep, setCurrentStep] = useState<1 | 2 | 3 | 4>(1)
   const [stepValidationErrors, setStepValidationErrors] = useState<Record<string, string>>({})
   
+  // Upload notifications (non-blocking)
+  const [uploadNotification, setUploadNotification] = useState<string | null>(null)
+  
   // Image upload state
   const [uploadingImage, setUploadingImage] = useState(false)
   const [imageUrl, setImageUrl] = useState<string | null>(null)
@@ -197,11 +200,29 @@ function CreateProjectPageContent() {
         console.log('Pre-filled with submission data:', submissionData)
       }
 
+      // Restore current step from localStorage if exists
+      const savedStep = localStorage.getItem(`project-step-${validatedToken.id}`)
+      if (savedStep) {
+        const step = parseInt(savedStep) as 1 | 2 | 3 | 4
+        if (step >= 1 && step <= 4) {
+          setCurrentStep(step)
+          console.log('[Draft] Restored step:', step)
+        }
+      }
+
       setIsValidating(false)
     }
 
     checkToken()
   }, [searchParams, router])
+
+  // Save current step to localStorage whenever it changes
+  useEffect(() => {
+    if (token) {
+      localStorage.setItem(`project-step-${token.id}`, currentStep.toString())
+      console.log('[Step] Saved step to localStorage:', currentStep)
+    }
+  }, [currentStep, token])
 
   // Save draft function (memoized to avoid recreation on every render)
   const saveFormDraft = useCallback(async () => {
@@ -536,22 +557,24 @@ function CreateProjectPageContent() {
     const files = event.target.files
     if (!files || files.length === 0) return
 
+    // Clear previous notifications
+    setUploadNotification(null)
+
     // Check if adding these files would exceed the limit (max 20)
     const MAX_CREATIVE_ASSETS = 20
     const remainingSlots = MAX_CREATIVE_ASSETS - creativeAssets.length
     if (remainingSlots === 0) {
-      setError('Maximum of 20 creative assets allowed')
+      setUploadNotification('Maximum of 20 creative assets reached. Remove some assets to upload more.')
       event.target.value = ''
       return
     }
 
     const filesToUpload = Array.from(files).slice(0, remainingSlots)
     if (files.length > remainingSlots) {
-      setError(`Only uploading ${remainingSlots} file(s) - maximum of 20 assets allowed`)
+      setUploadNotification(`Only uploading ${remainingSlots} file(s) - maximum of 20 assets allowed`)
     }
 
     setUploadingCreative(true)
-    setError(null)
 
     const maxSize = 10 * 1024 * 1024 // 10MB per file
     const projectId = token?.contract_address || 'unknown'
@@ -620,7 +643,9 @@ function CreateProjectPageContent() {
       if (failedFiles.length > 0) {
         messages.push(`Failed: ${failedFiles.join(', ')}`)
       }
-      setError(messages.join('. '))
+      setUploadNotification(messages.join('. '))
+      // Auto-clear notification after 8 seconds
+      setTimeout(() => setUploadNotification(null), 8000)
     }
 
     event.target.value = ''
@@ -780,6 +805,12 @@ function CreateProjectPageContent() {
 
       // The API already handles token completion, draft completion, and admin notifications
       console.log('Project created successfully:', data.projectId)
+
+      // Clear saved step from localStorage
+      if (token) {
+        localStorage.removeItem(`project-step-${token.id}`)
+        console.log('[Step] Cleared saved step from localStorage')
+      }
 
       // Show success message
       setShowSuccessModal(true)
@@ -1588,6 +1619,25 @@ function CreateProjectPageContent() {
                       </p>
                     )}
                   </div>
+
+                  {/* Upload Notification */}
+                  {uploadNotification && (
+                    <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                      <div className="flex items-start gap-2">
+                        <InfoIcon className="text-blue-600 mt-0.5" style={{ fontSize: 20 }} />
+                        <p className="font-body text-sm text-blue-900 flex-1">
+                          {uploadNotification}
+                        </p>
+                        <button
+                          onClick={() => setUploadNotification(null)}
+                          className="text-blue-600 hover:text-blue-800"
+                          aria-label="Dismiss notification"
+                        >
+                          ✕
+                        </button>
+                      </div>
+                    </div>
+                  )}
 
                   {/* Creative Assets List */}
                   {creativeAssets.length > 0 && (
