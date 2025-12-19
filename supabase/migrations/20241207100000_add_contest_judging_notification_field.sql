@@ -16,3 +16,4 @@ COMMENT ON COLUMN jobs.judging_notification_sent_at IS 'Timestamp when the poste
 
 
 
+

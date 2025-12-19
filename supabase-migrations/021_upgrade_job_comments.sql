@@ -56,3 +56,4 @@ COMMENT ON COLUMN job_comments.comment_text IS 'Comment content (max 2000 charac
 
 
 
+

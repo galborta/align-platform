@@ -288,3 +288,4 @@ GRANT EXECUTE ON FUNCTION has_accepted_terms(TEXT, TEXT) TO authenticated;
 -- SELECT * FROM pg_policies WHERE tablename IN ('verification_nonces', 'wallet_verifications', 'legal_acceptances');
 
 
+

@@ -207,3 +207,4 @@ NEXT_PUBLIC_APP_URL=https://orggly.com
 **Questions?** See full documentation in `EMAIL_SETUP_GUIDE.md`
 
 
+

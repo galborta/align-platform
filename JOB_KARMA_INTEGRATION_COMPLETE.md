@@ -268,3 +268,4 @@ All karma functions are implemented and ready for integration. Apply the databas
 
 
 
+

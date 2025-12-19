@@ -192,3 +192,4 @@ Added to `app/layout.tsx`:
 **Fix**: Two-layer error handling (adapter + global)
 
 
+
