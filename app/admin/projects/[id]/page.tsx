@@ -45,7 +45,6 @@ import { WalletAddressWithMessage } from '@/components/WalletAddressWithMessage'
 type Project = Database['public']['Tables']['projects']['Row']
 type SocialAsset = Database['public']['Tables']['social_assets']['Row']
 type CreativeAsset = Database['public']['Tables']['creative_assets']['Row']
-type LegalAsset = Database['public']['Tables']['legal_assets']['Row']
 type TeamWallet = Database['public']['Tables']['team_wallets']['Row']
 type ChatMessage = Database['public']['Tables']['chat_messages']['Row']
 type PendingAsset = Database['public']['Tables']['pending_assets']['Row']
@@ -56,7 +55,6 @@ type CurationMessage = Database['public']['Tables']['curation_chat_messages']['R
 interface ProjectDetails extends Project {
   social_assets: SocialAsset[]
   creative_assets: CreativeAsset[]
-  legal_assets: LegalAsset[]
   team_wallets: TeamWallet[]
 }
 
@@ -117,22 +115,16 @@ export default function AdminProjectPage() {
   // Verified Assets tab state
   const [verifiedSocialAssets, setVerifiedSocialAssets] = useState<SocialAsset[]>([])
   const [verifiedCreativeAssets, setVerifiedCreativeAssets] = useState<CreativeAsset[]>([])
-  const [verifiedLegalAssets, setVerifiedLegalAssets] = useState<LegalAsset[]>([])
   const [selectedSocialAssets, setSelectedSocialAssets] = useState<Set<string>>(new Set())
   const [selectedCreativeAssets, setSelectedCreativeAssets] = useState<Set<string>>(new Set())
-  const [selectedLegalAssets, setSelectedLegalAssets] = useState<Set<string>>(new Set())
   const [socialExpanded, setSocialExpanded] = useState(true)
   const [creativeExpanded, setCreativeExpanded] = useState(true)
-  const [legalExpanded, setLegalExpanded] = useState(true)
   const [editingSocialAsset, setEditingSocialAsset] = useState<SocialAsset | null>(null)
   const [editingCreativeAsset, setEditingCreativeAsset] = useState<CreativeAsset | null>(null)
-  const [editingLegalAsset, setEditingLegalAsset] = useState<LegalAsset | null>(null)
   const [socialFormData, setSocialFormData] = useState<any>({})
   const [creativeFormData, setCreativeFormData] = useState<any>({})
-  const [legalFormData, setLegalFormData] = useState<any>({})
   const [addingSocial, setAddingSocial] = useState(false)
   const [addingCreative, setAddingCreative] = useState(false)
-  const [addingLegal, setAddingLegal] = useState(false)
   const [processingAsset, setProcessingAsset] = useState(false)
   
   // New creative asset state
@@ -304,7 +296,6 @@ export default function AdminProjectPage() {
           *,
           social_assets(*),
           creative_assets(*),
-          legal_assets(*),
           team_wallets(*)
         `)
         .eq('id', params.id as string)
@@ -626,16 +617,8 @@ export default function AdminProjectPage() {
         .eq('project_id', project.id)
         .order('created_at', { ascending: false })
 
-      // Load legal assets
-      const { data: legal } = await supabase
-        .from('legal_assets')
-        .select('*')
-        .eq('project_id', project.id)
-        .order('created_at', { ascending: false })
-
       setVerifiedSocialAssets(social || [])
       setVerifiedCreativeAssets(creative || [])
-      setVerifiedLegalAssets(legal || [])
     } catch (error) {
       console.error('Error loading verified assets:', error)
     }
@@ -964,12 +947,68 @@ export default function AdminProjectPage() {
     }
   }
 
+  const handleToggleFeatured = async () => {
+    if (!project) return
+
+    const newFeaturedStatus = !project.featured
+
+    try {
+      // Check how many projects are currently featured
+      if (newFeaturedStatus) {
+        const { count } = await supabase
+          .from('projects')
+          .select('*', { count: 'exact', head: true })
+          .eq('featured', true)
+          .eq('status', 'live')
+
+        if (count && count >= 6) {
+          toast.error('Maximum of 6 projects can be featured on the homepage. Please unfeature another project first.')
+          return
+        }
+      }
+
+      const { error } = await supabase
+        .from('projects')
+        .update({
+          featured: newFeaturedStatus,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', project.id)
+
+      if (error) throw error
+
+      // Update local state
+      setProject({ ...project, featured: newFeaturedStatus })
+
+      // Log the action
+      await logAdminAction(
+        newFeaturedStatus ? 'featured_added' : 'featured_removed',
+        'project',
+        project.id,
+        {
+          featured: newFeaturedStatus
+        }
+      )
+
+      toast.success(
+        newFeaturedStatus 
+          ? '⭐ Project featured on homepage!' 
+          : 'Project removed from homepage'
+      )
+    } catch (error) {
+      console.error('Error toggling featured:', error)
+      toast.error('Failed to update featured status')
+      // ROLLBACK: Reload on error
+      fetchProject()
+    }
+  }
+
   const handleDeleteProject = async () => {
     if (!project) return
 
     try {
       // Delete in order: votes, pending_assets, karma, curation_messages, chat_messages, 
-      // team_wallets, legal_assets, creative_assets, social_assets, project
+      // team_wallets, creative_assets, social_assets, project_creation_tokens, project_submissions, project
       await supabase.from('asset_votes').delete().in(
         'pending_asset_id',
         (await supabase.from('pending_assets').select('id').eq('project_id', project.id)).data?.map(p => p.id) || []
@@ -979,9 +1018,12 @@ export default function AdminProjectPage() {
       await supabase.from('curation_chat_messages').delete().eq('project_id', project.id)
       await supabase.from('chat_messages').delete().eq('project_id', project.id)
       await supabase.from('team_wallets').delete().eq('project_id', project.id)
-      await supabase.from('legal_assets').delete().eq('project_id', project.id)
       await supabase.from('creative_assets').delete().eq('project_id', project.id)
       await supabase.from('social_assets').delete().eq('project_id', project.id)
+      
+      // Delete project_creation_tokens and project_submissions related to this contract
+      await supabase.from('project_creation_tokens').delete().eq('contract_address', project.token_mint)
+      await supabase.from('project_submissions').delete().eq('contract_address', project.token_mint)
       
       const { error } = await supabase.from('projects').delete().eq('id', project.id)
       if (error) throw error
@@ -1818,105 +1860,6 @@ export default function AdminProjectPage() {
     setNewSocialFormData({ platform: 'instagram', handle: '', followerTier: '' })
   }
 
-  // Legal Asset Handlers
-  const handleEditLegalAsset = (asset: LegalAsset) => {
-    setEditingLegalAsset(asset)
-    setLegalFormData({
-      assetType: asset.asset_type,
-      name: asset.name || '',
-      status: asset.status || 'active',
-      jurisdiction: asset.jurisdiction || '',
-      registrationId: asset.registration_id || ''
-    })
-  }
-
-  const handleSaveLegalAsset = async () => {
-    if (!editingLegalAsset) return
-
-    try {
-      setProcessingAsset(true)
-      
-      // OPTIMISTIC UPDATE: Update UI immediately
-      setVerifiedLegalAssets(prev => prev.map(asset => 
-        asset.id === editingLegalAsset.id
-          ? {
-              ...asset,
-              asset_type: legalFormData.assetType,
-              asset_name: legalFormData.name,
-              status: legalFormData.status,
-              jurisdiction: legalFormData.jurisdiction || null,
-              registration_id: legalFormData.registrationId || null
-            }
-          : asset
-      ))
-      
-      const { error } = await supabase
-        .from('legal_assets')
-        .update({
-          asset_type: legalFormData.assetType,
-          asset_name: legalFormData.name,
-          status: legalFormData.status,
-          jurisdiction: legalFormData.jurisdiction || null,
-          registration_id: legalFormData.registrationId || null
-        })
-        .eq('id', editingLegalAsset.id)
-
-      if (error) throw error
-
-      toast.success('Legal asset updated')
-      setEditingLegalAsset(null)
-    } catch (error) {
-      console.error('Error updating legal asset:', error)
-      toast.error('Failed to update legal asset')
-      // ROLLBACK: Reload on error
-      await loadVerifiedAssets()
-    } finally {
-      setProcessingAsset(false)
-    }
-  }
-
-  const handleDeleteLegalAsset = async (assetId: string) => {
-    if (!confirm('Delete this legal asset permanently? This cannot be undone.')) return
-
-    const assetToDelete = verifiedLegalAssets.find(a => a.id === assetId)
-
-    try {
-      // OPTIMISTIC UPDATE: Remove from UI immediately
-      setVerifiedLegalAssets(prev => prev.filter(asset => asset.id !== assetId))
-      
-      const { error } = await supabase
-        .from('legal_assets')
-        .delete()
-        .eq('id', assetId)
-
-      if (error) throw error
-
-      // Log the action
-      if (assetToDelete) {
-        await logAdminAction(
-          'asset_deleted',
-          'asset',
-          assetId,
-          {
-            assetType: 'legal',
-            assetData: {
-              asset_type: assetToDelete.asset_type,
-              name: assetToDelete.name,
-              status: assetToDelete.status
-            }
-          }
-        )
-      }
-
-      toast.success('Legal asset deleted')
-    } catch (error) {
-      console.error('Error deleting legal asset:', error)
-      toast.error('Failed to delete legal asset')
-      // ROLLBACK: Reload on error
-      await loadVerifiedAssets()
-    }
-  }
-
   // Bulk delete handlers
   const handleBulkDeleteSocial = async () => {
     if (selectedSocialAssets.size === 0) return
@@ -1972,47 +1915,17 @@ export default function AdminProjectPage() {
     }
   }
 
-  const handleBulkDeleteLegal = async () => {
-    if (selectedLegalAssets.size === 0) return
-    if (!confirm(`Delete ${selectedLegalAssets.size} legal assets?`)) return
-
-    try {
-      const idsToDelete = Array.from(selectedLegalAssets)
-      
-      // OPTIMISTIC UPDATE: Remove from UI immediately
-      setVerifiedLegalAssets(prev => prev.filter(asset => !selectedLegalAssets.has(asset.id)))
-      setSelectedLegalAssets(new Set())
-      
-      const { error } = await supabase
-        .from('legal_assets')
-        .delete()
-        .in('id', idsToDelete)
-
-      if (error) throw error
-
-      toast.success(`${idsToDelete.length} legal assets deleted`)
-    } catch (error) {
-      console.error('Error deleting legal assets:', error)
-      toast.error('Failed to delete legal assets')
-      // ROLLBACK: Reload on error
-      await loadVerifiedAssets()
-    }
-  }
-
   // Export as JSON
-  const handleExportAssets = (type: 'social' | 'creative' | 'legal') => {
+  const handleExportAssets = (type: 'social' | 'creative') => {
     let data: any[] = []
     let filename = ''
 
     if (type === 'social') {
       data = verifiedSocialAssets
       filename = `social-assets-${project?.token_symbol}.json`
-    } else if (type === 'creative') {
+    } else {
       data = verifiedCreativeAssets
       filename = `creative-assets-${project?.token_symbol}.json`
-    } else {
-      data = verifiedLegalAssets
-      filename = `legal-assets-${project?.token_symbol}.json`
     }
 
     const json = JSON.stringify(data, null, 2)
@@ -2046,8 +1959,6 @@ export default function AdminProjectPage() {
       return `${getPlatformIcon(assetData.platform)} ${assetData.platform} @${assetData.handle}`
     } else if (assetType === 'creative' && assetData.name) {
       return `🎨 ${assetData.asset_type || 'Creative'}: ${assetData.name}`
-    } else if (assetType === 'legal' && assetData.name) {
-      return `⚖️ ${assetData.asset_type || 'Legal'}: ${assetData.name}`
     }
     return 'Asset'
   }
@@ -2150,19 +2061,7 @@ export default function AdminProjectPage() {
           media_url: assetData.media_url || null
         })
         if (error) throw error
-      } else if (asset.asset_type === 'legal') {
-        const { error } = await supabase.from('legal_assets').insert({
-          project_id: asset.project_id,
-          asset_type: assetData.asset_type || 'other',
-          asset_name: assetData.name || null,
-          name: assetData.name || null,
-          status: assetData.status || 'active',
-          jurisdiction: assetData.jurisdiction || null,
-          registration_id: assetData.registration_id || null
-        })
-        if (error) throw error
       }
-
       // 2. Update pending asset status
       const { error: updateError } = await supabase
         .from('pending_assets')
@@ -3305,11 +3204,6 @@ export default function AdminProjectPage() {
         .select('*', { count: 'exact', head: true })
         .eq('project_id', project.id)
 
-      const { count: legalCount } = await supabase
-        .from('legal_assets')
-        .select('*', { count: 'exact', head: true })
-        .eq('project_id', project.id)
-
       const { count: teamCount } = await supabase
         .from('team_wallets')
         .select('*', { count: 'exact', head: true })
@@ -3330,7 +3224,6 @@ export default function AdminProjectPage() {
         all: {
           social: socialCount,
           creative: creativeCount,
-          legal: legalCount,
           pending: unverifiedCount,
           votes: votesCount,
           userChat: userChatCount,
@@ -3737,12 +3630,6 @@ export default function AdminProjectPage() {
         .eq('project_id', project.id)
         .select()
 
-      const { data: legal } = await supabase
-        .from('legal_assets')
-        .delete()
-        .eq('project_id', project.id)
-        .select()
-
       // Delete community data
       const { data: pending } = await supabase
         .from('pending_assets')
@@ -3779,7 +3666,6 @@ export default function AdminProjectPage() {
       const result = {
         socialAssets: social?.length || 0,
         creativeAssets: creative?.length || 0,
-        legalAssets: legal?.length || 0,
         pendingAssets: pending?.length || 0,
         curationMessages: curation?.length || 0,
         karma: karma?.length || 0,
@@ -3960,6 +3846,14 @@ export default function AdminProjectPage() {
                 >
                   <CheckCircleIcon className="mr-2" sx={{ fontSize: 16 }} />
                   Change Status
+                </Button>
+                <Button
+                  variant={project.featured ? "default" : "outline"}
+                  size="sm"
+                  onClick={handleToggleFeatured}
+                  className={project.featured ? "bg-yellow-500 text-white hover:bg-yellow-600 border-yellow-500" : ""}
+                >
+                  {project.featured ? '⭐ Featured' : '☆ Add to Homepage'}
                 </Button>
                 <Button
                   variant="outline"
@@ -4906,7 +4800,6 @@ export default function AdminProjectPage() {
                           <MenuItem value="all">All Types</MenuItem>
                           <MenuItem value="social">Social</MenuItem>
                           <MenuItem value="creative">Creative</MenuItem>
-                          <MenuItem value="legal">Legal</MenuItem>
                         </Select>
                       </FormControl>
                       <TextField
@@ -5001,14 +4894,6 @@ export default function AdminProjectPage() {
                                       <span className="font-bold">{(asset.asset_data as any).name || 'Unnamed'}</span>
                                       {(asset.asset_data as any).asset_type && (
                                         <span className="text-text-muted ml-2">({(asset.asset_data as any).asset_type})</span>
-                                      )}
-                                    </div>
-                                  )}
-                                  {asset.asset_type === 'legal' && asset.asset_data && (
-                                    <div>
-                                      <span className="font-bold">{(asset.asset_data as any).name || 'Unnamed'}</span>
-                                      {(asset.asset_data as any).jurisdiction && (
-                                        <span className="text-text-muted ml-2">({(asset.asset_data as any).jurisdiction})</span>
                                       )}
                                     </div>
                                   )}
@@ -5545,132 +5430,6 @@ export default function AdminProjectPage() {
                       )}
                     </Card>
 
-                    {/* LEGAL ASSETS SECTION */}
-                    <Card>
-                      <div 
-                        className="p-4 bg-gradient-to-r from-green-50 to-teal-50 border-b border-gray-200 cursor-pointer hover:bg-green-100 transition-colors"
-                        onClick={() => setLegalExpanded(!legalExpanded)}
-                      >
-                        <div className="flex items-center justify-between">
-                          <h3 className="font-display text-xl font-bold flex items-center gap-2">
-                            ⚖️ Legal Assets ({verifiedLegalAssets.length})
-                          </h3>
-                          <div className="flex items-center gap-2">
-                            <MuiButton
-                              size="small"
-                              variant="contained"
-                              onClick={(e) => {
-                                e.stopPropagation()
-                                setAddingLegal(true)
-                              }}
-                              sx={{ bgcolor: '#7C4DFF' }}
-                            >
-                              + Add Legal
-                            </MuiButton>
-                            <span className="text-2xl">{legalExpanded ? '▼' : '▶'}</span>
-                          </div>
-                        </div>
-                      </div>
-
-                      {legalExpanded && (
-                        <div className="p-4">
-                          {/* Bulk Actions */}
-                          {selectedLegalAssets.size > 0 && (
-                            <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg flex items-center justify-between">
-                              <span className="text-sm font-medium">{selectedLegalAssets.size} selected</span>
-                              <div className="flex gap-2">
-                                <MuiButton 
-                                  size="small"
-                                  onClick={() => handleExportAssets('legal')}
-                                >
-                                  Export JSON
-                                </MuiButton>
-                                <MuiButton 
-                                  size="small"
-                                  color="error"
-                                  onClick={handleBulkDeleteLegal}
-                                >
-                                  Delete Selected
-                                </MuiButton>
-                              </div>
-                            </div>
-                          )}
-
-                          {verifiedLegalAssets.length === 0 ? (
-                            <p className="text-text-muted text-center py-8">No legal assets</p>
-                          ) : (
-                            <div className="space-y-2">
-                              {verifiedLegalAssets.map((asset) => (
-                                <div key={asset.id} className="p-4 bg-white rounded-lg border border-border-subtle">
-                                  <div className="flex items-start gap-3">
-                                    <input
-                                      type="checkbox"
-                                      checked={selectedLegalAssets.has(asset.id)}
-                                      onChange={() => {
-                                        const newSet = new Set(selectedLegalAssets)
-                                        if (newSet.has(asset.id)) {
-                                          newSet.delete(asset.id)
-                                        } else {
-                                          newSet.add(asset.id)
-                                        }
-                                        setSelectedLegalAssets(newSet)
-                                      }}
-                                      className="mt-1"
-                                    />
-                                    <div className="flex-1">
-                                      <div className="flex items-center gap-2 mb-2">
-                                        <Chip label={asset.asset_type?.toUpperCase() || 'LEGAL'} size="small" color="success" />
-                                        {asset.name && (
-                                          <span className="font-semibold">{asset.name}</span>
-                                        )}
-                                        {asset.status && (
-                                          <Chip 
-                                            label={asset.status.toUpperCase()} 
-                                            size="small"
-                                            color={
-                                              asset.status === 'active' ? 'success' :
-                                              asset.status === 'pending' ? 'warning' :
-                                              'default'
-                                            }
-                                          />
-                                        )}
-                                      </div>
-                                      <div className="text-sm text-text-secondary space-y-1">
-                                        {asset.jurisdiction && (
-                                          <p><strong>Jurisdiction:</strong> {asset.jurisdiction}</p>
-                                        )}
-                                        {asset.registration_id && (
-                                          <p><strong>Registration ID:</strong> <span className="font-mono">{asset.registration_id}</span></p>
-                                        )}
-                                        <p className="text-xs">
-                                          Added {formatDistanceToNow(new Date(asset.created_at || 0), { addSuffix: true })}
-                                        </p>
-                                      </div>
-                                    </div>
-                                    <div className="flex gap-1">
-                                      <MuiButton
-                                        size="small"
-                                        onClick={() => handleEditLegalAsset(asset)}
-                                      >
-                                        <EditIcon sx={{ fontSize: 16 }} />
-                                      </MuiButton>
-                                      <MuiButton
-                                        size="small"
-                                        color="error"
-                                        onClick={() => handleDeleteLegalAsset(asset.id)}
-                                      >
-                                        <DeleteIcon sx={{ fontSize: 16 }} />
-                                      </MuiButton>
-                                    </div>
-                                  </div>
-                                </div>
-                              ))}
-                            </div>
-                          )}
-                        </div>
-                      )}
-                    </Card>
-
                     {/* Add Social Asset Modal */}
                     <Dialog open={addingSocial} onClose={handleCloseAddSocial} maxWidth="sm" fullWidth>
                       <DialogTitle>
@@ -5968,64 +5727,6 @@ export default function AdminProjectPage() {
                           ) : (
                             '🎨 Add Creative Asset'
                           )}
-                        </MuiButton>
-                      </DialogActions>
-                    </Dialog>
-
-                    {/* Edit Legal Asset Modal */}
-                    <Dialog open={!!editingLegalAsset} onClose={() => setEditingLegalAsset(null)} maxWidth="sm" fullWidth>
-                      <DialogTitle>Edit Legal Asset</DialogTitle>
-                      <DialogContent>
-                        <div className="space-y-4 mt-2">
-                          <FormControl fullWidth>
-                            <InputLabel>Asset Type</InputLabel>
-                            <Select
-                              value={legalFormData.assetType || ''}
-                              label="Asset Type"
-                              onChange={(e) => setLegalFormData({ ...legalFormData, assetType: e.target.value })}
-                            >
-                              <MenuItem value="domain">Domain</MenuItem>
-                              <MenuItem value="trademark">Trademark</MenuItem>
-                              <MenuItem value="copyright">Copyright</MenuItem>
-                              <MenuItem value="other">Other</MenuItem>
-                            </Select>
-                          </FormControl>
-                          <TextField
-                            label="Name"
-                            fullWidth
-                            value={legalFormData.name || ''}
-                            onChange={(e) => setLegalFormData({ ...legalFormData, name: e.target.value })}
-                          />
-                          <FormControl fullWidth>
-                            <InputLabel>Status</InputLabel>
-                            <Select
-                              value={legalFormData.status || 'active'}
-                              label="Status"
-                              onChange={(e) => setLegalFormData({ ...legalFormData, status: e.target.value })}
-                            >
-                              <MenuItem value="active">Active</MenuItem>
-                              <MenuItem value="pending">Pending</MenuItem>
-                              <MenuItem value="expired">Expired</MenuItem>
-                            </Select>
-                          </FormControl>
-                          <TextField
-                            label="Jurisdiction"
-                            fullWidth
-                            value={legalFormData.jurisdiction || ''}
-                            onChange={(e) => setLegalFormData({ ...legalFormData, jurisdiction: e.target.value })}
-                          />
-                          <TextField
-                            label="Registration ID"
-                            fullWidth
-                            value={legalFormData.registrationId || ''}
-                            onChange={(e) => setLegalFormData({ ...legalFormData, registrationId: e.target.value })}
-                          />
-                        </div>
-                      </DialogContent>
-                      <DialogActions>
-                        <MuiButton onClick={() => setEditingLegalAsset(null)}>Cancel</MuiButton>
-                        <MuiButton variant="contained" onClick={handleSaveLegalAsset} disabled={processingAsset}>
-                          {processingAsset ? 'Saving...' : 'Save Changes'}
                         </MuiButton>
                       </DialogActions>
                     </Dialog>
@@ -6911,11 +6612,12 @@ export default function AdminProjectPage() {
           </p>
           <ul className="list-disc list-inside mt-2 text-sm text-text-secondary space-y-1">
             <li>Project profile and metadata</li>
-            <li>All social, creative, and legal assets</li>
+            <li>All social and creative assets</li>
             <li>All chat messages</li>
             <li>All pending and verified assets</li>
             <li>All karma points and votes</li>
             <li>All team wallet records</li>
+            <li>Related submission and creation token records</li>
           </ul>
           <p className="font-body text-sm font-semibold text-red-600 mt-4">
             Are you absolutely sure you want to delete "{project?.token_name}"?

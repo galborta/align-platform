@@ -28,13 +28,11 @@ import { WalletAddressWithMessage } from '@/components/WalletAddressWithMessage'
 type Project = Database['public']['Tables']['projects']['Row']
 type SocialAsset = Database['public']['Tables']['social_assets']['Row']
 type CreativeAsset = Database['public']['Tables']['creative_assets']['Row']
-type LegalAsset = Database['public']['Tables']['legal_assets']['Row']
 type TeamWallet = Database['public']['Tables']['team_wallets']['Row']
 
 interface ProjectDetails extends Project {
   social_assets: SocialAsset[]
   creative_assets: CreativeAsset[]
-  legal_assets: LegalAsset[]
   team_wallets: TeamWallet[]
 }
 
@@ -108,7 +106,6 @@ export default function ProjectDetailPage() {
           *,
           social_assets(*),
           creative_assets(*),
-          legal_assets(*),
           team_wallets(*)
         `)
         .eq('id', id)
@@ -527,41 +524,6 @@ export default function ProjectDetailPage() {
                 </CardContent>
               </Card>
             </Box>
-
-            {/* Legal Assets - Compact List */}
-            {project.legal_assets && project.legal_assets.length > 0 && (
-              <Box sx={{ order: { xs: 4, lg: 4 } }}>
-                <Card>
-                  <CardHeader>
-                    <CardTitle className="text-lg">Legal Assets</CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="space-y-2">
-                      {project.legal_assets.map((asset) => (
-                        <div
-                          key={asset.id}
-                          className="flex items-center justify-between p-3 bg-white rounded-lg border border-border-subtle"
-                        >
-                          <div className="flex-1">
-                            <p className="font-body font-medium text-text-primary text-sm capitalize">
-                              {asset.asset_type || 'Legal Asset'}
-                            </p>
-                            <p className="font-body text-xs text-text-secondary truncate">
-                              {asset.name || 'Unnamed asset'}
-                            </p>
-                          </div>
-                          {asset.status && (
-                            <span className="inline-block px-2 py-1 bg-accent-primary-soft text-accent-primary rounded text-xs font-medium ml-2">
-                              {asset.status}
-                            </span>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  </CardContent>
-                </Card>
-              </Box>
-            )}
           </Box>
 
           {/* Right Column - Activity Feed + Stats & Holders (moves below on mobile) */}

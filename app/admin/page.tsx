@@ -630,9 +630,16 @@ export default function AdminPage() {
                         )}
                       </div>
                       <div>
-                        <CardTitle className="font-display text-2xl">
-                          {project.token_name}
-                        </CardTitle>
+                        <div className="flex items-center gap-2">
+                          <CardTitle className="font-display text-2xl">
+                            {project.token_name}
+                          </CardTitle>
+                          {project.featured && (
+                            <span className="px-2 py-1 text-xs font-semibold bg-yellow-100 text-yellow-800 rounded-full">
+                              ⭐ Featured
+                            </span>
+                          )}
+                        </div>
                         <p className="font-body text-text-secondary">
                           ${project.token_symbol} • Creator: {shortenAddress(project.creator_wallet)}
                         </p>

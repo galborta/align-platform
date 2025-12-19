@@ -37,7 +37,6 @@ interface SocialAsset {
   followerTier: FollowerTier
   profileUrl: string
   verificationCode: string
-  status: 'pending'
 }
 
 interface CreativeAsset {
@@ -45,17 +44,6 @@ interface CreativeAsset {
   fileName: string
   fileUrl: string
   previewUrl: string
-}
-
-type LegalAssetType = 'Domain' | 'Trademark' | 'Copyright'
-type LegalAssetStatus = 'Registered' | 'Pending' | 'None'
-
-interface LegalAsset {
-  id: string
-  assetType: LegalAssetType
-  name: string
-  status: LegalAssetStatus
-  jurisdiction?: string
 }
 
 interface TeamWallet {
@@ -156,16 +144,10 @@ export default function CreatePage() {
   const [creativeAssets, setCreativeAssets] = useState<CreativeAsset[]>([])
   const [uploadingCreative, setUploadingCreative] = useState(false)
 
-  // Legal Assets
-  const [legalAssets, setLegalAssets] = useState<LegalAsset[]>([])
-  const [legalAssetType, setLegalAssetType] = useState<LegalAssetType>('Domain')
-  const [legalAssetName, setLegalAssetName] = useState('')
-  const [legalAssetStatus, setLegalAssetStatus] = useState<LegalAssetStatus>('None')
-  const [legalJurisdiction, setLegalJurisdiction] = useState('')
-
   // Team Wallets
   const [teamWallets, setTeamWallets] = useState<TeamWallet[]>([])
   const [walletAddress, setWalletAddress] = useState('')
+  const [walletRole, setWalletRole] = useState('Founder')
   const [walletLabel, setWalletLabel] = useState('')
 
   const [submitting, setSubmitting] = useState(false)
@@ -360,13 +342,12 @@ export default function CreatePage() {
         .from('project-assets')
         .getPublicUrl(fileName)
 
-      const previewUrl = URL.createObjectURL(file)
-
+      // Use publicUrl for preview so it persists after page reload
       const newAsset: CreativeAsset = {
         id: Date.now().toString(),
         fileName: file.name,
         fileUrl: publicUrl,
-        previewUrl: previewUrl
+        previewUrl: publicUrl
       }
 
       setCreativeAssets([...creativeAssets, newAsset])
@@ -383,46 +364,29 @@ export default function CreatePage() {
     setCreativeAssets(creativeAssets.filter(asset => asset.id !== id))
   }
 
-  // Legal Asset Handlers
-  const handleAddLegalAsset = () => {
-    if (!legalAssetName.trim()) {
-      setError('Please enter a legal asset name')
+  // Team Wallet Handlers
+  const handleAddTeamWallet = () => {
+    if (!walletAddress.trim()) {
+      setError('Please enter a wallet address')
       return
     }
 
-    const newAsset: LegalAsset = {
-      id: Date.now().toString(),
-      assetType: legalAssetType,
-      name: legalAssetName,
-      status: legalAssetStatus,
-      jurisdiction: legalAssetType === 'Trademark' ? legalJurisdiction : undefined
-    }
-
-    setLegalAssets([...legalAssets, newAsset])
-    setLegalAssetName('')
-    setLegalJurisdiction('')
-    setError(null)
-  }
-
-  const handleRemoveLegalAsset = (id: string) => {
-    setLegalAssets(legalAssets.filter(asset => asset.id !== id))
-  }
-
-  // Team Wallet Handlers
-  const handleAddTeamWallet = () => {
-    if (!walletAddress.trim() || !walletLabel.trim()) {
-      setError('Please fill in both wallet address and label')
+    const finalLabel = walletRole === 'Other' ? walletLabel.trim() : walletRole
+    
+    if (walletRole === 'Other' && !walletLabel.trim()) {
+      setError('Please specify a custom role')
       return
     }
 
     const newWallet: TeamWallet = {
       id: Date.now().toString(),
       address: walletAddress,
-      label: walletLabel
+      label: finalLabel
     }
 
     setTeamWallets([...teamWallets, newWallet])
     setWalletAddress('')
+    setWalletRole('Founder')
     setWalletLabel('')
     setError(null)
   }
@@ -500,23 +464,7 @@ export default function CreatePage() {
         if (creativeError) throw creativeError
       }
 
-      // 4. Insert legal assets
-      if (legalAssets.length > 0) {
-        const { error: legalError } = await supabase
-          .from('legal_assets')
-          .insert(
-            legalAssets.map(asset => ({
-              project_id: projectId,
-              asset_type: asset.assetType.toLowerCase() as 'domain' | 'trademark' | 'copyright',
-              name: asset.name,
-              status: asset.status,
-              jurisdiction: asset.jurisdiction || null
-            }))
-          )
-        if (legalError) throw legalError
-      }
-
-      // 5. Insert team wallets
+      // 4. Insert team wallets
       if (teamWallets.length > 0) {
         const { error: walletsError } = await supabase
           .from('team_wallets')
@@ -1098,110 +1046,7 @@ export default function CreatePage() {
                   )}
                 </div>
 
-                {/* Section 3: Legal Assets (Optional) */}
-                <div className="border-t border-border-subtle pt-6 space-y-4">
-                  <div className="flex items-center gap-2">
-                    <h3 className="font-display text-lg font-semibold text-text-primary">
-                      Legal Assets
-                    </h3>
-                    <span className="text-xs bg-gray-200 text-gray-700 px-2 py-1 rounded">
-                      Optional
-                    </span>
-                  </div>
-
-                  {/* Legal Asset Form */}
-                  <div className="bg-subtle-bg rounded-lg p-4 space-y-4">
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <FormControl fullWidth>
-                        <InputLabel>Asset Type</InputLabel>
-                        <Select
-                          value={legalAssetType}
-                          label="Asset Type"
-                          onChange={(e) => setLegalAssetType(e.target.value as LegalAssetType)}
-                        >
-                          <MenuItem value="Domain">Domain</MenuItem>
-                          <MenuItem value="Trademark">Trademark</MenuItem>
-                          <MenuItem value="Copyright">Copyright</MenuItem>
-                        </Select>
-                      </FormControl>
-
-                      <TextField
-                        label="Name"
-                        placeholder="e.g., example.com"
-                        fullWidth
-                        value={legalAssetName}
-                        onChange={(e) => setLegalAssetName(e.target.value)}
-                      />
-
-                      <FormControl fullWidth>
-                        <InputLabel>Status</InputLabel>
-                        <Select
-                          value={legalAssetStatus}
-                          label="Status"
-                          onChange={(e) => setLegalAssetStatus(e.target.value as LegalAssetStatus)}
-                        >
-                          <MenuItem value="Registered">Registered</MenuItem>
-                          <MenuItem value="Pending">Pending</MenuItem>
-                          <MenuItem value="None">None</MenuItem>
-                        </Select>
-                      </FormControl>
-
-                      {legalAssetType === 'Trademark' && (
-                        <FormControl fullWidth>
-                          <InputLabel>Jurisdiction</InputLabel>
-                          <Select
-                            value={legalJurisdiction}
-                            label="Jurisdiction"
-                            onChange={(e) => setLegalJurisdiction(e.target.value)}
-                          >
-                            {COUNTRIES.map(country => (
-                              <MenuItem key={country} value={country}>{country}</MenuItem>
-                            ))}
-                          </Select>
-                        </FormControl>
-                      )}
-                    </div>
-
-                    <Button
-                      onClick={handleAddLegalAsset}
-                      variant="primary"
-                      className="w-full sm:w-auto"
-                    >
-                      Add Legal Asset
-                    </Button>
-                  </div>
-
-                  {/* Legal Assets List */}
-                  {legalAssets.length > 0 && (
-                    <div className="space-y-2">
-                      {legalAssets.map((asset) => (
-                        <div
-                          key={asset.id}
-                          className="bg-white border border-border-subtle rounded-lg p-4 flex items-center justify-between"
-                        >
-                          <div>
-                            <p className="font-body font-semibold text-text-primary">
-                              {asset.name}
-                            </p>
-                            <p className="font-body text-sm text-text-secondary">
-                              {asset.assetType} - {asset.status}
-                              {asset.jurisdiction && ` (${asset.jurisdiction})`}
-                            </p>
-                          </div>
-                          <Button
-                            onClick={() => handleRemoveLegalAsset(asset.id)}
-                            variant="danger"
-                            size="sm"
-                          >
-                            Remove
-                          </Button>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-
-                {/* Section 4: Team Wallets (Optional) */}
+                {/* Section 3: Team Wallets (Optional) */}
                 <div className="border-t border-border-subtle pt-6 space-y-4">
                   <div className="flex items-center gap-2">
                     <h3 className="font-display text-lg font-semibold text-text-primary">
@@ -1223,14 +1068,35 @@ export default function CreatePage() {
                         onChange={(e) => setWalletAddress(e.target.value)}
                       />
 
+                      <FormControl fullWidth>
+                        <InputLabel>Role</InputLabel>
+                        <Select
+                          value={walletRole}
+                          onChange={(e) => setWalletRole(e.target.value)}
+                          label="Role"
+                        >
+                          <MenuItem value="Founder">Founder</MenuItem>
+                          <MenuItem value="Co-Founder">Co-Founder</MenuItem>
+                          <MenuItem value="Developer">Developer</MenuItem>
+                          <MenuItem value="Designer">Designer</MenuItem>
+                          <MenuItem value="Marketing">Marketing</MenuItem>
+                          <MenuItem value="Community Manager">Community Manager</MenuItem>
+                          <MenuItem value="Advisor">Advisor</MenuItem>
+                          <MenuItem value="Operations">Operations</MenuItem>
+                          <MenuItem value="Other">Other</MenuItem>
+                        </Select>
+                      </FormControl>
+                    </div>
+
+                    {walletRole === 'Other' && (
                       <TextField
-                        label="Label"
-                        placeholder="e.g., Development, Marketing"
+                        label="Custom Role"
+                        placeholder="Enter custom role"
                         fullWidth
                         value={walletLabel}
                         onChange={(e) => setWalletLabel(e.target.value)}
                       />
-                    </div>
+                    )}
 
                     <Button
                       onClick={handleAddTeamWallet}

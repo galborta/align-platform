@@ -91,20 +91,25 @@ export async function POST(request: NextRequest) {
 
     // Create basic social_assets record with website and telegram from Step 1
     // These show immediately on profile (website near description, telegram in social section)
-    const { error: socialError } = await supabase
-      .from('social_assets')
-      .insert({
-        project_id: newProject.id,
-        website: website || null,
-        telegram: telegram || null,
-        verified: false, // Not strictly "verified" but shows immediately
-      })
+    // Only create if website or telegram exists (platform and handle are required fields)
+    if (website || telegram) {
+      const { error: socialError } = await supabase
+        .from('social_assets')
+        .insert({
+          project_id: newProject.id,
+          platform: 'Website', // Placeholder for website/telegram record
+          handle: 'official', // Placeholder handle
+          website: website || null,
+          telegram: telegram || null,
+          verified: true, // Auto-verify website/telegram from Step 1
+        })
 
-    if (socialError) {
-      console.error('Error creating social assets:', socialError)
-      console.warn('Project created but social assets not added')
-    } else {
-      console.log(`✅ Social assets created for project: ${tokenSymbol}`)
+      if (socialError) {
+        console.error('Error creating social assets:', socialError)
+        console.warn('Project created but social assets not added')
+      } else {
+        console.log(`✅ Social assets created for project: ${tokenSymbol}`)
+      }
     }
 
     // Insert additional social assets from Step 2 (Instagram, Twitter, TikTok, YouTube with verification)
@@ -116,8 +121,7 @@ export async function POST(request: NextRequest) {
         follower_tier: asset.followerTier,
         profile_url: asset.profileUrl,
         verification_code: asset.verificationCode,
-        status: 'pending',
-        verified: false,
+        verified: false, // Requires manual verification
       }))
 
       const { error: socialAssetsError } = await supabase
@@ -135,9 +139,10 @@ export async function POST(request: NextRequest) {
     if (creativeAssets && creativeAssets.length > 0) {
       const creativeAssetsToInsert = creativeAssets.map((asset: any) => ({
         project_id: newProject.id,
-        file_name: asset.fileName,
-        file_url: asset.fileUrl,
-        file_type: asset.fileName.split('.').pop() || 'unknown',
+        name: asset.fileName || 'Untitled',
+        media_url: asset.fileUrl,
+        asset_type: (asset.fileName?.split('.').pop() || 'unknown').toLowerCase(),
+        description: null,
       }))
 
       const { error: creativeError } = await supabase

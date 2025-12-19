@@ -18,6 +18,7 @@ interface Project {
   token_symbol: string
   token_mint: string
   created_at: string
+  featured?: boolean
   active_jobs_count: number
   total_jobs_completed: number
   activity_score: number
@@ -33,7 +34,7 @@ export default function Home() {
   useEffect(() => {
     async function fetchProjects() {
       try {
-        // Start with basic query (just projects with live status and social_assets)
+        // Start with basic query (only featured live projects, max 6 for homepage)
         const { data: baseData, error: baseError } = await supabase
           .from('projects')
           .select(`
@@ -43,10 +44,13 @@ export default function Home() {
             token_symbol, 
             token_mint, 
             created_at,
-            social_assets!inner(verified)
+            featured,
+            social_assets(verified)
           `)
           .eq('status', 'live')
+          .eq('featured', true)
           .order('created_at', { ascending: false })
+          .limit(6)
 
         if (baseError) throw baseError
 
@@ -76,8 +80,8 @@ export default function Home() {
             const completed = completedCount || 0
             const score = active * 3 + completed
 
-            // Check if project has any verified social assets
-            const isVerified = (project as any).social_assets?.some((asset: any) => asset.verified) || false
+            // All projects on the platform should show as verified
+            const isVerified = true
 
             // Fetch market cap from DexScreener
             let marketCap = null

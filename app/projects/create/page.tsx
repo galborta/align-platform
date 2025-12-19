@@ -22,8 +22,6 @@ import { supabase } from '@/lib/supabase'
 
 type SocialPlatform = 'Instagram' | 'Twitter' | 'TikTok' | 'YouTube' | 'Facebook'
 type FollowerTier = '<10k' | '10k-50k' | '50k-100k' | '100k-500k' | '500k-1m' | '1m-5m' | '5m+'
-type LegalAssetType = 'Domain' | 'Trademark' | 'Copyright'
-type LegalAssetStatus = 'Registered' | 'Pending' | 'None'
 
 const COUNTRIES = [
   'United States', 'United Kingdom', 'Canada', 'Australia', 'Germany', 
@@ -39,7 +37,6 @@ interface SocialAsset {
   followerTier: FollowerTier
   profileUrl: string
   verificationCode: string
-  status: 'pending'
 }
 
 interface CreativeAsset {
@@ -47,14 +44,6 @@ interface CreativeAsset {
   fileName: string
   fileUrl: string
   previewUrl: string
-}
-
-interface LegalAsset {
-  id: string
-  assetType: LegalAssetType
-  name: string
-  status: LegalAssetStatus
-  jurisdiction?: string
 }
 
 interface TeamWallet {
@@ -100,16 +89,10 @@ function CreateProjectPageContent() {
   const [creativeAssets, setCreativeAssets] = useState<CreativeAsset[]>([])
   const [uploadingCreative, setUploadingCreative] = useState(false)
   
-  // Legal Assets
-  const [legalAssets, setLegalAssets] = useState<LegalAsset[]>([])
-  const [legalAssetType, setLegalAssetType] = useState<LegalAssetType>('Domain')
-  const [legalAssetName, setLegalAssetName] = useState('')
-  const [legalAssetStatus, setLegalAssetStatus] = useState<LegalAssetStatus>('None')
-  const [legalJurisdiction, setLegalJurisdiction] = useState('')
-  
   // Team Wallets
   const [teamWallets, setTeamWallets] = useState<TeamWallet[]>([])
   const [walletAddress, setWalletAddress] = useState('')
+  const [walletRole, setWalletRole] = useState('Founder')
   const [walletLabel, setWalletLabel] = useState('')
 
   // Token validation and draft loading
@@ -173,12 +156,6 @@ function CreateProjectPageContent() {
           console.log('[Draft] Restored creative assets:', savedDraft.creativeAssets.length)
         }
         
-        // Restore legal assets if they exist in the draft
-        if (savedDraft.legalAssets && Array.isArray(savedDraft.legalAssets)) {
-          setLegalAssets(savedDraft.legalAssets)
-          console.log('[Draft] Restored legal assets:', savedDraft.legalAssets.length)
-        }
-        
         // Restore team wallets if they exist in the draft
         if (savedDraft.teamWallets && Array.isArray(savedDraft.teamWallets)) {
           setTeamWallets(savedDraft.teamWallets)
@@ -236,7 +213,6 @@ function CreateProjectPageContent() {
       ...formData,
       socialAssets: socialAssets,
       creativeAssets: creativeAssets,
-      legalAssets: legalAssets,
       teamWallets: teamWallets
     }
 
@@ -247,7 +223,6 @@ function CreateProjectPageContent() {
       descriptionLength: formData.description?.length || 0,
       socialAssetsCount: socialAssets.length,
       creativeAssetsCount: creativeAssets.length,
-      legalAssetsCount: legalAssets.length,
       teamWalletsCount: teamWallets.length
     })
 
@@ -263,7 +238,7 @@ function CreateProjectPageContent() {
     }
 
     setIsSaving(false)
-  }, [token, formData, isSaving, socialAssets, creativeAssets, legalAssets, teamWallets])
+  }, [token, formData, isSaving, socialAssets, creativeAssets, teamWallets])
 
   // Auto-save effect
   useEffect(() => {
@@ -617,7 +592,8 @@ function CreateProjectPageContent() {
           id: `${Date.now()}-${Math.random()}`,
           fileName: file.name,
           fileUrl: publicUrl,
-          previewUrl: file.type.startsWith('image/') ? URL.createObjectURL(file) : ''
+          // Use publicUrl for preview so it persists after draft reload
+          previewUrl: file.type.startsWith('image/') ? publicUrl : ''
         }
 
         newAssets.push(newAsset)
@@ -657,32 +633,6 @@ function CreateProjectPageContent() {
     setCreativeAssets(creativeAssets.filter(asset => asset.id !== id))
   }
 
-  // Add legal asset
-  const handleAddLegalAsset = () => {
-    if (!legalAssetName.trim()) {
-      setError('Please enter an asset name')
-      return
-    }
-
-    const newAsset: LegalAsset = {
-      id: Date.now().toString(),
-      assetType: legalAssetType,
-      name: legalAssetName.trim(),
-      status: legalAssetStatus,
-      jurisdiction: legalJurisdiction.trim() || undefined
-    }
-
-    setLegalAssets([...legalAssets, newAsset])
-    setLegalAssetName('')
-    setLegalJurisdiction('')
-    setError(null)
-  }
-
-  // Remove legal asset
-  const handleRemoveLegalAsset = (id: string) => {
-    setLegalAssets(legalAssets.filter(asset => asset.id !== id))
-  }
-
   // Add team wallet
   const handleAddTeamWallet = () => {
     if (!walletAddress.trim()) {
@@ -690,14 +640,22 @@ function CreateProjectPageContent() {
       return
     }
 
+    const finalLabel = walletRole === 'Other' ? walletLabel.trim() : walletRole
+    
+    if (walletRole === 'Other' && !walletLabel.trim()) {
+      setError('Please specify a custom role')
+      return
+    }
+
     const newWallet: TeamWallet = {
       id: Date.now().toString(),
       address: walletAddress.trim(),
-      label: walletLabel.trim() || 'Team Member'
+      label: finalLabel
     }
 
     setTeamWallets([...teamWallets, newWallet])
     setWalletAddress('')
+    setWalletRole('Founder')
     setWalletLabel('')
     setError(null)
   }
@@ -784,7 +742,6 @@ function CreateProjectPageContent() {
         // Include all assets from steps 2-4
         socialAssets: socialAssets,
         creativeAssets: creativeAssets,
-        legalAssets: legalAssets,
         teamWallets: teamWallets,
       }
 
@@ -1025,7 +982,7 @@ function CreateProjectPageContent() {
               { num: 1, label: 'Token Info' },
               { num: 2, label: 'Social Assets' },
               { num: 3, label: 'Creative Assets' },
-              { num: 4, label: 'IP Assets' }
+              { num: 4, label: 'Team Wallets' }
             ].map((step, index) => (
               <div key={step.num} className="flex items-center">
                 <div className="flex flex-col items-center">
@@ -1087,14 +1044,14 @@ function CreateProjectPageContent() {
                 currentStep === 1 ? 'Token Information' :
                 currentStep === 2 ? 'Social Assets' :
                 currentStep === 3 ? 'Creative Assets' :
-                'IP Assets'
+                'Team Wallets'
               }
             </CardTitle>
             <p className="font-body text-text-secondary mt-2">
               {currentStep === 1 && 'Your contract address has been verified and locked'}
               {currentStep === 2 && 'Connect your social media accounts to verify ownership'}
               {currentStep === 3 && 'Upload branding materials and creative assets'}
-              {currentStep === 4 && 'Declare your intellectual property assets'}
+              {currentStep === 4 && 'Add team member wallets for transparency (optional)'}
             </p>
           </CardHeader>
 
@@ -1698,116 +1655,16 @@ function CreateProjectPageContent() {
                     onClick={() => setCurrentStep(4)}
                     className="w-full sm:w-auto order-1 sm:order-2"
                   >
-                    Continue to IP Assets →
+                    Continue to Team Wallets →
                   </Button>
                 </div>
               </>
             )}
 
-            {/* STEP 4: IP ASSETS & TEAM */}
+            {/* STEP 4: TEAM WALLETS */}
             {currentStep === 4 && (
               <>
                 <div className="space-y-6">
-                  {/* Legal Assets Section */}
-                  <div className="space-y-4">
-                    <h3 className="font-heading text-lg font-semibold">Legal / IP Assets</h3>
-                    <p className="font-body text-sm text-text-secondary">
-                      Declare any intellectual property assets like domains, trademarks, or copyrights.
-                    </p>
-
-                    <div className="space-y-4 p-4 bg-subtle-bg rounded-lg">
-                      <FormControl fullWidth>
-                        <InputLabel>Asset Type</InputLabel>
-                        <Select
-                          value={legalAssetType}
-                          onChange={(e) => setLegalAssetType(e.target.value as LegalAssetType)}
-                          label="Asset Type"
-                        >
-                          <MenuItem value="Domain">Domain</MenuItem>
-                          <MenuItem value="Trademark">Trademark</MenuItem>
-                          <MenuItem value="Copyright">Copyright</MenuItem>
-                        </Select>
-                      </FormControl>
-
-                      <TextField
-                        label="Asset Name"
-                        value={legalAssetName}
-                        onChange={(e) => setLegalAssetName(e.target.value)}
-                        fullWidth
-                        placeholder="e.g., example.com or Brand Name™"
-                      />
-
-                      <FormControl fullWidth>
-                        <InputLabel>Status</InputLabel>
-                        <Select
-                          value={legalAssetStatus}
-                          onChange={(e) => setLegalAssetStatus(e.target.value as LegalAssetStatus)}
-                          label="Status"
-                        >
-                          <MenuItem value="Registered">Registered</MenuItem>
-                          <MenuItem value="Pending">Pending</MenuItem>
-                          <MenuItem value="None">None</MenuItem>
-                        </Select>
-                      </FormControl>
-
-                      <FormControl fullWidth>
-                        <InputLabel>Jurisdiction</InputLabel>
-                        <Select
-                          value={legalJurisdiction}
-                          onChange={(e) => setLegalJurisdiction(e.target.value)}
-                          label="Jurisdiction"
-                        >
-                          <MenuItem value="">Select Country</MenuItem>
-                          {COUNTRIES.map((country) => (
-                            <MenuItem key={country} value={country}>
-                              {country}
-                            </MenuItem>
-                          ))}
-                        </Select>
-                      </FormControl>
-
-                      <Button
-                        type="button"
-                        variant="secondary"
-                        size="md"
-                        onClick={handleAddLegalAsset}
-                        style={{ width: '100%' }}
-                      >
-                        Add Legal Asset
-                      </Button>
-                    </div>
-
-                    {legalAssets.length > 0 && (
-                      <div className="space-y-2">
-                        <h4 className="font-heading text-md font-semibold">Declared Assets ({legalAssets.length})</h4>
-                        {legalAssets.map((asset) => (
-                          <div
-                            key={asset.id}
-                            className="flex items-center justify-between p-3 bg-white rounded-lg border border-border-subtle"
-                          >
-                            <div className="flex-1">
-                              <p className="font-body text-sm font-medium">
-                                {asset.assetType}: {asset.name}
-                              </p>
-                              <p className="font-body text-xs text-text-muted">
-                                Status: {asset.status}
-                                {asset.jurisdiction && ` • ${asset.jurisdiction}`}
-                              </p>
-                            </div>
-                            <Button
-                              type="button"
-                              variant="danger"
-                              size="sm"
-                              onClick={() => handleRemoveLegalAsset(asset.id)}
-                            >
-                              Remove
-                            </Button>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-
                   {/* Team Wallets Section */}
                   <div className="space-y-4">
                     <h3 className="font-heading text-lg font-semibold">Team Wallets (Optional)</h3>
@@ -1824,13 +1681,34 @@ function CreateProjectPageContent() {
                         placeholder="Solana wallet address"
                       />
 
-                      <TextField
-                        label="Label / Role"
-                        value={walletLabel}
-                        onChange={(e) => setWalletLabel(e.target.value)}
-                        fullWidth
-                        placeholder="e.g., Founder, Developer, Marketing"
-                      />
+                      <FormControl fullWidth>
+                        <InputLabel>Role</InputLabel>
+                        <Select
+                          value={walletRole}
+                          onChange={(e) => setWalletRole(e.target.value)}
+                          label="Role"
+                        >
+                          <MenuItem value="Founder">Founder</MenuItem>
+                          <MenuItem value="Co-Founder">Co-Founder</MenuItem>
+                          <MenuItem value="Developer">Developer</MenuItem>
+                          <MenuItem value="Designer">Designer</MenuItem>
+                          <MenuItem value="Marketing">Marketing</MenuItem>
+                          <MenuItem value="Community Manager">Community Manager</MenuItem>
+                          <MenuItem value="Advisor">Advisor</MenuItem>
+                          <MenuItem value="Operations">Operations</MenuItem>
+                          <MenuItem value="Other">Other</MenuItem>
+                        </Select>
+                      </FormControl>
+
+                      {walletRole === 'Other' && (
+                        <TextField
+                          label="Custom Role"
+                          value={walletLabel}
+                          onChange={(e) => setWalletLabel(e.target.value)}
+                          fullWidth
+                          placeholder="Enter custom role"
+                        />
+                      )}
 
                       <Button
                         type="button"

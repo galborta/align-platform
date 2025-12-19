@@ -28,19 +28,13 @@ interface AddAssetModalProps {
 
 export function AddAssetModal({ projectId, tokenMint, onClose }: AddAssetModalProps) {
   const wallet = useWallet()
-  const [assetType, setAssetType] = useState<'social' | 'legal'>('social')
+  const [assetType, setAssetType] = useState<'social'>('social')
   const [loading, setLoading] = useState(false)
   
   // Social asset fields
   const [platform, setPlatform] = useState('')
   const [handle, setHandle] = useState('')
   const [followerTier, setFollowerTier] = useState('')
-  
-  // Legal asset fields
-  const [legalType, setLegalType] = useState('')
-  const [legalName, setLegalName] = useState('')
-  const [status, setStatus] = useState('')
-  const [jurisdiction, setJurisdiction] = useState('')
   
   // Error states
   const [errors, setErrors] = useState<Record<string, boolean>>({})
@@ -135,18 +129,6 @@ export function AddAssetModal({ projectId, tokenMint, onClose }: AddAssetModalPr
         }
         
         assetData = { platform, handle: cleanHandle, followerTier }
-      } else if (assetType === 'legal') {
-        const newErrors: Record<string, boolean> = {}
-        if (!legalType) newErrors.legalType = true
-        if (!legalName) newErrors.legalName = true
-        
-        if (Object.keys(newErrors).length > 0) {
-          setErrors(newErrors)
-          toast.error('Please fill in all required fields')
-          setLoading(false)
-          return
-        }
-        assetData = { assetType: legalType, name: legalName, status, jurisdiction }
       }
       
       // 4. Insert pending asset
@@ -187,10 +169,7 @@ export function AddAssetModal({ projectId, tokenMint, onClose }: AddAssetModalPr
       })
       
       // 7. Post to curation chat
-      const assetSummary = 
-        assetType === 'social' 
-          ? `${platform}:${assetData.handle}`
-          : legalName
+      const assetSummary = `${platform}:${assetData.handle}`
       
       await supabase
         .from('curation_chat_messages')
@@ -235,7 +214,6 @@ export function AddAssetModal({ projectId, tokenMint, onClose }: AddAssetModalPr
             label="Asset Type"
           >
             <MenuItem value="social">Social Account</MenuItem>
-            <MenuItem value="legal">Legal Asset</MenuItem>
           </Select>
         </FormControl>
         
@@ -286,76 +264,6 @@ export function AddAssetModal({ projectId, tokenMint, onClose }: AddAssetModalPr
                 <MenuItem value="500k-1m">500k - 1M</MenuItem>
                 <MenuItem value="1m-5m">1M - 5M</MenuItem>
                 <MenuItem value="5m+">5M+</MenuItem>
-              </Select>
-            </FormControl>
-          </>
-        )}
-        
-        {assetType === 'legal' && (
-          <>
-            <FormControl fullWidth sx={{ mb: 3 }} error={errors.legalType}>
-              <InputLabel>Legal Asset Type</InputLabel>
-              <Select
-                value={legalType}
-                onChange={(e) => {
-                  setLegalType(e.target.value)
-                  setErrors(prev => ({ ...prev, legalType: false }))
-                }}
-                label="Legal Asset Type"
-              >
-                <MenuItem value="domain">Domain</MenuItem>
-                <MenuItem value="trademark">Trademark</MenuItem>
-                <MenuItem value="copyright">Copyright</MenuItem>
-              </Select>
-            </FormControl>
-            
-            <TextField
-              fullWidth
-              label="Name"
-              value={legalName}
-              onChange={(e) => {
-                setLegalName(e.target.value)
-                setErrors(prev => ({ ...prev, legalName: false }))
-              }}
-              error={errors.legalName}
-              helperText={errors.legalName ? 'Name is required' : ''}
-              sx={{ mb: 3 }}
-            />
-            
-            <FormControl fullWidth sx={{ mb: 3 }}>
-              <InputLabel>Status</InputLabel>
-              <Select
-                value={status}
-                onChange={(e) => setStatus(e.target.value)}
-                label="Status"
-              >
-                <MenuItem value="registered">Registered</MenuItem>
-                <MenuItem value="pending">Pending</MenuItem>
-                <MenuItem value="filed">Filed</MenuItem>
-                <MenuItem value="approved">Approved</MenuItem>
-                <MenuItem value="denied">Denied</MenuItem>
-                <MenuItem value="in_progress">In Progress</MenuItem>
-              </Select>
-            </FormControl>
-            
-            <FormControl fullWidth>
-              <InputLabel>Jurisdiction (optional)</InputLabel>
-              <Select
-                value={jurisdiction}
-                onChange={(e) => setJurisdiction(e.target.value)}
-                label="Jurisdiction (optional)"
-              >
-                <MenuItem value="">None</MenuItem>
-                <MenuItem value="us">United States (USPTO)</MenuItem>
-                <MenuItem value="eu">European Union (EUIPO)</MenuItem>
-                <MenuItem value="uk">United Kingdom (UKIPO)</MenuItem>
-                <MenuItem value="ca">Canada (CIPO)</MenuItem>
-                <MenuItem value="au">Australia (IP Australia)</MenuItem>
-                <MenuItem value="jp">Japan (JPO)</MenuItem>
-                <MenuItem value="cn">China (CNIPA)</MenuItem>
-                <MenuItem value="in">India (IP India)</MenuItem>
-                <MenuItem value="wipo">WIPO (International)</MenuItem>
-                <MenuItem value="other">Other</MenuItem>
               </Select>
             </FormControl>
           </>
