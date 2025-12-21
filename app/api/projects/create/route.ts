@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase'
+import { validateEditorWallets } from '@/lib/wallet-validation'
 
 export async function POST(request: NextRequest) {
   try {
@@ -18,8 +19,13 @@ export async function POST(request: NextRequest) {
       socialAssets = [],
       creativeAssets = [],
       legalAssets = [],
-      teamWallets = [],
+      teamWallets = [], // Legacy support
+      projectWallets = [], // New field name
+      editorWallets = [],
     } = body
+    
+    // Use projectWallets if provided, otherwise fall back to teamWallets (backwards compatibility)
+    const wallets = projectWallets.length > 0 ? projectWallets : teamWallets
 
     // Validate required fields
     if (!contractAddress || !tokenId || !tokenName || !tokenSymbol || !description) {
@@ -30,6 +36,22 @@ export async function POST(request: NextRequest) {
     }
 
     const supabase = supabaseAdmin
+
+    // Validate editor wallets (if provided)
+    const editorValidation = validateEditorWallets(editorWallets, {
+      creatorWallet: creatorWallet,
+      maxEditors: 20
+    })
+    
+    if (!editorValidation.valid) {
+      return NextResponse.json(
+        { 
+          error: editorValidation.error,
+          invalidWallet: editorValidation.invalidWallet 
+        },
+        { status: 400 }
+      )
+    }
 
     // Verify token is valid and not already used
     const { data: tokenData, error: tokenError } = await supabase
@@ -76,6 +98,10 @@ export async function POST(request: NextRequest) {
         description: description,
         profile_image_url: profileImageUrl || null,
         creator_wallet: creatorWallet || tokenData.created_by,
+        editor_wallets: editorWallets, // Add editor wallets from Step 5
+        website: website || null, // Store website directly in projects table (also first domain)
+        telegram: telegram || null, // Store telegram directly in projects table
+        domains: website ? [website] : null, // Store website as first domain in domains array
         status: 'live', // Set to live immediately so it appears on homepage
       })
       .select()
@@ -89,28 +115,8 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Create basic social_assets record with website and telegram from Step 1
-    // These show immediately on profile (website near description, telegram in social section)
-    // Only create if website or telegram exists (platform and handle are required fields)
-    if (website || telegram) {
-      const { error: socialError } = await supabase
-        .from('social_assets')
-        .insert({
-          project_id: newProject.id,
-          platform: 'Website', // Placeholder for website/telegram record
-          handle: 'official', // Placeholder handle
-          website: website || null,
-          telegram: telegram || null,
-          verified: true, // Auto-verify website/telegram from Step 1
-        })
-
-      if (socialError) {
-        console.error('Error creating social assets:', socialError)
-        console.warn('Project created but social assets not added')
-      } else {
-        console.log(`✅ Social assets created for project: ${tokenSymbol}`)
-      }
-    }
+    // Note: website and telegram are now stored directly in projects table (above)
+    // Legacy social_assets record creation removed as it's no longer needed
 
     // Insert additional social assets from Step 2 (Instagram, Twitter, TikTok, YouTube with verification)
     if (socialAssets && socialAssets.length > 0) {
@@ -121,7 +127,8 @@ export async function POST(request: NextRequest) {
         follower_tier: asset.followerTier,
         profile_url: asset.profileUrl,
         verification_code: asset.verificationCode,
-        verified: false, // Requires manual verification
+        verified: true, // Auto-verify assets from official submission flow
+        verified_at: new Date().toISOString(),
       }))
 
       const { error: socialAssetsError } = await supabase
@@ -177,23 +184,29 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Insert team wallets
-    if (teamWallets && teamWallets.length > 0) {
-      const teamWalletsToInsert = teamWallets.map((wallet: any) => ({
+    // Insert project wallets (team, treasury, liquidity, other)
+    if (wallets && wallets.length > 0) {
+      const walletsToInsert = wallets.map((wallet: any) => ({
         project_id: newProject.id,
         wallet_address: wallet.address,
         label: wallet.label,
+        wallet_type: wallet.type || 'team', // Default to 'team' for backwards compatibility
       }))
 
       const { error: walletError } = await supabase
         .from('team_wallets')
-        .insert(teamWalletsToInsert)
+        .insert(walletsToInsert)
 
       if (walletError) {
-        console.error('Error inserting team wallets:', walletError)
+        console.error('Error inserting project wallets:', walletError)
       } else {
-        console.log(`✅ Added ${teamWallets.length} team wallets`)
+        console.log(`✅ Added ${wallets.length} project wallet(s)`)
       }
+    }
+
+    // Log editor wallets (already saved in projects.editor_wallets column)
+    if (editorWallets && editorWallets.length > 0) {
+      console.log(`✅ Added ${editorWallets.length} editor wallet(s) to project`)
     }
 
     // Mark token as completed

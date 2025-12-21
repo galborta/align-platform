@@ -160,6 +160,11 @@ export async function POST(request: NextRequest) {
     
     console.log('[Approve Submission] Status verified as pending')
     
+    // ==================== DETERMINE PROJECT CREATOR ====================
+    // Use submitter wallet if available (new flow), fallback to admin wallet (legacy)
+    const projectCreator = submission.submitter_wallet || adminWallet
+    console.log(`[Approve Submission] Project creator will be: ${projectCreator.slice(0, 8)}... ${submission.submitter_wallet ? '(submitter)' : '(admin - legacy)'}`)
+    
     // ==================== GENERATE CREATION TOKEN ====================
     const uniqueToken = generateCreationToken()
     console.log('[Approve Submission] Generated creation token')
@@ -172,7 +177,7 @@ export async function POST(request: NextRequest) {
         contract_address: submission.contract_address,
         email: submission.email,
         submission_id: submissionId,
-        created_by: adminWallet,
+        created_by: projectCreator, // Use submitter wallet (or admin as fallback)
         status: 'pending',
         created_at: new Date().toISOString(),
         expires_at: null // indefinite expiry

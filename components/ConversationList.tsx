@@ -184,6 +184,11 @@ export function ConversationList({
             ? await canSeeOnlineStatus(currentWallet, profileData)
             : false
 
+          // Debug logging for tags
+          if (conv.tags && conv.tags.length > 0) {
+            console.log(`Conversation ${conv.id} has tags:`, conv.tags)
+          }
+          
           return {
             ...conv,
             lastMessage: lastMessageMap.get(conv.id) || undefined,
@@ -503,24 +508,28 @@ export function ConversationList({
                       {displayName}
                     </Typography>
                     
-                    {/* Project Submission Tag */}
-                    {conv.tags && conv.tags.includes('Project Submission') && (
+                    {/* Project Submission Tag - Check both tags array and participant */}
+                    {((conv.tags && conv.tags.includes('Project Submission')) || 
+                      conv.participant_1 === 'project-submissions' || 
+                      conv.participant_2 === 'project-submissions') && (
                       <Chip
-                        label="PROJECT SUBMISSION"
+                        label="Project Submission"
                         size="small"
                         sx={{
                           background: 'linear-gradient(135deg, #7C4DFF, #9D6CFF)',
                           color: 'white',
                           borderRadius: '20px',
-                          height: '20px',
+                          height: '22px',
                           fontSize: '11px',
                           fontWeight: 600,
-                          textTransform: 'uppercase',
-                          letterSpacing: '0.5px',
-                          padding: '4px 12px',
+                          letterSpacing: '0.3px',
+                          padding: '0 4px',
+                          flexShrink: 0,
                           '& .MuiChip-label': {
                             padding: '0 8px',
-                            lineHeight: '20px'
+                            lineHeight: '22px',
+                            whiteSpace: 'nowrap',
+                            overflow: 'visible'
                           },
                           animation: conv.isUnread ? `${pulseAnimation} 2s ease-in-out infinite` : 'none'
                         }}

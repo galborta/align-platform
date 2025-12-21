@@ -700,9 +700,9 @@ export default function AdminPage() {
                   {project.social_assets && project.social_assets.length > 0 ? (
                     <div className="space-y-3">
                       <h3 className="font-display text-sm font-semibold text-text-muted uppercase tracking-wide mb-3">
-                        Social Verifications ({project.social_assets.length} pending)
+                        Social Verifications ({project.social_assets.filter(s => s.platform?.toLowerCase() !== 'website').length} pending)
                       </h3>
-                      {project.social_assets.map((social) => (
+                      {project.social_assets.filter(social => social.platform?.toLowerCase() !== 'website').map((social) => (
                       <div
                         key={social.id}
                         className="p-4 bg-white rounded-lg border border-border-subtle"
@@ -711,7 +711,7 @@ export default function AdminPage() {
                           <div className="flex items-start gap-3 flex-1">
                             {/* Platform Icon */}
                             <div className="text-accent-primary mt-1">
-                              {platformIcons[social.platform] || '🌐'}
+                              {platformIcons[social.platform.toLowerCase()] || '🌐'}
                             </div>
 
                             <div className="flex-1">

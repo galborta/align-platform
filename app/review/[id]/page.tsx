@@ -184,7 +184,7 @@ export default function ReviewPage() {
             </CardHeader>
             <CardContent className="p-0">
               <div className="space-y-4">
-                {project.social_assets.map((social) => (
+                {project.social_assets.filter(social => social.platform?.toLowerCase() !== 'website').map((social) => (
                   <div
                     key={social.id}
                     className="bg-white border border-border-subtle rounded-lg p-4"
@@ -192,7 +192,7 @@ export default function ReviewPage() {
                     <div className="flex items-center justify-between mb-3">
                       <div className="flex items-center gap-3">
                         <div className="text-accent-primary">
-                          {platformIcons[social.platform] || '🌐'}
+                          {platformIcons[social.platform.toLowerCase()] || '🌐'}
                         </div>
                         <div>
                           <p className="font-body font-medium text-text-primary">

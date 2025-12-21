@@ -19,6 +19,12 @@ import FormControl from '@mui/material/FormControl'
 import InputLabel from '@mui/material/InputLabel'
 import Image from 'next/image'
 import { supabase } from '@/lib/supabase'
+import AddEditorsStep from '@/components/project/AddEditorsStep'
+import { useWallet } from '@solana/wallet-adapter-react'
+import { WalletMultiButton } from '@solana/wallet-adapter-react-ui'
+import { truncateAddress } from '@/lib/wallet-validation'
+import AdminPanelSettingsIcon from '@mui/icons-material/AdminPanelSettings'
+import GroupIcon from '@mui/icons-material/Group'
 
 type SocialPlatform = 'Instagram' | 'Twitter' | 'TikTok' | 'YouTube' | 'Facebook'
 type FollowerTier = '<10k' | '10k-50k' | '50k-100k' | '100k-500k' | '500k-1m' | '1m-5m' | '5m+'
@@ -46,15 +52,17 @@ interface CreativeAsset {
   previewUrl: string
 }
 
-interface TeamWallet {
+interface ProjectWallet {
   id: string
   address: string
   label: string
+  type: 'team' | 'treasury' | 'liquidity' | 'other'
 }
 
 function CreateProjectPageContent() {
   const searchParams = useSearchParams()
   const router = useRouter()
+  const { publicKey, connected } = useWallet()
   const [token, setToken] = useState<ProjectToken | null>(null)
   const [isValidating, setIsValidating] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -67,8 +75,12 @@ function CreateProjectPageContent() {
   const [showSuccessModal, setShowSuccessModal] = useState(false)
   const autoSaveTimerRef = useRef<NodeJS.Timeout | null>(null)
   
+  // Wallet state for Step 5
+  const [walletConnected, setWalletConnected] = useState(false)
+  const [walletKey, setWalletKey] = useState<string | null>(null)
+  
   // Multi-step form state
-  const [currentStep, setCurrentStep] = useState<1 | 2 | 3 | 4>(1)
+  const [currentStep, setCurrentStep] = useState<1 | 2 | 3 | 4 | 5>(1)
   const [stepValidationErrors, setStepValidationErrors] = useState<Record<string, string>>({})
   
   // Upload notifications (non-blocking)
@@ -89,11 +101,21 @@ function CreateProjectPageContent() {
   const [creativeAssets, setCreativeAssets] = useState<CreativeAsset[]>([])
   const [uploadingCreative, setUploadingCreative] = useState(false)
   
-  // Team Wallets
-  const [teamWallets, setTeamWallets] = useState<TeamWallet[]>([])
+  // Project Wallets
+  const [projectWallets, setProjectWallets] = useState<ProjectWallet[]>([])
   const [walletAddress, setWalletAddress] = useState('')
+  const [walletType, setWalletType] = useState<'team' | 'treasury' | 'liquidity' | 'other'>('team')
   const [walletRole, setWalletRole] = useState('Founder')
   const [walletLabel, setWalletLabel] = useState('')
+
+  // Editor Wallets
+  const [editorWallets, setEditorWallets] = useState<string[]>([])
+
+  // Sync wallet state to local state to force re-renders
+  useEffect(() => {
+    setWalletConnected(connected && !!publicKey)
+    setWalletKey(publicKey?.toBase58() || null)
+  }, [publicKey, connected])
 
   // Token validation and draft loading
   useEffect(() => {
@@ -156,10 +178,16 @@ function CreateProjectPageContent() {
           console.log('[Draft] Restored creative assets:', savedDraft.creativeAssets.length)
         }
         
-        // Restore team wallets if they exist in the draft
-        if (savedDraft.teamWallets && Array.isArray(savedDraft.teamWallets)) {
-          setTeamWallets(savedDraft.teamWallets)
-          console.log('[Draft] Restored team wallets:', savedDraft.teamWallets.length)
+        // Restore project wallets if they exist in the draft
+        if (savedDraft.projectWallets && Array.isArray(savedDraft.projectWallets)) {
+          setProjectWallets(savedDraft.projectWallets)
+          console.log('[Draft] Restored project wallets:', savedDraft.projectWallets.length)
+        }
+        
+        // Restore editor wallets if they exist in the draft
+        if (savedDraft.editorWallets && Array.isArray(savedDraft.editorWallets)) {
+          setEditorWallets(savedDraft.editorWallets)
+          console.log('[Draft] Restored editor wallets:', savedDraft.editorWallets.length)
         }
 
         // Show notification to user
@@ -172,7 +200,7 @@ function CreateProjectPageContent() {
           tokenName: submissionData.token_name,
           submitterName: submissionData.name,
           submitterRole: submissionData.role,
-          description: submissionData.message || '',
+          // Don't pre-fill description - let users write proper project description
         })
         console.log('Pre-filled with submission data:', submissionData)
       }
@@ -180,8 +208,8 @@ function CreateProjectPageContent() {
       // Restore current step from localStorage if exists
       const savedStep = localStorage.getItem(`project-step-${validatedToken.id}`)
       if (savedStep) {
-        const step = parseInt(savedStep) as 1 | 2 | 3 | 4
-        if (step >= 1 && step <= 4) {
+        const step = parseInt(savedStep) as 1 | 2 | 3 | 4 | 5
+        if (step >= 1 && step <= 5) {
           setCurrentStep(step)
           console.log('[Draft] Restored step:', step)
         }
@@ -213,7 +241,8 @@ function CreateProjectPageContent() {
       ...formData,
       socialAssets: socialAssets,
       creativeAssets: creativeAssets,
-      teamWallets: teamWallets
+      projectWallets: projectWallets,
+      editorWallets: editorWallets
     }
 
     console.log('[Auto-save] Saving draft...', {
@@ -223,7 +252,8 @@ function CreateProjectPageContent() {
       descriptionLength: formData.description?.length || 0,
       socialAssetsCount: socialAssets.length,
       creativeAssetsCount: creativeAssets.length,
-      teamWalletsCount: teamWallets.length
+      projectWalletsCount: projectWallets.length,
+      editorWalletsCount: editorWallets.length
     })
 
     setIsSaving(true)
@@ -238,7 +268,7 @@ function CreateProjectPageContent() {
     }
 
     setIsSaving(false)
-  }, [token, formData, isSaving, socialAssets, creativeAssets, teamWallets])
+  }, [token, formData, isSaving, socialAssets, creativeAssets, projectWallets])
 
   // Auto-save effect
   useEffect(() => {
@@ -633,36 +663,51 @@ function CreateProjectPageContent() {
     setCreativeAssets(creativeAssets.filter(asset => asset.id !== id))
   }
 
-  // Add team wallet
-  const handleAddTeamWallet = () => {
+  // Add project wallet
+  const handleAddProjectWallet = () => {
     if (!walletAddress.trim()) {
       setError('Please enter a wallet address')
       return
     }
 
-    const finalLabel = walletRole === 'Other' ? walletLabel.trim() : walletRole
+    let finalLabel = ''
     
-    if (walletRole === 'Other' && !walletLabel.trim()) {
-      setError('Please specify a custom role')
-      return
+    if (walletType === 'team') {
+      finalLabel = walletRole === 'Other' ? walletLabel.trim() : walletRole
+      if (walletRole === 'Other' && !walletLabel.trim()) {
+        setError('Please specify a custom role')
+        return
+      }
+    } else if (walletType === 'treasury') {
+      finalLabel = 'Treasury'
+    } else if (walletType === 'liquidity') {
+      finalLabel = 'Liquidity Provision'
+    } else if (walletType === 'other') {
+      if (!walletLabel.trim()) {
+        setError('Please describe this wallet')
+        return
+      }
+      finalLabel = walletLabel.trim()
     }
 
-    const newWallet: TeamWallet = {
+    const newWallet: ProjectWallet = {
       id: Date.now().toString(),
       address: walletAddress.trim(),
-      label: finalLabel
+      label: finalLabel,
+      type: walletType
     }
 
-    setTeamWallets([...teamWallets, newWallet])
+    setProjectWallets([...projectWallets, newWallet])
     setWalletAddress('')
     setWalletRole('Founder')
     setWalletLabel('')
+    setWalletType('team')
     setError(null)
   }
 
-  // Remove team wallet
-  const handleRemoveTeamWallet = (id: string) => {
-    setTeamWallets(teamWallets.filter(wallet => wallet.id !== id))
+  // Remove project wallet
+  const handleRemoveProjectWallet = (id: string) => {
+    setProjectWallets(projectWallets.filter(wallet => wallet.id !== id))
   }
 
   // Form validation
@@ -697,6 +742,12 @@ function CreateProjectPageContent() {
 
     // Clear previous errors
     setSubmitErrors({})
+
+    // Check wallet connection (required for Step 5)
+    if (!walletConnected || !walletKey) {
+      setSubmitErrors({ general: 'Please connect your wallet to become the project creator' })
+      return
+    }
 
     // Validate form
     const errors = validateForm()
@@ -738,11 +789,12 @@ function CreateProjectPageContent() {
         profileImageUrl: imageUrl || formData.profileImageUrl || null,
         website: normalizedWebsite,
         telegram: normalizedTelegram,
-        creatorWallet: token.created_by,
-        // Include all assets from steps 2-4
+        creatorWallet: walletKey, // Use connected wallet as creator
+        // Include all assets from steps 2-5
         socialAssets: socialAssets,
         creativeAssets: creativeAssets,
-        teamWallets: teamWallets,
+        projectWallets: projectWallets,
+        editorWallets: editorWallets,
       }
 
       console.log('Project data to submit:', projectData)
@@ -982,7 +1034,8 @@ function CreateProjectPageContent() {
               { num: 1, label: 'Token Info' },
               { num: 2, label: 'Social Assets' },
               { num: 3, label: 'Creative Assets' },
-              { num: 4, label: 'Team Wallets' }
+              { num: 4, label: 'Project Wallets' },
+              { num: 5, label: 'Add Editors' }
             ].map((step, index) => (
               <div key={step.num} className="flex items-center">
                 <div className="flex flex-col items-center">
@@ -1020,7 +1073,7 @@ function CreateProjectPageContent() {
                     {step.label}
                   </span>
                 </div>
-                {index < 3 && (
+                {index < 4 && (
                   <div
                     style={{
                       width: '20px',
@@ -1044,19 +1097,21 @@ function CreateProjectPageContent() {
                 currentStep === 1 ? 'Token Information' :
                 currentStep === 2 ? 'Social Assets' :
                 currentStep === 3 ? 'Creative Assets' :
-                'Team Wallets'
+                currentStep === 4 ? 'Project Wallets' :
+                'Add Editors'
               }
             </CardTitle>
             <p className="font-body text-text-secondary mt-2">
               {currentStep === 1 && 'Your contract address has been verified and locked'}
               {currentStep === 2 && 'Connect your social media accounts to verify ownership'}
               {currentStep === 3 && 'Upload branding materials and creative assets'}
-              {currentStep === 4 && 'Add team member wallets for transparency (optional)'}
+              {currentStep === 4 && 'Add wallet addresses for your project (team, treasury, liquidity, etc.)'}
+              {currentStep === 5 && 'Connect your creator wallet and optionally add project editors'}
             </p>
           </CardHeader>
 
           <CardContent className="p-0">
-            <form onSubmit={currentStep === 4 ? handleSubmit : (e) => e.preventDefault()} className="space-y-6">
+            <form onSubmit={currentStep === 5 ? handleSubmit : (e) => e.preventDefault()} className="space-y-6">
             
             {/* STEP 1: TOKEN INFORMATION */}
             {currentStep === 1 && (
@@ -1655,24 +1710,44 @@ function CreateProjectPageContent() {
                     onClick={() => setCurrentStep(4)}
                     className="w-full sm:w-auto order-1 sm:order-2"
                   >
-                    Continue to Team Wallets →
+                    Continue to Project Wallets →
                   </Button>
                 </div>
               </>
             )}
 
-            {/* STEP 4: TEAM WALLETS */}
+            {/* STEP 4: PROJECT WALLETS */}
             {currentStep === 4 && (
               <>
                 <div className="space-y-6">
-                  {/* Team Wallets Section */}
+                  {/* Project Wallets Section */}
                   <div className="space-y-4">
-                    <h3 className="font-heading text-lg font-semibold">Team Wallets (Optional)</h3>
+                    <h3 className="font-heading text-lg font-semibold">Project Wallets (Optional)</h3>
                     <p className="font-body text-sm text-text-secondary">
-                      Add wallet addresses of team members for transparency.
+                      Add important wallet addresses for your project. This includes team member wallets, treasury wallets, liquidity provision wallets, and any other relevant addresses for transparency.
                     </p>
 
                     <div className="space-y-4 p-4 bg-subtle-bg rounded-lg">
+                      {/* Wallet Type Selector */}
+                      <FormControl fullWidth>
+                        <InputLabel>Wallet Type</InputLabel>
+                        <Select
+                          value={walletType}
+                          onChange={(e) => {
+                            setWalletType(e.target.value as 'team' | 'treasury' | 'liquidity' | 'other')
+                            // Reset role/label when changing type
+                            setWalletRole('Founder')
+                            setWalletLabel('')
+                          }}
+                          label="Wallet Type"
+                        >
+                          <MenuItem value="team">Team Member</MenuItem>
+                          <MenuItem value="treasury">Treasury</MenuItem>
+                          <MenuItem value="liquidity">Liquidity Provision</MenuItem>
+                          <MenuItem value="other">Other</MenuItem>
+                        </Select>
+                      </FormControl>
+
                       <TextField
                         label="Wallet Address"
                         value={walletAddress}
@@ -1681,26 +1756,29 @@ function CreateProjectPageContent() {
                         placeholder="Solana wallet address"
                       />
 
-                      <FormControl fullWidth>
-                        <InputLabel>Role</InputLabel>
-                        <Select
-                          value={walletRole}
-                          onChange={(e) => setWalletRole(e.target.value)}
-                          label="Role"
-                        >
-                          <MenuItem value="Founder">Founder</MenuItem>
-                          <MenuItem value="Co-Founder">Co-Founder</MenuItem>
-                          <MenuItem value="Developer">Developer</MenuItem>
-                          <MenuItem value="Designer">Designer</MenuItem>
-                          <MenuItem value="Marketing">Marketing</MenuItem>
-                          <MenuItem value="Community Manager">Community Manager</MenuItem>
-                          <MenuItem value="Advisor">Advisor</MenuItem>
-                          <MenuItem value="Operations">Operations</MenuItem>
-                          <MenuItem value="Other">Other</MenuItem>
-                        </Select>
-                      </FormControl>
+                      {/* Show role selector only for team members */}
+                      {walletType === 'team' && (
+                        <FormControl fullWidth>
+                          <InputLabel>Team Role</InputLabel>
+                          <Select
+                            value={walletRole}
+                            onChange={(e) => setWalletRole(e.target.value)}
+                            label="Team Role"
+                          >
+                            <MenuItem value="Founder">Founder</MenuItem>
+                            <MenuItem value="Co-Founder">Co-Founder</MenuItem>
+                            <MenuItem value="Developer">Developer</MenuItem>
+                            <MenuItem value="Designer">Designer</MenuItem>
+                            <MenuItem value="Marketing">Marketing</MenuItem>
+                            <MenuItem value="Community Manager">Community Manager</MenuItem>
+                            <MenuItem value="Advisor">Advisor</MenuItem>
+                            <MenuItem value="Operations">Operations</MenuItem>
+                            <MenuItem value="Other">Other</MenuItem>
+                          </Select>
+                        </FormControl>
+                      )}
 
-                      {walletRole === 'Other' && (
+                      {walletType === 'team' && walletRole === 'Other' && (
                         <TextField
                           label="Custom Role"
                           value={walletLabel}
@@ -1710,34 +1788,51 @@ function CreateProjectPageContent() {
                         />
                       )}
 
+                      {walletType === 'other' && (
+                        <TextField
+                          label="Wallet Description"
+                          value={walletLabel}
+                          onChange={(e) => setWalletLabel(e.target.value)}
+                          fullWidth
+                          placeholder="Describe this wallet's purpose"
+                        />
+                      )}
+
                       <Button
                         type="button"
                         variant="secondary"
                         size="md"
-                        onClick={handleAddTeamWallet}
+                        onClick={handleAddProjectWallet}
                         style={{ width: '100%' }}
                       >
-                        Add Team Member
+                        Add Wallet
                       </Button>
                     </div>
 
-                    {teamWallets.length > 0 && (
+                    {projectWallets.length > 0 && (
                       <div className="space-y-2">
-                        <h4 className="font-heading text-md font-semibold">Team Members ({teamWallets.length})</h4>
-                        {teamWallets.map((wallet) => (
+                        <h4 className="font-heading text-md font-semibold">Project Wallets ({projectWallets.length})</h4>
+                        {projectWallets.map((wallet) => (
                           <div
                             key={wallet.id}
                             className="flex items-center justify-between p-3 bg-white rounded-lg border border-border-subtle"
                           >
                             <div className="flex-1">
-                              <p className="font-body text-sm font-medium">{wallet.label}</p>
+                              <div className="flex items-center gap-2">
+                                <p className="font-body text-sm font-medium">{wallet.label}</p>
+                                <span className="text-xs px-2 py-0.5 rounded-full bg-blue-100 text-blue-700">
+                                  {wallet.type === 'team' ? '👤 Team' : 
+                                   wallet.type === 'treasury' ? '💰 Treasury' : 
+                                   wallet.type === 'liquidity' ? '💧 Liquidity' : '📌 Other'}
+                                </span>
+                              </div>
                               <p className="font-body text-xs text-text-muted break-all">{wallet.address}</p>
                             </div>
                             <Button
                               type="button"
                               variant="danger"
                               size="sm"
-                              onClick={() => handleRemoveTeamWallet(wallet.id)}
+                              onClick={() => handleRemoveProjectWallet(wallet.id)}
                             >
                               Remove
                             </Button>
@@ -1749,18 +1844,179 @@ function CreateProjectPageContent() {
                 </div>
 
                 {/* Step 4 Navigation */}
-                <div className="flex justify-start pt-4">
+                <div className="flex flex-col sm:flex-row gap-3 sm:justify-between pt-4">
                   <Button
                     type="button"
                     variant="secondary"
                     size="lg"
                     onClick={() => setCurrentStep(3)}
-                    className="w-full sm:w-auto"
+                    className="w-full sm:w-auto order-2 sm:order-1"
                   >
                     ← Back
                   </Button>
-                  {/* Final Submit Button is below */}
+                  <Button
+                    type="button"
+                    variant="primary"
+                    size="lg"
+                    onClick={() => setCurrentStep(5)}
+                    className="w-full sm:w-auto order-1 sm:order-2"
+                  >
+                    Continue to Add Editors →
+                  </Button>
                 </div>
+              </>
+            )}
+
+            {/* STEP 5: CONNECT WALLET & ADD EDITORS */}
+            {currentStep === 5 && (
+              <>
+                {/* Wallet Connection Section */}
+                <div style={{
+                  padding: 'var(--space-lg)',
+                  backgroundColor: walletConnected ? 'var(--accent-primary-soft)' : 'var(--subtle-background)',
+                  border: `2px solid ${walletConnected ? 'var(--accent-primary)' : 'var(--border-subtle)'}`,
+                  borderRadius: 'var(--radius-card-lg)',
+                  marginBottom: 'var(--space-lg)',
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'flex-start', gap: 'var(--space-md)' }}>
+                    <AdminPanelSettingsIcon style={{
+                      fontSize: 40,
+                      color: walletConnected ? 'var(--accent-primary)' : 'var(--icon-default)',
+                      flexShrink: 0,
+                    }} />
+                    <div style={{ flex: 1 }}>
+                      <h3 style={{
+                        fontFamily: 'var(--font-heading)',
+                        fontSize: 'var(--text-title)',
+                        fontWeight: 'var(--weight-semibold)',
+                        color: 'var(--text-primary)',
+                        margin: '0 0 var(--space-xs) 0',
+                      }}>
+                        {walletConnected ? 'Creator Wallet Connected ✓' : 'Connect Your Creator Wallet'}
+                      </h3>
+                      <p style={{
+                        fontFamily: 'var(--font-body)',
+                        fontSize: 'var(--text-body-small)',
+                        color: 'var(--text-secondary)',
+                        margin: '0 0 var(--space-sm) 0',
+                        lineHeight: 1.5,
+                      }}>
+                        {walletConnected
+                          ? 'This wallet is the project creator and primary administrator. You have full control to manage editors, edit project details, and make all decisions.'
+                          : 'Connect your Solana wallet to become the project creator and primary administrator with full permissions.'}
+                      </p>
+                      
+                      {walletConnected && walletKey && (
+                        <div style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 'var(--space-sm)',
+                          padding: 'var(--space-sm) var(--space-md)',
+                          backgroundColor: 'white',
+                          borderRadius: 'var(--radius-card-lg)',
+                          marginBottom: 'var(--space-sm)',
+                        }}>
+                          <div style={{
+                            width: '32px',
+                            height: '32px',
+                            backgroundColor: 'var(--accent-primary)',
+                            borderRadius: '50%',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                          }}>
+                            <AdminPanelSettingsIcon style={{ fontSize: 18, color: 'white' }} />
+                          </div>
+                          <div style={{ flex: 1 }}>
+                            <p style={{
+                              fontFamily: 'var(--font-mono)',
+                              fontSize: 'var(--text-body-small)',
+                              fontWeight: 'var(--weight-medium)',
+                              color: 'var(--text-primary)',
+                              margin: 0,
+                            }}>
+                              {truncateAddress(walletKey, 6, 6)}
+                            </p>
+                            <p style={{
+                              fontFamily: 'var(--font-body)',
+                              fontSize: 'var(--text-caption)',
+                              color: 'var(--text-muted)',
+                              margin: 0,
+                            }}>
+                              Project Creator Wallet
+                            </p>
+                          </div>
+                          <CheckCircleIcon style={{
+                            fontSize: 24,
+                            color: 'var(--accent-success)',
+                          }} />
+                        </div>
+                      )}
+                      
+                      <div style={{ marginTop: walletConnected ? 'var(--space-sm)' : 'var(--space-md)' }}>
+                        <WalletMultiButton style={{
+                          width: '100%',
+                          backgroundColor: 'var(--accent-primary)',
+                          fontFamily: 'var(--font-body)',
+                          fontWeight: 'var(--weight-medium)',
+                        }} />
+                      </div>
+                      
+                      <div style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 'var(--space-xs)',
+                        padding: 'var(--space-sm)',
+                        backgroundColor: walletConnected ? 'white' : 'var(--accent-warning-soft)',
+                        borderRadius: 'var(--radius-card-md)',
+                        border: `1px solid ${walletConnected ? 'var(--border-subtle)' : 'var(--accent-warning)'}`,
+                        marginTop: 'var(--space-sm)',
+                      }}>
+                        <InfoIcon style={{
+                          fontSize: 16,
+                          color: walletConnected ? 'var(--accent-primary)' : 'var(--accent-warning)',
+                        }} />
+                        <p style={{
+                          fontFamily: 'var(--font-body)',
+                          fontSize: 'var(--text-caption)',
+                          color: 'var(--text-secondary)',
+                          margin: 0,
+                        }}>
+                          {walletConnected
+                            ? 'Click your wallet above to disconnect or change wallets'
+                            : 'Required: Connect wallet to create project'}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Divider */}
+                <div style={{
+                  borderTop: '1px solid var(--border-subtle)',
+                  margin: 'var(--space-lg) 0',
+                  position: 'relative',
+                }}>
+                  <div style={{
+                    position: 'absolute',
+                    top: '-12px',
+                    left: '50%',
+                    transform: 'translateX(-50%)',
+                    backgroundColor: 'var(--page-bg)',
+                    padding: '0 var(--space-sm)',
+                  }}>
+                    <GroupIcon style={{ fontSize: 24, color: 'var(--accent-secondary)' }} />
+                  </div>
+                </div>
+
+                {/* Add Editors Section */}
+                <AddEditorsStep
+                  editorWallets={editorWallets}
+                  projectWallets={projectWallets}
+                  onEditorsChange={setEditorWallets}
+                  onNext={handleSubmit}
+                  onBack={() => setCurrentStep(4)}
+                />
               </>
             )}
 
@@ -1791,27 +2047,6 @@ function CreateProjectPageContent() {
               </div>
             )}
 
-            {/* Submit Button (only on Step 4) */}
-            {currentStep === 4 && (
-            <div className="flex justify-end pt-4">
-              <Button
-                type="submit"
-                variant="primary"
-                size="lg"
-                disabled={isSubmitting}
-                className="w-full sm:w-auto sm:min-w-[200px]"
-              >
-                {isSubmitting ? (
-                  <>
-                    <CircularProgress size={20} sx={{ color: 'white', marginRight: '8px' }} />
-                    Creating Project...
-                  </>
-                ) : (
-                  'Create Project'
-                )}
-              </Button>
-            </div>
-            )}
           </form>
           </CardContent>
         </Card>

@@ -1889,7 +1889,13 @@ export type NotificationType =
   | 'contest_no_submissions'
   | 'contest_deadline_reminder'
   // Job status notifications
-  | 'job_status_changed';
+  | 'job_status_changed'
+  // Editor notifications (Sprint 1: Project Editors System)
+  | 'editor_added'
+  | 'editor_removed'
+  | 'social_asset_pending'
+  | 'social_asset_approved'
+  | 'social_asset_rejected';
 
 /**
  * Types of entities that can be referenced in notifications
@@ -2013,6 +2019,12 @@ export interface NotificationMetadata {
   winner_position?: number;
   prize_amount_tokens?: number;
   prize_amount_usd?: number;
+  
+  // Editor related (Sprint 1: Project Editors System)
+  editor_wallet?: string;
+  asset_id?: string;
+  rejection_reason?: string;
+  project_name?: string;
   
   // Generic fields
   url?: string;

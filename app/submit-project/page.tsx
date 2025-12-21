@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useRef, useEffect } from 'react'
+import Link from 'next/link'
 import { BackgroundShapes } from '@/components/BackgroundShapes'
 import SubmissionSuccessModal from '@/components/SubmissionSuccessModal'
 import TextField from '@mui/material/TextField'
@@ -347,7 +348,9 @@ export default function SubmitProjectPage() {
         <div className="submit-container">
           {/* Logo */}
           <div className="logo-container">
-            <h1 className="logo-text">ORggly</h1>
+            <Link href="/" className="logo-link">
+              <h1 className="logo-text">ORggly</h1>
+            </Link>
           </div>
 
           {/* Header */}
@@ -758,6 +761,15 @@ export default function SubmitProjectPage() {
           margin-bottom: var(--space-xl);
         }
 
+        .logo-link {
+          text-decoration: none;
+          transition: opacity 0.2s ease;
+        }
+
+        .logo-link:hover {
+          opacity: 0.8;
+        }
+
         .logo-text {
           font-family: 'Gluten', cursive;
           font-size: 28px;
@@ -765,7 +777,7 @@ export default function SubmitProjectPage() {
           color: var(--text-primary);
           letter-spacing: -0.02em;
           margin: 0;
-          cursor: default;
+          cursor: pointer;
         }
 
         .header-section {

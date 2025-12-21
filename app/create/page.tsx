@@ -104,10 +104,11 @@ export default function CreatePage() {
 
       if (error) throw error
 
-      if (data && data.length > 0) {
+      // Admins can create multiple projects, skip redirect logic
+      if (!isAdmin && data && data.length > 0) {
         const project = data[0]
         
-        // Redirect based on status
+        // Redirect based on status (only for non-admins)
         if (project.status === 'pending') {
           router.push(`/review/${project.id}`)
           return
@@ -118,7 +119,7 @@ export default function CreatePage() {
         // If draft or rejected, let them continue creating
       }
 
-      // No existing projects or draft/rejected - advance to step 2
+      // No existing projects or draft/rejected or is admin - advance to step 2
       if (currentStep === 1) {
         setCurrentStep(2)
       }

@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import Image from 'next/image'
+import useSWR from 'swr'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { AppHeader } from '@/components/AppHeader'
@@ -14,10 +15,17 @@ import { KarmaLeaderboard } from '@/components/KarmaLeaderboard'
 import { ActivityFeed } from '@/components/ActivityFeed'
 import { FeedErrorBoundary } from '@/components/FeedErrorBoundary'
 import { ProjectJobsWidget } from '@/components/ProjectJobsWidget'
+import { PendingAssetsSection } from '@/components/project/PendingAssetsSection'
+import EditorSessionModal from '@/components/project/EditorSessionModal'
+import SessionStatusBadge from '@/components/project/SessionStatusBadge'
+import EditProjectModal from '@/components/project/EditProjectModal'
 import { supabase } from '@/lib/supabase'
 import { Database } from '@/types/database'
 import { FeedItem } from '@/types/feed'
 import { useWallet } from '@solana/wallet-adapter-react'
+import { hasValidSession } from '@/lib/editors'
+import { getProjectPermissions } from '@/lib/permissions'
+import type { ProjectPermissions } from '@/lib/permissions'
 import { Box } from '@mui/material'
 import VerifiedIcon from '@mui/icons-material/Verified'
 import CheckCircleIcon from '@mui/icons-material/CheckCircle'
@@ -86,6 +94,27 @@ export default function ProjectDetailPage() {
   })
   const [statsLoading, setStatsLoading] = useState(false)
   const [showMockFeed, setShowMockFeed] = useState(true)
+  
+  // Session verification state
+  const [permissions, setPermissions] = useState<ProjectPermissions | null>(null)
+  const [needsVerification, setNeedsVerification] = useState(false)
+  const [sessionModalOpen, setSessionModalOpen] = useState(false)
+  
+  // Edit modal state
+  const [showEditModal, setShowEditModal] = useState(false)
+
+  // Fetch editor metadata with SWR
+  const { data: editorMetadata, mutate: mutateEditors } = useSWR(
+    project?.id ? `/api/projects/${project.id}/editors` : null,
+    async (url) => {
+      const response = await fetch(url)
+      if (!response.ok) {
+        throw new Error('Failed to fetch editors')
+      }
+      return response.json()
+    },
+    { refreshInterval: 10000 } // Refresh every 10 seconds
+  )
 
   // Scroll to top when navigating to this page
   useEffect(() => {
@@ -98,6 +127,36 @@ export default function ProjectDetailPage() {
     }
   }, [params.id])
 
+  // Fetch permissions and check session validity
+  useEffect(() => {
+    const fetchPermissions = async () => {
+      if (!wallet.publicKey || !project?.id) {
+        setPermissions(null)
+        setNeedsVerification(false)
+        return
+      }
+      
+      const perms = await getProjectPermissions(
+        project.id, 
+        wallet.publicKey.toBase58()
+      )
+      setPermissions(perms)
+      
+      // Check if editor needs session verification (creators don't need sessions)
+      if (perms.isEditor && !perms.isCreator) {
+        const hasSession = await hasValidSession(
+          project.id, 
+          wallet.publicKey.toBase58()
+        )
+        setNeedsVerification(!hasSession)
+      } else {
+        setNeedsVerification(false)
+      }
+    }
+    
+    fetchPermissions()
+  }, [wallet.publicKey, project?.id])
+
   const fetchProject = async (id: string) => {
     try {
       const { data, error } = await supabase
@@ -106,7 +165,10 @@ export default function ProjectDetailPage() {
           *,
           social_assets(*),
           creative_assets(*),
-          team_wallets(*)
+          team_wallets(*),
+          website,
+          telegram,
+          domains
         `)
         .eq('id', id)
         .single()
@@ -242,6 +304,14 @@ export default function ProjectDetailPage() {
     return `${address.slice(0, 4)}...${address.slice(-4)}`
   }
 
+  // Handle project update callback
+  const handleProjectUpdated = () => {
+    if (params.id) {
+      fetchProject(params.id as string)
+      mutateEditors() // Refresh editor list when project is updated
+    }
+  }
+
   if (loading) {
     return (
       <div className="min-h-screen bg-page-bg">
@@ -308,24 +378,24 @@ export default function ProjectDetailPage() {
                 <p className="font-body text-lg text-text-secondary">
                   ${project.token_symbol}
                 </p>
-                {/* Website domain inline under name/symbol, if available */}
-                {project.social_assets && (project.social_assets[0] as any)?.website && (() => {
-                  const rawWebsite = (project.social_assets[0] as any).website as string
-                  const href = rawWebsite.startsWith('http')
-                    ? rawWebsite
-                    : `https://${rawWebsite}`
-                  try {
-                    const url = new URL(href)
-                    const hostname = url.hostname.replace(/^www\./i, '')
-                    return (
-                      <p className="font-body text-sm text-text-secondary mb-3">
-                        {hostname}
-                      </p>
-                    )
-                  } catch {
-                    return null
-                  }
-                })()}
+                {/* Domains inline under name/symbol, if available */}
+                {((project as any).domains && (project as any).domains.length > 0) && (
+                  <div className="flex flex-wrap items-center gap-1.5 justify-center sm:justify-start mb-3">
+                    {(project as any).domains.map((domain: string, idx: number) => (
+                      <span key={`domain-wrapper-${idx}`} className="inline-flex items-center gap-1.5">
+                        {idx > 0 && <span className="text-text-muted text-sm">•</span>}
+                        <a
+                          href={domain.startsWith('http') ? domain : `https://${domain}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="font-body text-sm text-text-secondary hover:text-accent-primary transition-colors"
+                        >
+                          {domain}
+                        </a>
+                      </span>
+                    ))}
+                  </div>
+                )}
                 <div className="flex flex-wrap items-center gap-2 justify-center sm:justify-start mb-4">
                   {getVerifiedSocialsCount() > 0 && (
                     <div className="flex items-center gap-1 px-3 py-1 bg-accent-primary-soft text-accent-primary rounded-full text-sm font-medium">
@@ -347,18 +417,20 @@ export default function ProjectDetailPage() {
                 </div>
 
                 {/* Social Assets - Inline */}
-                {project.social_assets && project.social_assets.length > 0 && (
-                  <div className="flex flex-wrap gap-2 mb-4">
-                    {/* Show Telegram from basic social_assets record */}
-                    {(project.social_assets[0] as any)?.telegram && (
-                      <a
-                        href={(project.social_assets[0] as any).telegram.startsWith('http') 
-                          ? (project.social_assets[0] as any).telegram 
-                          : `https://t.me/${(project.social_assets[0] as any).telegram}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="flex items-center gap-2 px-3 py-2 bg-white rounded-lg border border-border-subtle hover:border-accent-primary transition-colors"
-                      >
+                <div className="flex flex-wrap gap-2 mb-4">
+                  {/* Show Telegram from projects table */}
+                  {(project as any).telegram && (
+                    <a
+                      href={(() => {
+                        const telegram = (project as any).telegram as string
+                        if (telegram.startsWith('http')) return telegram
+                        if (telegram.startsWith('@')) return `https://t.me/${telegram.slice(1)}`
+                        return `https://t.me/${telegram}`
+                      })()}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex items-center gap-2 px-3 py-2 bg-white rounded-lg border border-border-subtle hover:border-accent-primary transition-colors"
+                    >
                         <Image 
                           src="/logos/telegramlogo.png" 
                           alt="Telegram" 
@@ -372,54 +444,124 @@ export default function ProjectDetailPage() {
                       </a>
                     )}
                     
-                    {/* Show verified social accounts with platform/handle */}
-                    {project.social_assets
-                      .filter(social => social.platform && social.handle)
-                      .map((social) => (
-                        <a
-                          key={social.id}
-                          href={getPlatformUrl(social.platform, social.handle)}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="flex items-center gap-2 px-3 py-2 bg-white rounded-lg border border-border-subtle hover:border-accent-primary transition-colors"
-                        >
-                          {platformIcons[social.platform] || '🌐'}
-                          <span className="font-body text-sm text-text-primary">
-                            @{social.handle}
-                          </span>
-                          {social.verified && (
-                            <CheckCircleIcon sx={{ color: '#7C4DFF', fontSize: 16 }} />
-                          )}
-                        </a>
-                      ))
-                    }
-                  </div>
-                )}
+                  {/* Show verified social accounts with platform/handle */}
+                  {project.social_assets && project.social_assets
+                    .filter(social => social.platform && social.handle && social.platform.toLowerCase() !== 'website')
+                    .map((social) => (
+                      <a
+                        key={social.id}
+                        href={getPlatformUrl(social.platform, social.handle)}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex items-center gap-2 px-3 py-2 bg-white rounded-lg border border-border-subtle hover:border-accent-primary transition-colors"
+                      >
+                        {platformIcons[social.platform.toLowerCase()] || '🌐'}
+                        <span className="font-body text-sm text-text-primary">
+                          @{social.handle}
+                        </span>
+                        {social.verified && (
+                          <CheckCircleIcon sx={{ color: '#7C4DFF', fontSize: 16 }} />
+                        )}
+                      </a>
+                    ))
+                  }
+                </div>
                 {/* Description */}
                 {project.description && (
                   <p className="font-body text-base text-text-secondary leading-relaxed mb-3">
                     {project.description}
                   </p>
                 )}
-                
-                {/* Website Link */}
-                {project.social_assets && (project.social_assets[0] as any)?.website && (
-                  <a
-                    href={(project.social_assets[0] as any).website.startsWith('http') 
-                      ? (project.social_assets[0] as any).website 
-                      : `https://${(project.social_assets[0] as any).website}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-flex items-center gap-2 font-body text-sm text-accent-primary hover:underline"
+
+                {/* Action Buttons - Creator & Editors */}
+                {permissions?.canEdit && (
+                  <div 
+                    className="mt-4 pt-4"
+                    style={{ 
+                      borderTop: '1px solid var(--border-subtle)'
+                    }}
                   >
-                    🌐 Visit Website
-                    <OpenInNewIcon sx={{ fontSize: 14 }} />
-                  </a>
+                    <div className="flex flex-col gap-3">
+                      {/* Edit Project Button Row */}
+                      <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
+                        <Button
+                          variant="secondary"
+                          size="md"
+                          onClick={() => {
+                            // Creators can edit immediately
+                            // Editors need valid session
+                            if (needsVerification) {
+                              setSessionModalOpen(true)
+                            } else {
+                              setShowEditModal(true)
+                            }
+                          }}
+                          className="flex-1 sm:flex-initial"
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: 'var(--space-xs)',
+                          }}
+                        >
+                          ✏️ Edit Project
+                        </Button>
+
+                        {/* Session Status Badge - Editors Only */}
+                        {permissions.isEditor && !permissions.isCreator && !needsVerification && wallet.publicKey && (
+                          <SessionStatusBadge
+                            projectId={project.id}
+                            walletAddress={wallet.publicKey.toBase58()}
+                            onSessionExpired={() => {
+                              console.log('[Project Page] Session expired, verification needed')
+                              setNeedsVerification(true)
+                            }}
+                          />
+                        )}
+                      </div>
+
+                    </div>
+                  </div>
                 )}
               </div>
             </div>
           </CardContent>
         </Card>
+
+        {/* Editor Session Verification Modal */}
+        {wallet.publicKey && project && (
+          <EditorSessionModal
+            open={sessionModalOpen}
+            onClose={() => setSessionModalOpen(false)}
+            projectId={project.id}
+            projectName={project.token_name}
+            onSessionCreated={() => {
+              console.log('[Project Page] Session created successfully')
+              setNeedsVerification(false)
+              setSessionModalOpen(false)
+              // Open edit modal after verification
+              setShowEditModal(true)
+            }}
+          />
+        )}
+
+        {/* Edit Project Modal */}
+        {showEditModal && project && (
+          <EditProjectModal
+            open={showEditModal}
+            onClose={() => setShowEditModal(false)}
+            project={{
+              id: project.id,
+              token_name: project.token_name,
+              token_symbol: project.token_symbol,
+              token_mint: project.token_mint,
+              description: project.description,
+              profile_image_url: project.profile_image_url,
+              creator_wallet: project.creator_wallet,
+              editor_wallets: project.editor_wallets || []
+            }}
+            onProjectUpdated={handleProjectUpdated}
+          />
+        )}
 
         {/* Main Content - Mobile-First Responsive Layout */}
         <Box sx={{
@@ -486,8 +628,18 @@ export default function ProjectDetailPage() {
               />
             )}
 
+            {/* Pending Assets - Editors Only */}
+            {project.status === 'live' && permissions?.canEdit && (
+              <Box sx={{ order: { xs: 3, lg: 3 } }}>
+                <PendingAssetsSection 
+                  projectId={project.id} 
+                  canApprove={permissions.canEdit} 
+                />
+              </Box>
+            )}
+
             {/* Creative Assets - Album Style */}
-            <Box sx={{ order: { xs: 3, lg: 3 } }}>
+            <Box sx={{ order: { xs: 4, lg: 4 } }}>
               <Card>
                 <CardHeader>
                   <CardTitle className="text-lg">Creative Assets</CardTitle>

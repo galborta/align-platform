@@ -48,6 +48,7 @@
     "react-email": "^5.0.8",
     "react-hot-toast": "^2.6.0",
     "resend": "^6.6.0",
+    "swr": "^2.3.8",
     "tweetnacl": "^1.0.3"
   },
   "devDependencies": {
