@@ -1136,12 +1136,18 @@ export type Database = {
       }
       pending_assets: {
         Row: {
+          approved_at: string | null
+          approved_by: string | null
+          asset_classification: 'official' | 'affiliated'
           asset_data: Json
           asset_type: string
           created_at: string | null
           hidden_at: string | null
           id: string
           project_id: string | null
+          rejected_at: string | null
+          rejected_by: string | null
+          rejection_reason: string | null
           submission_token_balance: number
           submission_token_percentage: number
           submitter_wallet: string
@@ -1154,12 +1160,18 @@ export type Database = {
           verified_at: string | null
         }
         Insert: {
+          approved_at?: string | null
+          approved_by?: string | null
+          asset_classification?: 'official' | 'affiliated'
           asset_data: Json
           asset_type: string
           created_at?: string | null
           hidden_at?: string | null
           id?: string
           project_id?: string | null
+          rejected_at?: string | null
+          rejected_by?: string | null
+          rejection_reason?: string | null
           submission_token_balance: number
           submission_token_percentage: number
           submitter_wallet: string
@@ -1172,12 +1184,18 @@ export type Database = {
           verified_at?: string | null
         }
         Update: {
+          approved_at?: string | null
+          approved_by?: string | null
+          asset_classification?: 'official' | 'affiliated'
           asset_data?: Json
           asset_type?: string
           created_at?: string | null
           hidden_at?: string | null
           id?: string
           project_id?: string | null
+          rejected_at?: string | null
+          rejected_by?: string | null
+          rejection_reason?: string | null
           submission_token_balance?: number
           submission_token_percentage?: number
           submitter_wallet?: string
@@ -1405,6 +1423,7 @@ export type Database = {
       }
       social_assets: {
         Row: {
+          asset_classification: 'official' | 'affiliated'
           created_at: string | null
           follower_tier: string | null
           handle: string
@@ -1417,6 +1436,7 @@ export type Database = {
           verified_at: string | null
         }
         Insert: {
+          asset_classification?: 'official' | 'affiliated'
           created_at?: string | null
           follower_tier?: string | null
           handle: string
@@ -1429,6 +1449,7 @@ export type Database = {
           verified_at?: string | null
         }
         Update: {
+          asset_classification?: 'official' | 'affiliated'
           created_at?: string | null
           follower_tier?: string | null
           handle?: string
@@ -1874,6 +1895,10 @@ export type NotificationType =
   | 'social_submission_approved'
   | 'social_submission_denied'
   | 'social_payment_distributed'
+  // Social asset review notifications
+  | 'social_asset_pending'
+  | 'social_asset_approved'
+  | 'social_asset_rejected'
   // Revision notifications
   | 'revision_requested'
   | 'voluntary_revision_requested'
@@ -1969,6 +1994,13 @@ export interface NotificationMetadata {
   asset_name?: string;
   asset_type?: string;
   upvote_count?: number;
+  asset_id?: string;
+  asset_classification?: 'official' | 'affiliated';
+  asset_platform?: string;
+  asset_handle?: string;
+  asset_domain?: string;
+  rejection_reason?: string;
+  editor_wallet?: string;
   
   // Message related
   message_preview?: string;
@@ -2081,6 +2113,11 @@ export interface TipFormData {
 export type { BudgetTier, SocialJobType, SocialApprovalStatus, DisputeType, SocialDisputeType } from './social-media-jobs'
 
 // ==================== REVISION OFFERING TYPES ====================
+
+/**
+ * Asset classification - distinguishes between official and affiliated assets
+ */
+export type AssetClassification = 'official' | 'affiliated'
 
 /**
  * Represents a revision offering - either 'unlimited' or a specific number

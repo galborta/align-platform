@@ -13,11 +13,20 @@ import {
   MenuItem,
   FormControl,
   InputLabel,
-  Alert
+  Alert,
+  Radio,
+  RadioGroup,
+  FormControlLabel,
+  FormLabel,
+  Tooltip,
+  Box,
+  Typography
 } from '@mui/material'
+import InfoOutlined from '@mui/icons-material/InfoOutlined'
 import { supabase } from '@/lib/supabase'
 import { getWalletTokenData } from '@/lib/token-balance'
 import { calculateKarma } from '@/lib/karma'
+import { notifyAssetPending } from '@/lib/notifications/social-asset-notifications'
 import { toast } from 'react-hot-toast'
 
 interface AddAssetModalProps {
@@ -28,16 +37,46 @@ interface AddAssetModalProps {
 
 export function AddAssetModal({ projectId, tokenMint, onClose }: AddAssetModalProps) {
   const wallet = useWallet()
-  const [assetType, setAssetType] = useState<'social'>('social')
+  const [assetType, setAssetType] = useState<'social' | 'domain'>('social')
   const [loading, setLoading] = useState(false)
+  const [assetClassification, setAssetClassification] = useState<'official' | 'affiliated'>('official')
   
   // Social asset fields
   const [platform, setPlatform] = useState('')
   const [handle, setHandle] = useState('')
   const [followerTier, setFollowerTier] = useState('')
   
+  // Domain asset fields
+  const [domainUrl, setDomainUrl] = useState('')
+  
   // Error states
   const [errors, setErrors] = useState<Record<string, boolean>>({})
+  
+  const cleanDomainUrl = (url: string): { domain: string; url: string } | null => {
+    try {
+      let cleanUrl = url.trim().toLowerCase()
+      
+      // Add https:// if no protocol
+      if (!cleanUrl.startsWith('http://') && !cleanUrl.startsWith('https://')) {
+        cleanUrl = 'https://' + cleanUrl
+      }
+      
+      const urlObj = new URL(cleanUrl)
+      
+      // Extract domain without www
+      let domain = urlObj.hostname
+      if (domain.startsWith('www.')) {
+        domain = domain.substring(4)
+      }
+      
+      return {
+        domain,
+        url: urlObj.toString()
+      }
+    } catch (err) {
+      return null
+    }
+  }
   
   const handleSubmit = async () => {
     if (!wallet.publicKey) {
@@ -129,6 +168,62 @@ export function AddAssetModal({ projectId, tokenMint, onClose }: AddAssetModalPr
         }
         
         assetData = { platform, handle: cleanHandle, followerTier }
+      } else if (assetType === 'domain') {
+        const newErrors: Record<string, boolean> = {}
+        if (!domainUrl) newErrors.domain = true
+        
+        if (Object.keys(newErrors).length > 0) {
+          setErrors(newErrors)
+          toast.error('Please fill in all required fields')
+          setLoading(false)
+          return
+        }
+        
+        const cleaned = cleanDomainUrl(domainUrl)
+        if (!cleaned) {
+          toast.error('Please enter a valid domain or URL')
+          setLoading(false)
+          return
+        }
+        
+        // Check for duplicate domain in verified assets
+        const { data: existingVerified } = await supabase
+          .from('social_assets')
+          .select('id')
+          .eq('project_id', projectId)
+          .eq('platform', 'domain')
+          .ilike('handle', cleaned.domain)
+          .maybeSingle()
+        
+        if (existingVerified) {
+          toast.error('This domain is already verified for this project')
+          setLoading(false)
+          return
+        }
+        
+        // Check for duplicate domain in pending assets
+        const { data: existingPending } = await supabase
+          .from('pending_assets')
+          .select('asset_data')
+          .eq('project_id', projectId)
+          .eq('asset_type', 'domain')
+          .neq('verification_status', 'hidden')
+        
+        if (existingPending && existingPending.length > 0) {
+          for (const pending of existingPending) {
+            const data = pending.asset_data as any
+            if (data?.domain?.toLowerCase() === cleaned.domain.toLowerCase()) {
+              toast.error('This domain has already been submitted and is pending verification')
+              setLoading(false)
+              return
+            }
+          }
+        }
+        
+        assetData = { 
+          domain: cleaned.domain, 
+          url: cleaned.url 
+        }
       }
       
       // 4. Insert pending asset
@@ -141,7 +236,8 @@ export function AddAssetModal({ projectId, tokenMint, onClose }: AddAssetModalPr
           submitter_wallet: wallet.publicKey.toString(),
           submission_token_balance: tokenData.balance,
           submission_token_percentage: tokenData.percentage,
-          verification_status: 'pending'
+          verification_status: 'pending',
+          asset_classification: assetClassification
         })
         .select()
         .single()
@@ -153,13 +249,23 @@ export function AddAssetModal({ projectId, tokenMint, onClose }: AddAssetModalPr
         return
       }
       
-      // 5. Increment assets added count
+      // 5. Send notification to project editors
+      await notifyAssetPending(
+        projectId,
+        asset.id,
+        wallet.publicKey.toString(),
+        assetType,
+        assetData,
+        assetClassification
+      )
+      
+      // 6. Increment assets added count
       await supabase.rpc('increment_assets_added', {
         p_wallet: wallet.publicKey.toString(),
         p_project_id: projectId
       })
       
-      // 6. Award immediate karma (25%)
+      // 7. Award immediate karma (25%)
       const immediateKarma = calculateKarma('add', tokenData.percentage, true)
       
       await supabase.rpc('add_karma', {
@@ -169,7 +275,9 @@ export function AddAssetModal({ projectId, tokenMint, onClose }: AddAssetModalPr
       })
       
       // 7. Post to curation chat
-      const assetSummary = `${platform}:${assetData.handle}`
+      const assetSummary = assetType === 'social' 
+        ? `${platform}:${assetData.handle}`
+        : `domain:${assetData.domain}`
       
       await supabase
         .from('curation_chat_messages')
@@ -183,7 +291,10 @@ export function AddAssetModal({ projectId, tokenMint, onClose }: AddAssetModalPr
           asset_summary: assetSummary
         })
       
-      toast.success(`Asset submitted! Earned ${immediateKarma.toFixed(1)} karma. Earn more when verified.`)
+      toast.success(
+        `${assetClassification === 'official' ? 'Official' : 'Affiliated'} ${assetType} asset submitted! ` +
+        `Earned ${immediateKarma.toFixed(1)} karma. Earn more when approved by editors.`
+      )
       onClose()
       
     } catch (error) {
@@ -203,17 +314,64 @@ export function AddAssetModal({ projectId, tokenMint, onClose }: AddAssetModalPr
           Submit assets for community review. Earn karma when verified!
         </Alert>
         
-        <FormControl fullWidth sx={{ mt: 3, mb: 3 }}>
+        <FormControl component="fieldset" sx={{ mb: 3, width: '100%' }}>
+          <FormLabel component="legend" sx={{ mb: 1, color: 'var(--text-primary)' }}>
+            Asset Classification
+          </FormLabel>
+          <RadioGroup
+            value={assetClassification}
+            onChange={(e) => setAssetClassification(e.target.value as 'official' | 'affiliated')}
+            row
+          >
+            <FormControlLabel 
+              value="official" 
+              control={<Radio sx={{ color: 'var(--accent-primary)', '&.Mui-checked': { color: 'var(--accent-primary)' } }} />} 
+              label={
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                  <Typography sx={{ fontSize: '14px', fontFamily: 'var(--font-body)' }}>
+                    Official
+                  </Typography>
+                  <Tooltip 
+                    title="Project-owned accounts. These are official social media accounts or domains directly controlled by the project team."
+                    arrow
+                  >
+                    <InfoOutlined sx={{ fontSize: 16, color: 'var(--text-secondary)', cursor: 'help' }} />
+                  </Tooltip>
+                </Box>
+              }
+            />
+            <FormControlLabel 
+              value="affiliated" 
+              control={<Radio sx={{ color: 'var(--accent-primary)', '&.Mui-checked': { color: 'var(--accent-primary)' } }} />} 
+              label={
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                  <Typography sx={{ fontSize: '14px', fontFamily: 'var(--font-body)' }}>
+                    Affiliated
+                  </Typography>
+                  <Tooltip 
+                    title="Community or partner accounts. These are related accounts not directly controlled by the project (influencers, community groups, partner organizations)."
+                    arrow
+                  >
+                    <InfoOutlined sx={{ fontSize: 16, color: 'var(--text-secondary)', cursor: 'help' }} />
+                  </Tooltip>
+                </Box>
+              }
+            />
+          </RadioGroup>
+        </FormControl>
+        
+        <FormControl fullWidth sx={{ mb: 3 }}>
           <InputLabel>Asset Type</InputLabel>
           <Select
             value={assetType}
             onChange={(e) => {
-              setAssetType(e.target.value as any)
+              setAssetType(e.target.value as 'social' | 'domain')
               setErrors({}) // Clear errors when changing asset type
             }}
             label="Asset Type"
           >
             <MenuItem value="social">Social Account</MenuItem>
+            <MenuItem value="domain">Domain/Website</MenuItem>
           </Select>
         </FormControl>
         
@@ -266,6 +424,36 @@ export function AddAssetModal({ projectId, tokenMint, onClose }: AddAssetModalPr
                 <MenuItem value="5m+">5M+</MenuItem>
               </Select>
             </FormControl>
+          </>
+        )}
+        
+        {assetType === 'domain' && (
+          <>
+            <TextField
+              fullWidth
+              label="Domain or Website URL"
+              placeholder="example.com or https://example.com"
+              value={domainUrl}
+              onChange={(e) => {
+                setDomainUrl(e.target.value)
+                setErrors(prev => ({ ...prev, domain: false }))
+              }}
+              error={errors.domain}
+              helperText={
+                errors.domain 
+                  ? 'Please enter a valid domain or URL' 
+                  : 'Enter the project\'s official website or domain'
+              }
+              sx={{ mb: 3 }}
+            />
+            
+            <Alert severity="info" sx={{ mb: 2 }}>
+              <Typography variant="body2" sx={{ fontFamily: 'var(--font-body)', fontSize: '14px' }}>
+                This will be cleaned automatically:<br/>
+                • &quot;https://www.example.com/path&quot; → &quot;example.com&quot;<br/>
+                • &quot;example.com&quot; → &quot;example.com&quot;
+              </Typography>
+            </Alert>
           </>
         )}
       </DialogContent>
