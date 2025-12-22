@@ -1591,6 +1591,7 @@ export type Database = {
           bio: string | null
           created_at: string | null
           display_name: string | null
+          email: string | null
           id: string
           is_online: boolean | null
           last_seen_at: string | null

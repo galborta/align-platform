@@ -68,6 +68,10 @@ const NOTIFICATION_ICONS: Record<NotificationType, LucideIcon> = {
   contest_judging_started: Award,
   contest_winners_selected: Award,
   contest_prize_won: Award,
+  // Social asset review notifications
+  social_asset_pending: BadgeCheck,
+  social_asset_approved: CheckCircle,
+  social_asset_rejected: XCircle,
 }
 
 // Icon color mapping
@@ -84,11 +88,11 @@ function getNotificationIconColor(type: NotificationType): string {
   if (type.startsWith('admin_')) return NOTIFICATION_COLORS.admin
   
   const successTypes: NotificationType[] = [
-    'job_completed', 'asset_verified', 'payment_released', 'karma_milestone'
+    'job_completed', 'asset_verified', 'payment_released', 'karma_milestone', 'social_asset_approved'
   ]
-  const warningTypes: NotificationType[] = ['karma_warning']
+  const warningTypes: NotificationType[] = ['karma_warning', 'social_asset_pending']
   const errorTypes: NotificationType[] = [
-    'karma_ban', 'asset_hidden', 'job_dispute_created'
+    'karma_ban', 'asset_hidden', 'job_dispute_created', 'social_asset_rejected'
   ]
   const infoTypes: NotificationType[] = [
     'job_assigned', 'tip_received', 'message_received'
@@ -147,6 +151,17 @@ export function NotificationItem({
   // Check if this is a voluntary revision that needs action
   const isVoluntaryRevisionRequest = notification.type === 'voluntary_revision_requested'
 
+  // Helper function to extract asset ID from notification
+  const getAssetIdFromNotification = (notification: EnrichedNotification): string | null => {
+    if (notification.reference_type === 'asset' && notification.reference_id) {
+      return notification.reference_id
+    }
+    if (notification.metadata?.asset_id) {
+      return notification.metadata.asset_id as string
+    }
+    return null
+  }
+
   const handleClick = () => {
     console.log('[NotificationItem] Click handler called for type:', notification.type)
     console.log('[NotificationItem] messaging context available:', !!messaging)
@@ -165,6 +180,30 @@ export function NotificationItem({
         return
       } else {
         console.log('[NotificationItem] Cannot open messages - senderWallet:', senderWallet, 'messaging:', !!messaging)
+      }
+    }
+    
+    // Special handling for social asset notifications - route to yellow feed
+    if (notification.type === 'social_asset_pending' || 
+        notification.type === 'social_asset_approved' || 
+        notification.type === 'social_asset_rejected') {
+      
+      const projectId = (notification.metadata as any)?.project_id
+      const assetId = getAssetIdFromNotification(notification)
+      
+      if (projectId) {
+        // Build URL with project and section parameters
+        let url = `/messages?project=${projectId}&section=social-assets`
+        
+        // Add highlight parameter for approved/rejected notifications (submitter view)
+        if (assetId && (notification.type === 'social_asset_approved' || notification.type === 'social_asset_rejected')) {
+          url += `&highlight=${assetId}`
+        }
+        
+        console.log('[NotificationItem] Navigating to yellow feed:', url)
+        router.push(url)
+        onClick(notification)
+        return
       }
     }
     

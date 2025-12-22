@@ -1,7 +1,8 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { Box, Typography, CircularProgress, Button } from '@mui/material'
+import { useSearchParams } from 'next/navigation'
 import { SocialAssetFeedItem } from './SocialAssetFeedItem'
 import { 
   fetchPendingSocialAssets, 
@@ -22,6 +23,12 @@ export function SocialAssetFeed({ projectId, editorWallet }: SocialAssetFeedProp
   const [hasMore, setHasMore] = useState(true)
   const [offset, setOffset] = useState(0)
   const [loadingMore, setLoadingMore] = useState(false)
+  
+  // URL parameter reading for highlighting
+  const searchParams = useSearchParams()
+  const highlightId = searchParams.get('highlight')
+  const [highlightedAssetId, setHighlightedAssetId] = useState<string | null>(null)
+  const highlightedRef = useRef<HTMLDivElement | null>(null)
 
   const ITEMS_PER_PAGE = 20
 
@@ -71,6 +78,32 @@ export function SocialAssetFeed({ projectId, editorWallet }: SocialAssetFeedProp
   useEffect(() => {
     loadFeed()
   }, [loadFeed])
+
+  // Handle asset highlighting from URL
+  useEffect(() => {
+    if (highlightId && items.length > 0) {
+      const assetExists = items.find(item => item.id === highlightId)
+      
+      if (assetExists) {
+        setHighlightedAssetId(highlightId)
+        
+        // Scroll to highlighted asset after render
+        setTimeout(() => {
+          if (highlightedRef.current) {
+            highlightedRef.current.scrollIntoView({ 
+              behavior: 'smooth', 
+              block: 'center' 
+            })
+          }
+        }, 100)
+        
+        // Remove highlight after 3 seconds
+        setTimeout(() => {
+          setHighlightedAssetId(null)
+        }, 3000)
+      }
+    }
+  }, [highlightId, items])
 
   // Setup real-time subscription
   useEffect(() => {
@@ -146,13 +179,18 @@ export function SocialAssetFeed({ projectId, editorWallet }: SocialAssetFeedProp
     <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
       {/* Feed Items */}
       {items.map(item => (
-        <SocialAssetFeedItem
+        <Box
           key={item.id}
-          item={item}
-          projectId={projectId}
-          editorWallet={editorWallet}
-          onActionComplete={handleActionComplete}
-        />
+          ref={item.id === highlightedAssetId ? highlightedRef : null}
+        >
+          <SocialAssetFeedItem
+            item={item}
+            projectId={projectId}
+            editorWallet={editorWallet}
+            onActionComplete={handleActionComplete}
+            isHighlighted={item.id === highlightedAssetId}
+          />
+        </Box>
       ))}
 
       {/* Load More Button */}

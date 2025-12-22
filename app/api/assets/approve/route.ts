@@ -3,6 +3,7 @@ import { supabase } from '@/lib/supabase'
 import { calculateKarma } from '@/lib/karma'
 import { notifyAssetApproved } from '@/lib/notifications/social-asset-notifications'
 import { checkEditorPermission, requireEditorPermission } from '@/lib/permissions/editor-permissions'
+import { sendAssetApprovedEmail } from '@/lib/emails/social-asset-emails'
 
 /**
  * POST /api/assets/approve
@@ -31,7 +32,7 @@ export async function POST(req: NextRequest) {
       )
     }
 
-    // 1. Verify editor has permission
+    // 1. Verify editor has permission and get project data
     const permissionCheck = await checkEditorPermission(projectId, editorWallet)
     const permissionError = requireEditorPermission(permissionCheck)
     
@@ -41,6 +42,13 @@ export async function POST(req: NextRequest) {
         { status: permissionError.status }
       )
     }
+
+    // Get project name for email
+    const { data: project } = await supabase
+      .from('projects')
+      .select('token_name')
+      .eq('id', projectId)
+      .single()
 
     // 2. Get pending asset
     const { data: pendingAsset, error: fetchError } = await supabase
@@ -151,7 +159,32 @@ export async function POST(req: NextRequest) {
       karmaReward
     )
 
-    // 8. Log admin action
+    // 8. Send email notification (if user has email)
+    try {
+      // Fetch user email from user_profiles
+      const { data: profile } = await supabase
+        .from('user_profiles')
+        .select('email')
+        .eq('wallet_address', pendingAsset.submitter_wallet)
+        .single()
+
+      if (profile?.email) {
+        await sendAssetApprovedEmail(
+          profile.email,
+          pendingAsset.submitter_wallet,
+          pendingAsset.asset_type,
+          assetData,
+          pendingAsset.asset_classification,
+          project?.token_name || 'this project',
+          karmaReward
+        )
+      }
+    } catch (emailError) {
+      console.error('Failed to send approval email:', emailError)
+      // Don't fail the whole operation if email fails
+    }
+
+    // 9. Log admin action
     await supabase
       .from('admin_logs')
       .insert({

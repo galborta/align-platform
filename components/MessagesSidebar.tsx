@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
-import { useRouter, usePathname } from 'next/navigation'
+import { useRouter, usePathname, useSearchParams } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import { getUnreadCount, getOrCreateConversation, getExistingConversation } from '@/lib/messaging'
 import { ConversationList } from '@/components/ConversationList'
@@ -65,6 +65,12 @@ export function MessagesSidebar({
 }: MessagesSidebarProps) {
   const router = useRouter()
   const pathname = usePathname()
+  const searchParams = useSearchParams()
+  
+  // Read URL parameters
+  const urlProject = searchParams.get('project')
+  const urlSection = searchParams.get('section')
+  
   // If targetWallet is provided, we'll be loading a thread - don't show list flash
   const [view, setView] = useState<SidebarView>('list')
   const [isLoadingThread, setIsLoadingThread] = useState(false)
@@ -110,15 +116,41 @@ export function MessagesSidebar({
 
   // Detect if we're on a project page and extract projectId
   useEffect(() => {
-    const match = pathname?.match(/\/project\/([^\/]+)/)
-    if (match) {
-      setProjectId(match[1])
+    // First check URL parameter (takes priority)
+    if (urlProject) {
+      setProjectId(urlProject)
     } else {
-      setProjectId(null)
-      setIsCreatorOrEditor(false)
-      setPendingAssetsCount(0)
+      // Fall back to pathname detection
+      const match = pathname?.match(/\/project\/([^\/]+)/)
+      if (match) {
+        setProjectId(match[1])
+      } else {
+        setProjectId(null)
+        setIsCreatorOrEditor(false)
+        setPendingAssetsCount(0)
+      }
     }
-  }, [pathname])
+  }, [pathname, urlProject])
+
+  // Apply URL section parameter on mount
+  useEffect(() => {
+    if (urlSection && (urlSection === 'messages' || urlSection === 'social-assets')) {
+      setActiveSection(urlSection as 'messages' | 'social-assets')
+    }
+  }, [urlSection])
+
+  // Helper function to handle section changes and update URL
+  const handleSectionChange = useCallback((section: 'messages' | 'social-assets') => {
+    setActiveSection(section)
+    
+    // Update URL without full page reload
+    const params = new URLSearchParams(searchParams.toString())
+    if (projectId) {
+      params.set('project', projectId)
+    }
+    params.set('section', section)
+    router.push(`${pathname}?${params.toString()}`, { scroll: false })
+  }, [projectId, pathname, searchParams, router])
 
   // Check if user is creator or editor for current project
   useEffect(() => {
@@ -729,7 +761,7 @@ export function MessagesSidebar({
                 <Button
                   fullWidth
                   variant={activeSection === 'messages' ? 'contained' : 'outlined'}
-                  onClick={() => setActiveSection('messages')}
+                  onClick={() => handleSectionChange('messages')}
                   sx={{
                     borderRadius: 2,
                     py: 1,
@@ -764,7 +796,7 @@ export function MessagesSidebar({
                 <Button
                   fullWidth
                   variant={activeSection === 'social-assets' ? 'contained' : 'outlined'}
-                  onClick={() => setActiveSection('social-assets')}
+                  onClick={() => handleSectionChange('social-assets')}
                   sx={{
                     borderRadius: 2,
                     py: 1,

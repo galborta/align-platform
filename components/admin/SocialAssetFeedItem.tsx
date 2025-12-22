@@ -36,13 +36,15 @@ interface SocialAssetFeedItemProps {
   projectId: string
   editorWallet: string
   onActionComplete: () => void
+  isHighlighted?: boolean
 }
 
 export function SocialAssetFeedItem({ 
   item, 
   projectId, 
   editorWallet,
-  onActionComplete 
+  onActionComplete,
+  isHighlighted = false
 }: SocialAssetFeedItemProps) {
   const [loading, setLoading] = useState(false)
   const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null)
@@ -185,11 +187,27 @@ export function SocialAssetFeedItem({
         sx={{
           p: { xs: 1.5, sm: 2 },
           border: '1px solid',
-          borderColor: 'divider',
+          borderColor: isHighlighted ? '#FFB800' : 'divider',
           borderRadius: 2,
-          bgcolor: isApproved ? 'success.light' : isRejected ? 'error.light' : 'background.paper',
+          bgcolor: isApproved 
+            ? 'success.light' 
+            : isRejected 
+            ? 'error.light' 
+            : isHighlighted 
+            ? 'rgba(255, 184, 0, 0.1)'
+            : 'background.paper',
           opacity: isApproved || isRejected ? 0.7 : 1,
           transition: 'all 0.2s',
+          boxShadow: isHighlighted ? '0 0 0 2px rgba(255, 184, 0, 0.3)' : 'none',
+          animation: isHighlighted ? 'pulse-yellow 2s ease-in-out 2' : 'none',
+          '@keyframes pulse-yellow': {
+            '0%, 100%': {
+              boxShadow: '0 0 0 2px rgba(255, 184, 0, 0.3)'
+            },
+            '50%': {
+              boxShadow: '0 0 0 4px rgba(255, 184, 0, 0.5)'
+            }
+          },
           '&:hover': {
             borderColor: isPending ? '#FFB800' : 'divider',
             boxShadow: isPending ? 1 : 0
