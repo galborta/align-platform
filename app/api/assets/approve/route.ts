@@ -1,251 +1,186 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabase } from '@/lib/supabase'
-import { canEditProject } from '@/lib/permissions'
+import { calculateKarma } from '@/lib/karma'
+import { notifyAssetApproved } from '@/lib/notifications/social-asset-notifications'
+import { checkEditorPermission, requireEditorPermission } from '@/lib/permissions/editor-permissions'
 
 /**
  * POST /api/assets/approve
  * 
- * Allows project editors to approve or reject pending social assets
- * submitted by the community.
- * 
- * @route POST /api/assets/approve
- * @access Editors and project creators only
+ * Approves a pending social asset submission
+ * - Moves asset from pending_assets to social_assets
+ * - Awards remaining karma to submitter (75% = 3x the immediate 25%)
+ * - Creates notification for submitter
+ * - Logs admin action
+ * - Requires editor or creator permissions
  */
-export async function POST(request: NextRequest) {
+export async function POST(req: NextRequest) {
   try {
-    const body = await request.json()
-    const { asset_id, project_id, action, wallet, rejection_reason } = body
+    const body = await req.json()
+    const { 
+      assetId, 
+      projectId, 
+      editorWallet 
+    } = body
 
     // Validate required fields
-    if (!asset_id || !action) {
+    if (!assetId || !projectId || !editorWallet) {
       return NextResponse.json(
-        { error: 'Missing required fields: asset_id and action are required' },
+        { error: 'Missing required fields: assetId, projectId, editorWallet' },
         { status: 400 }
       )
     }
 
-    if (!['approve', 'reject'].includes(action)) {
+    // 1. Verify editor has permission
+    const permissionCheck = await checkEditorPermission(projectId, editorWallet)
+    const permissionError = requireEditorPermission(permissionCheck)
+    
+    if (permissionError) {
       return NextResponse.json(
-        { error: 'Invalid action. Must be "approve" or "reject"' },
-        { status: 400 }
+        { error: permissionError.error },
+        { status: permissionError.status }
       )
     }
 
-    // Fetch the pending asset with project details
-    const { data: asset, error: fetchError } = await supabase
+    // 2. Get pending asset
+    const { data: pendingAsset, error: fetchError } = await supabase
       .from('pending_assets')
-      .select(`
-        *,
-        projects!inner (
-          id,
-          token_name,
-          creator_wallet,
-          editor_wallets
-        )
-      `)
-      .eq('id', asset_id)
+      .select('*')
+      .eq('id', assetId)
       .single()
 
-    if (fetchError || !asset) {
-      console.error('Error fetching asset:', fetchError)
+    if (fetchError || !pendingAsset) {
       return NextResponse.json(
-        { error: 'Asset not found' },
+        { error: 'Pending asset not found' },
         { status: 404 }
       )
     }
 
-    const project = asset.projects as any
+    // Check if already approved/rejected
+    if (pendingAsset.verification_status !== 'pending') {
+      return NextResponse.json(
+        { error: `Asset is already ${pendingAsset.verification_status}` },
+        { status: 400 }
+      )
+    }
 
-    // Check permissions if wallet is provided
-    if (wallet) {
-      const editPermission = await canEditProject(project.id, wallet)
-      if (!editPermission.canEdit) {
-        return NextResponse.json(
-          { error: 'Not authorized to approve assets for this project' },
-          { status: 403 }
-        )
+    // 3. Calculate karma reward (75% = 3x the immediate 25%)
+    const remainingKarmaMultiplier = 3 // 75% is 3 times the initial 25%
+    const baseKarma = calculateKarma('add', pendingAsset.submission_token_percentage, true)
+    const karmaReward = baseKarma * remainingKarmaMultiplier
+
+    // 4. Award karma to submitter
+    const { error: karmaError } = await supabase.rpc('add_karma', {
+      p_wallet: pendingAsset.submitter_wallet,
+      p_project_id: projectId,
+      p_karma_delta: karmaReward
+    })
+
+    if (karmaError) {
+      console.error('Failed to award karma:', karmaError)
+      // Continue anyway - don't fail the whole operation
+    }
+
+    // 5. Move asset to social_assets table
+    const assetData = pendingAsset.asset_data as any
+    let insertData: any = {
+      project_id: projectId,
+      verified: true,
+      verified_at: new Date().toISOString(),
+      created_at: pendingAsset.created_at,
+      asset_classification: pendingAsset.asset_classification
+    }
+
+    if (pendingAsset.asset_type === 'social') {
+      insertData = {
+        ...insertData,
+        platform: assetData.platform.toLowerCase(),
+        handle: assetData.handle,
+        follower_tier: assetData.followerTier || null,
+        profile_url: null // Can be populated later if needed
+      }
+    } else if (pendingAsset.asset_type === 'domain') {
+      // Store domain as a special "platform" type
+      insertData = {
+        ...insertData,
+        platform: 'domain',
+        handle: assetData.domain,
+        profile_url: assetData.url
       }
     }
 
-    const assetData = asset.asset_data as any
+    const { data: newAsset, error: insertError } = await supabase
+      .from('social_assets')
+      .insert(insertData)
+      .select()
+      .single()
 
-    // ============================================
-    // APPROVE ACTION
-    // ============================================
-    if (action === 'approve') {
-      // 1. Update pending asset status to verified
-      const { error: updateError } = await supabase
-        .from('pending_assets')
-        .update({
-          verification_status: 'verified',
-          verified_at: new Date().toISOString()
-        })
-        .eq('id', asset_id)
+    if (insertError) {
+      console.error('Failed to insert verified asset:', insertError)
+      return NextResponse.json(
+        { error: 'Failed to create verified asset' },
+        { status: 500 }
+      )
+    }
 
-      if (updateError) {
-        console.error('Error updating pending asset:', updateError)
-        return NextResponse.json(
-          { error: 'Failed to approve asset' },
-          { status: 500 }
-        )
-      }
-
-      // 2. Create verified social asset
-      const { error: insertError } = await supabase
-        .from('social_assets')
-        .insert({
-          project_id: asset.project_id,
-          platform: assetData.platform?.toLowerCase() || '',
-          handle: assetData.handle || '',
-          follower_tier: assetData.follower_tier || null,
-          verified: true,
-          verified_at: new Date().toISOString(),
-          verified_by: wallet || null
-        })
-
-      if (insertError) {
-        console.error('Error creating social asset:', insertError)
-        return NextResponse.json(
-          { error: 'Failed to create verified social asset' },
-          { status: 500 }
-        )
-      }
-
-      // 3. Log approval action
-      if (wallet) {
-        await supabase
-          .from('admin_logs')
-          .insert({
-            action: 'social_asset_approved',
-            admin_wallet: wallet,
-            project_id: asset.project_id,
-            entity_id: asset_id,
-            entity_type: 'pending_asset',
-            details: {
-              asset_type: asset.asset_type,
-              platform: assetData.platform,
-              handle: assetData.handle,
-              project_name: project.token_name,
-              submitter_wallet: asset.submitter_wallet
-            }
-          })
-      }
-
-      // 4. Send notification to submitter
-      await supabase
-        .from('notifications')
-        .insert({
-          type: 'social_asset_approved',
-          user_wallet: asset.submitter_wallet,
-          message: `Your ${assetData.platform} account @${assetData.handle} was approved for ${project.token_name}`,
-          reference_id: asset.project_id,
-          reference_type: 'project',
-          metadata: {
-            platform: assetData.platform,
-            handle: assetData.handle,
-            project_name: project.token_name,
-            project_id: asset.project_id,
-            asset_id: asset_id
-          }
-        })
-
-      return NextResponse.json({
-        success: true,
-        message: 'Asset approved successfully',
-        data: {
-          asset_id,
-          platform: assetData.platform,
-          handle: assetData.handle
-        }
+    // 6. Update pending asset status
+    const { error: updateError } = await supabase
+      .from('pending_assets')
+      .update({
+        verification_status: 'verified',
+        verified_at: new Date().toISOString(),
+        approved_by: editorWallet,
+        approved_at: new Date().toISOString()
       })
+      .eq('id', assetId)
+
+    if (updateError) {
+      console.error('Failed to update pending asset:', updateError)
+      // Asset is created, so continue
     }
 
-    // ============================================
-    // REJECT ACTION
-    // ============================================
-    if (action === 'reject') {
-      // 1. Update pending asset status to hidden/rejected
-      const { error: updateError } = await supabase
-        .from('pending_assets')
-        .update({
-          verification_status: 'hidden',
-          hidden_at: new Date().toISOString()
-        })
-        .eq('id', asset_id)
-
-      if (updateError) {
-        console.error('Error updating pending asset:', updateError)
-        return NextResponse.json(
-          { error: 'Failed to reject asset' },
-          { status: 500 }
-        )
-      }
-
-      // 2. Log rejection action
-      if (wallet) {
-        await supabase
-          .from('admin_logs')
-          .insert({
-            action: 'social_asset_rejected',
-            admin_wallet: wallet,
-            project_id: asset.project_id,
-            entity_id: asset_id,
-            entity_type: 'pending_asset',
-            details: {
-              asset_type: asset.asset_type,
-              platform: assetData.platform,
-              handle: assetData.handle,
-              rejection_reason: rejection_reason || null,
-              project_name: project.token_name,
-              submitter_wallet: asset.submitter_wallet
-            }
-          })
-      }
-
-      // 3. Send notification to submitter
-      const reasonText = rejection_reason ? `: ${rejection_reason}` : ''
-      await supabase
-        .from('notifications')
-        .insert({
-          type: 'social_asset_rejected',
-          user_wallet: asset.submitter_wallet,
-          message: `Your ${assetData.platform} account @${assetData.handle} was not approved for ${project.token_name}${reasonText}`,
-          reference_id: asset.project_id,
-          reference_type: 'project',
-          metadata: {
-            platform: assetData.platform,
-            handle: assetData.handle,
-            rejection_reason: rejection_reason || null,
-            project_name: project.token_name,
-            project_id: asset.project_id,
-            asset_id: asset_id
-          }
-        })
-
-      return NextResponse.json({
-        success: true,
-        message: 'Asset rejected successfully',
-        data: {
-          asset_id,
-          platform: assetData.platform,
-          handle: assetData.handle,
-          rejection_reason: rejection_reason || null
-        }
-      })
-    }
-
-    // Should never reach here due to action validation above
-    return NextResponse.json(
-      { error: 'Invalid action' },
-      { status: 400 }
+    // 7. Create notification for submitter
+    await notifyAssetApproved(
+      pendingAsset.submitter_wallet,
+      projectId,
+      assetId,
+      pendingAsset.asset_type,
+      assetData,
+      pendingAsset.asset_classification,
+      editorWallet,
+      karmaReward
     )
 
+    // 8. Log admin action
+    await supabase
+      .from('admin_logs')
+      .insert({
+        admin_wallet: editorWallet,
+        action: 'asset_approved',
+        entity_type: 'social_asset',
+        entity_id: assetId,
+        project_id: projectId,
+        details: {
+          asset_type: pendingAsset.asset_type,
+          asset_classification: pendingAsset.asset_classification,
+          submitter: pendingAsset.submitter_wallet,
+          karma_awarded: karmaReward,
+          asset_data: assetData
+        }
+      })
+
+    return NextResponse.json({
+      success: true,
+      message: 'Asset approved successfully',
+      karmaAwarded: karmaReward,
+      assetId: newAsset.id
+    })
+
   } catch (error) {
-    console.error('Error in asset approval endpoint:', error)
+    console.error('Error in asset approval:', error)
     return NextResponse.json(
-      { error: 'Internal server error', details: error instanceof Error ? error.message : 'Unknown error' },
+      { error: 'Internal server error' },
       { status: 500 }
     )
   }
 }
-
