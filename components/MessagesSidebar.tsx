@@ -1,12 +1,14 @@
 'use client'
 
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
-import { useRouter } from 'next/navigation'
+import { useRouter, usePathname } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import { getUnreadCount, getOrCreateConversation, getExistingConversation } from '@/lib/messaging'
 import { ConversationList } from '@/components/ConversationList'
 import { MessageThread } from '@/components/MessageThread'
 import { MessageComposer } from '@/components/MessageComposer'
+import { SocialAssetFeed } from '@/components/admin/SocialAssetFeed'
+import { countPendingSocialAssets } from '@/lib/feed-queries-social-assets'
 import {
   Drawer,
   Box,
@@ -62,6 +64,7 @@ export function MessagesSidebar({
   targetWallet
 }: MessagesSidebarProps) {
   const router = useRouter()
+  const pathname = usePathname()
   // If targetWallet is provided, we'll be loading a thread - don't show list flash
   const [view, setView] = useState<SidebarView>('list')
   const [isLoadingThread, setIsLoadingThread] = useState(false)
@@ -73,6 +76,12 @@ export function MessagesSidebar({
   const [newMessageInput, setNewMessageInput] = useState('')
   const [creatingConversation, setCreatingConversation] = useState(false)
   const [refreshTrigger, setRefreshTrigger] = useState(0)
+  
+  // Project context state (for social asset feed)
+  const [projectId, setProjectId] = useState<string | null>(null)
+  const [isCreatorOrEditor, setIsCreatorOrEditor] = useState(false)
+  const [pendingAssetsCount, setPendingAssetsCount] = useState(0)
+  const [activeSection, setActiveSection] = useState<'messages' | 'social-assets'>('messages')
   
   // Force refresh conversation list when sidebar opens
   useEffect(() => {
@@ -98,6 +107,87 @@ export function MessagesSidebar({
       }
     }
   }, [])
+
+  // Detect if we're on a project page and extract projectId
+  useEffect(() => {
+    const match = pathname?.match(/\/project\/([^\/]+)/)
+    if (match) {
+      setProjectId(match[1])
+    } else {
+      setProjectId(null)
+      setIsCreatorOrEditor(false)
+      setPendingAssetsCount(0)
+    }
+  }, [pathname])
+
+  // Check if user is creator or editor for current project
+  useEffect(() => {
+    if (!projectId || !currentWallet) {
+      setIsCreatorOrEditor(false)
+      return
+    }
+
+    async function checkPermissions() {
+      try {
+        const { data: project } = await supabase
+          .from('projects')
+          .select('creator_wallet, editor_wallets')
+          .eq('id', projectId)
+          .single()
+
+        if (!project) {
+          setIsCreatorOrEditor(false)
+          return
+        }
+
+        const isCreator = project.creator_wallet === currentWallet
+        const isEditor = project.editor_wallets?.includes(currentWallet) || false
+
+        setIsCreatorOrEditor(isCreator || isEditor)
+      } catch (error) {
+        console.error('Error checking permissions:', error)
+        setIsCreatorOrEditor(false)
+      }
+    }
+
+    checkPermissions()
+  }, [projectId, currentWallet])
+
+  // Fetch pending social assets count
+  useEffect(() => {
+    if (!projectId || !isCreatorOrEditor) {
+      setPendingAssetsCount(0)
+      return
+    }
+
+    async function loadPendingCount() {
+      const count = await countPendingSocialAssets(projectId!)
+      setPendingAssetsCount(count)
+    }
+
+    loadPendingCount()
+
+    // Subscribe to changes
+    const subscription = supabase
+      .channel(`pending-assets-count:${projectId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'pending_assets',
+          filter: `project_id=eq.${projectId}`
+        },
+        () => {
+          loadPendingCount()
+        }
+      )
+      .subscribe()
+
+    return () => {
+      subscription.unsubscribe()
+    }
+  }, [projectId, isCreatorOrEditor])
 
   // Save search to history
   const saveSearchToHistory = useCallback((query: string) => {
@@ -626,6 +716,92 @@ export function MessagesSidebar({
         {/* List View */}
         {view === 'list' && !isLoadingThread && (
           <Box sx={{ display: 'flex', flexDirection: 'column', flex: 1, overflow: 'hidden' }}>
+            {/* Section Selector (only show on project pages for creators/editors) */}
+            {projectId && isCreatorOrEditor && (
+              <Box sx={{ 
+                px: 2, 
+                pt: 2,
+                display: 'flex', 
+                gap: 1,
+                borderBottom: '1px solid',
+                borderColor: 'divider'
+              }}>
+                <Button
+                  fullWidth
+                  variant={activeSection === 'messages' ? 'contained' : 'outlined'}
+                  onClick={() => setActiveSection('messages')}
+                  sx={{
+                    borderRadius: 2,
+                    py: 1,
+                    bgcolor: activeSection === 'messages' ? '#7C4DFF' : 'transparent',
+                    borderColor: activeSection === 'messages' ? '#7C4DFF' : 'divider',
+                    color: activeSection === 'messages' ? 'white' : 'text.primary',
+                    '&:hover': {
+                      bgcolor: activeSection === 'messages' ? '#6C3DDF' : 'rgba(124, 77, 255, 0.04)',
+                      borderColor: '#7C4DFF'
+                    }
+                  }}
+                >
+                  Messages
+                  {unreadCount > 0 && (
+                    <Badge
+                      badgeContent={unreadCount}
+                      sx={{
+                        ml: 1,
+                        '& .MuiBadge-badge': {
+                          bgcolor: activeSection === 'messages' ? 'white' : '#7C4DFF',
+                          color: activeSection === 'messages' ? '#7C4DFF' : 'white',
+                          fontWeight: 600,
+                          fontSize: '10px',
+                          height: '18px',
+                          minWidth: '18px',
+                          borderRadius: '9px'
+                        }
+                      }}
+                    />
+                  )}
+                </Button>
+                <Button
+                  fullWidth
+                  variant={activeSection === 'social-assets' ? 'contained' : 'outlined'}
+                  onClick={() => setActiveSection('social-assets')}
+                  sx={{
+                    borderRadius: 2,
+                    py: 1,
+                    bgcolor: activeSection === 'social-assets' ? '#FFB800' : 'transparent',
+                    borderColor: activeSection === 'social-assets' ? '#FFB800' : 'divider',
+                    color: activeSection === 'social-assets' ? 'white' : 'text.primary',
+                    '&:hover': {
+                      bgcolor: activeSection === 'social-assets' ? '#E5A500' : 'rgba(255, 184, 0, 0.04)',
+                      borderColor: '#FFB800'
+                    }
+                  }}
+                >
+                  Asset Reviews
+                  {pendingAssetsCount > 0 && (
+                    <Badge
+                      badgeContent={pendingAssetsCount > 99 ? '99+' : pendingAssetsCount}
+                      sx={{
+                        ml: 1,
+                        '& .MuiBadge-badge': {
+                          bgcolor: activeSection === 'social-assets' ? 'white' : '#FFB800',
+                          color: activeSection === 'social-assets' ? '#FFB800' : 'white',
+                          fontWeight: 600,
+                          fontSize: '10px',
+                          height: '18px',
+                          minWidth: '18px',
+                          borderRadius: '9px'
+                        }
+                      }}
+                    />
+                  )}
+                </Button>
+              </Box>
+            )}
+
+            {/* Messages Section */}
+            {activeSection === 'messages' && (
+              <>
             {/* Search Bar */}
             <Box sx={{ p: 2, position: 'relative' }}>
               <TextField
@@ -888,6 +1064,24 @@ export function MessagesSidebar({
                   )}
                 </Box>
               </>
+            )}
+              </>
+            )}
+
+            {/* Social Asset Feed Section */}
+            {activeSection === 'social-assets' && projectId && isCreatorOrEditor && (
+              <Box sx={{ flex: 1, overflow: 'auto', p: 2 }}>
+                <Typography variant="h6" sx={{ mb: 1, fontWeight: 600, px: 1 }}>
+                  Social Asset Submissions
+                </Typography>
+                <Typography variant="body2" color="text.secondary" sx={{ mb: 3, px: 1 }}>
+                  Review community-submitted social accounts and domains for your project
+                </Typography>
+                <SocialAssetFeed
+                  projectId={projectId}
+                  editorWallet={currentWallet}
+                />
+              </Box>
             )}
           </Box>
         )}
