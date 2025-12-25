@@ -1,6 +1,6 @@
 'use client'
 
-import { ReactNode } from 'react'
+import { ReactNode, Suspense } from 'react'
 import { useWallet } from '@solana/wallet-adapter-react'
 import { MessagingProvider } from '@/lib/MessagingContext'
 import { MessagesSidebar } from '@/components/MessagesSidebar'
@@ -56,7 +56,9 @@ export function LayoutClient({ children }: { children: ReactNode }) {
   return (
     <MessagingProvider currentWallet={wallet.publicKey?.toBase58()}>
       {children}
-      <MessagesSidebarWrapper />
+      <Suspense fallback={null}>
+        <MessagesSidebarWrapper />
+      </Suspense>
     </MessagingProvider>
   )
 }

@@ -2,7 +2,6 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { Box, Typography, CircularProgress, Button } from '@mui/material'
-import { useSearchParams } from 'next/navigation'
 import { SocialAssetFeedItem } from './SocialAssetFeedItem'
 import { 
   fetchPendingSocialAssets, 
@@ -28,10 +27,8 @@ export function SocialAssetFeed({ projectId, editorWallet, highlightAssetId: pro
   // Check if this is a global admin view
   const isGlobalAdmin = projectId === 'all'
   
-  // URL parameter reading for highlighting (prop takes priority)
-  const searchParams = useSearchParams()
-  const urlHighlightId = searchParams.get('highlight')
-  const highlightId = propHighlightId || urlHighlightId
+  // Highlight ID passed as prop from parent
+  const highlightId = propHighlightId
   const [highlightedAssetId, setHighlightedAssetId] = useState<string | null>(null)
   const highlightedRef = useRef<HTMLDivElement | null>(null)
 
