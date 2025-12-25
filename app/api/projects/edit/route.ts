@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase'
-import { verifyRequestSignature } from '@/lib/signature-auth'
 import { canEditProject } from '@/lib/permissions'
 
 /**
@@ -8,7 +7,10 @@ import { canEditProject } from '@/lib/permissions'
  * 
  * Edit project information (description, profile_image_url)
  * Projects are always live after creation
- * Requires signature verification and editor permissions
+ * 
+ * Authentication:
+ * - Creators: Always allowed (no session needed)
+ * - Editors: Requires valid 24-hour session (created via EditorSessionModal)
  */
 export async function POST(request: NextRequest) {
   try {
@@ -17,9 +19,7 @@ export async function POST(request: NextRequest) {
       project_id, 
       description, 
       profile_image_url,
-      wallet, 
-      signature, 
-      message 
+      wallet
     } = body
 
     console.log('[Edit Project API] Request received:', {
@@ -30,10 +30,10 @@ export async function POST(request: NextRequest) {
     })
 
     // Validate required fields
-    if (!project_id || !wallet || !signature || !message) {
+    if (!project_id || !wallet) {
       console.error('[Edit Project API] Missing required fields')
       return NextResponse.json(
-        { error: 'Missing required fields: project_id, wallet, signature, and message are required' },
+        { error: 'Missing required fields: project_id and wallet are required' },
         { status: 400 }
       )
     }
@@ -47,23 +47,8 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Verify signature
-    const signatureVerification = verifyRequestSignature(
-      { wallet, signature, message },
-      { action: 'Edit', resourceId: project_id }
-    )
-
-    if (!signatureVerification.success) {
-      console.error('[Edit Project API] Signature verification failed:', signatureVerification.error)
-      return NextResponse.json(
-        { error: signatureVerification.error || 'Invalid signature' },
-        { status: 403 }
-      )
-    }
-
-    console.log('[Edit Project API] ✅ Signature verified')
-
     // Check edit permissions (includes session validation for editors)
+    // Creators bypass session check, editors need valid 24-hour session
     const editPermission = await canEditProject(project_id, wallet)
     
     if (!editPermission.canEdit) {
@@ -74,7 +59,7 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    console.log('[Edit Project API] ✅ Permissions verified')
+    console.log('[Edit Project API] ✅ Permissions verified (session-based auth)')
 
     const supabase = supabaseAdmin
 

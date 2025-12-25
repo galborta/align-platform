@@ -12,6 +12,7 @@ import {
   CheckCircle as VerifiedIcon
 } from '@mui/icons-material'
 import { supabase } from '@/lib/supabase'
+import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/Card'
 
 interface SocialAsset {
   id: string
@@ -19,7 +20,7 @@ interface SocialAsset {
   handle: string
   profile_url: string | null
   follower_tier: string | null
-  verified: boolean
+  verified: boolean | null
   asset_classification: 'official' | 'affiliated'
   created_at: string | null
 }
@@ -272,158 +273,143 @@ export function SocialAssets({ projectId, tokenName, type }: SocialAssetsProps) 
   }
 
   // For affiliated assets, return section with header (used in dedicated section)
+  // Now includes its own Card wrapper so parent doesn't need to handle empty state
   if (type === 'affiliated') {
-    // Don't show section at all if there are no affiliated assets
+    // Don't show anything if there are no affiliated assets
     if (assets.length === 0) return null
 
     return (
-      <Box sx={{ display: 'flex', flexDirection: 'column', gap: { xs: 2, sm: 3 } }}>
-        {/* Social Accounts */}
-        {socialAccounts.length > 0 && (
-          <Box>
-            <Typography 
-              variant="h6" 
-              sx={{ 
-                fontFamily: 'var(--font-heading)',
-                fontSize: { xs: '16px', sm: 'var(--text-headline)' },
-                fontWeight: 'var(--weight-semibold)',
-                color: 'var(--text-primary)',
-                mb: 2
-              }}
-            >
-              Affiliated Social Accounts
-            </Typography>
+      <Card>
+        <CardContent className="!p-5 space-y-5">
+          {/* Social Accounts */}
+          {socialAccounts.length > 0 && (
+            <div>
+              <h3 className="font-display text-base font-semibold text-text-primary mb-2">
+                Affiliated Social Accounts
+              </h3>
 
-            <Box sx={{ 
-              display: 'flex', 
-              flexWrap: 'wrap', 
-              gap: { xs: 1, sm: 1.5 }
-            }}>
-              {sortedSocial.map(asset => (
-                <Tooltip
-                  key={asset.id}
-                  title={`@${asset.handle}${asset.follower_tier ? ` • ${asset.follower_tier}` : ''}`}
-                  arrow
-                >
-                  <MuiLink
-                    href={getPlatformUrl(asset)}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    sx={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: { xs: 0.75, sm: 1 },
-                      px: { xs: 1.25, sm: 1.5 },
-                      py: { xs: 0.75, sm: 1 },
-                      bgcolor: 'var(--card-background)',
-                      border: '1px solid var(--border-subtle)',
-                      borderRadius: 'var(--radius-control)',
-                      textDecoration: 'none',
-                      transition: 'all 0.2s',
-                      '&:hover': {
-                        bgcolor: '#FFF8E1',
-                        borderColor: '#FFB800',
-                        transform: 'translateY(-2px)',
-                        boxShadow: 'var(--shadow-chip)'
-                      },
-                      '@media (hover: none)': {
-                        '&:hover': {
-                          transform: 'none'
-                        }
-                      }
-                    }}
+              <Box sx={{ 
+                display: 'flex', 
+                flexWrap: 'wrap', 
+                gap: { xs: 1, sm: 1.5 }
+              }}>
+                {sortedSocial.map(asset => (
+                  <Tooltip
+                    key={asset.id}
+                    title={`@${asset.handle}${asset.follower_tier ? ` • ${asset.follower_tier}` : ''}`}
+                    arrow
                   >
-                    {getPlatformIcon(asset.platform)}
-                    <Typography
-                      variant="body2"
+                    <MuiLink
+                      href={getPlatformUrl(asset)}
+                      target="_blank"
+                      rel="noopener noreferrer"
                       sx={{
-                        fontFamily: 'var(--font-body)',
-                        fontSize: { xs: '13px', sm: 'var(--text-body-small)' },
-                        fontWeight: 'var(--weight-medium)',
-                        color: 'var(--text-primary)'
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: { xs: 0.75, sm: 1 },
+                        px: { xs: 1.25, sm: 1.5 },
+                        py: { xs: 0.75, sm: 1 },
+                        bgcolor: 'var(--subtle-background)',
+                        border: '1px solid var(--border-subtle)',
+                        borderRadius: 'var(--radius-control)',
+                        textDecoration: 'none',
+                        transition: 'all 0.2s',
+                        '&:hover': {
+                          bgcolor: '#FFF8E1',
+                          borderColor: '#FFB800',
+                          transform: 'translateY(-2px)',
+                          boxShadow: 'var(--shadow-chip)'
+                        },
+                        '@media (hover: none)': {
+                          '&:hover': {
+                            transform: 'none'
+                          }
+                        }
                       }}
                     >
-                      @{asset.handle}
-                    </Typography>
-                    <ExternalIcon sx={{ fontSize: { xs: 12, sm: 14 }, color: 'var(--icon-default)' }} />
-                  </MuiLink>
-                </Tooltip>
-              ))}
-            </Box>
-          </Box>
-        )}
+                      {getPlatformIcon(asset.platform)}
+                      <Typography
+                        variant="body2"
+                        sx={{
+                          fontFamily: 'var(--font-body)',
+                          fontSize: { xs: '13px', sm: 'var(--text-body-small)' },
+                          fontWeight: 'var(--weight-medium)',
+                          color: 'var(--text-primary)'
+                        }}
+                      >
+                        @{asset.handle}
+                      </Typography>
+                      <ExternalIcon sx={{ fontSize: { xs: 12, sm: 14 }, color: 'var(--icon-default)' }} />
+                    </MuiLink>
+                  </Tooltip>
+                ))}
+              </Box>
+            </div>
+          )}
 
-        {/* Domains */}
-        {domains.length > 0 && (
-          <Box>
-            <Typography 
-              variant="h6" 
-              sx={{ 
-                fontFamily: 'var(--font-heading)',
-                fontSize: { xs: '16px', sm: 'var(--text-headline)' },
-                fontWeight: 'var(--weight-semibold)',
-                color: 'var(--text-primary)',
-                mb: 2
-              }}
-            >
-              Affiliated Domains
-            </Typography>
+          {/* Domains */}
+          {domains.length > 0 && (
+            <div>
+              <h3 className="font-display text-base font-semibold text-text-primary mb-2">
+                Affiliated Domains
+              </h3>
 
-            <Box sx={{ 
-              display: 'flex', 
-              flexWrap: 'wrap', 
-              gap: { xs: 1, sm: 1.5 }
-            }}>
-              {domains.map(asset => (
-                <Tooltip key={asset.id} title={asset.handle} arrow>
-                  <MuiLink
-                    href={getPlatformUrl(asset)}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    sx={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: { xs: 0.75, sm: 1 },
-                      px: { xs: 1.25, sm: 1.5 },
-                      py: { xs: 0.75, sm: 1 },
-                      bgcolor: 'var(--card-background)',
-                      border: '1px solid var(--border-subtle)',
-                      borderRadius: 'var(--radius-control)',
-                      textDecoration: 'none',
-                      transition: 'all 0.2s',
-                      '&:hover': {
-                        bgcolor: '#FFF8E1',
-                        borderColor: '#FFB800',
-                        transform: 'translateY(-2px)',
-                        boxShadow: 'var(--shadow-chip)'
-                      },
-                      '@media (hover: none)': {
-                        '&:hover': {
-                          transform: 'none'
-                        }
-                      }
-                    }}
-                  >
-                    {getPlatformIcon(asset.platform)}
-                    <Typography
-                      variant="body2"
+              <Box sx={{ 
+                display: 'flex', 
+                flexWrap: 'wrap', 
+                gap: { xs: 1, sm: 1.5 }
+              }}>
+                {domains.map(asset => (
+                  <Tooltip key={asset.id} title={asset.handle} arrow>
+                    <MuiLink
+                      href={getPlatformUrl(asset)}
+                      target="_blank"
+                      rel="noopener noreferrer"
                       sx={{
-                        fontFamily: 'var(--font-body)',
-                        fontSize: { xs: '13px', sm: 'var(--text-body-small)' },
-                        fontWeight: 'var(--weight-medium)',
-                        color: 'var(--text-primary)'
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: { xs: 0.75, sm: 1 },
+                        px: { xs: 1.25, sm: 1.5 },
+                        py: { xs: 0.75, sm: 1 },
+                        bgcolor: 'var(--subtle-background)',
+                        border: '1px solid var(--border-subtle)',
+                        borderRadius: 'var(--radius-control)',
+                        textDecoration: 'none',
+                        transition: 'all 0.2s',
+                        '&:hover': {
+                          bgcolor: '#FFF8E1',
+                          borderColor: '#FFB800',
+                          transform: 'translateY(-2px)',
+                          boxShadow: 'var(--shadow-chip)'
+                        },
+                        '@media (hover: none)': {
+                          '&:hover': {
+                            transform: 'none'
+                          }
+                        }
                       }}
                     >
-                      {asset.handle}
-                    </Typography>
-                    <ExternalIcon sx={{ fontSize: { xs: 12, sm: 14 }, color: 'var(--icon-default)' }} />
-                  </MuiLink>
-                </Tooltip>
-              ))}
-            </Box>
-          </Box>
-        )}
-      </Box>
+                      {getPlatformIcon(asset.platform)}
+                      <Typography
+                        variant="body2"
+                        sx={{
+                          fontFamily: 'var(--font-body)',
+                          fontSize: { xs: '13px', sm: 'var(--text-body-small)' },
+                          fontWeight: 'var(--weight-medium)',
+                          color: 'var(--text-primary)'
+                        }}
+                      >
+                        {asset.handle}
+                      </Typography>
+                      <ExternalIcon sx={{ fontSize: { xs: 12, sm: 14 }, color: 'var(--icon-default)' }} />
+                    </MuiLink>
+                  </Tooltip>
+                ))}
+              </Box>
+            </div>
+          )}
+        </CardContent>
+      </Card>
     )
   }
 

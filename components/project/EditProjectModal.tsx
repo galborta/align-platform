@@ -140,10 +140,21 @@ export default function EditProjectModal({
   const [isSaving, setIsSaving] = useState(false)
   const [hasChanges, setHasChanges] = useState(false)
   const [successMessage, setSuccessMessage] = useState<string | null>(null)
+  
+  // Track original social values for change detection
+  const [originalTelegram, setOriginalTelegram] = useState('')
+  const [originalDomains, setOriginalDomains] = useState<string[]>([])
 
   const isCreator = publicKey?.toBase58() === project.creator_wallet
   const isEditor = project.editor_wallets?.includes(publicKey?.toBase58() || '')
   const canEditProject = isCreator || isEditor
+  
+  // Combined change detection for both Project Info and Social tabs
+  const hasProjectInfoChanges = description !== (project.description || '') || 
+    profileImageUrl !== (project.profile_image_url || '')
+  const hasSocialChanges = telegram !== originalTelegram || 
+    JSON.stringify(domains) !== JSON.stringify(originalDomains)
+  const hasAnyChanges = hasProjectInfoChanges || hasSocialChanges
 
   /**
    * Normalize domain input by removing protocols and www
@@ -250,7 +261,9 @@ export default function EditProjectModal({
         .single()
       
       if (!projectError && projectData) {
-        setTelegram((projectData as any).telegram || '')
+        const telegramValue = (projectData as any).telegram || ''
+        setTelegram(telegramValue)
+        setOriginalTelegram(telegramValue)
         
         // Merge website into domains array (website becomes first domain)
         const websiteValue = (projectData as any).website
@@ -269,6 +282,7 @@ export default function EditProjectModal({
         })
         
         setDomains(allDomains)
+        setOriginalDomains([...allDomains])
       }
       
       // Load social assets (includes both manual and community-approved)
@@ -613,62 +627,73 @@ export default function EditProjectModal({
   }
 
   /**
-   * Handle save with signature verification
+   * Handle unified save for all editable tabs (Project Info + Social)
+   * Uses session-based auth instead of per-action signatures
    */
-  const handleSave = async () => {
-    if (!publicKey || !signMessage) {
+  const handleSaveAll = async () => {
+    if (!publicKey) {
       alert('Please connect your wallet')
       return
     }
 
-    if (!validateForm()) {
+    // Validate project info form if it has changes
+    if (hasProjectInfoChanges && !validateForm()) {
       return
     }
 
     setIsSaving(true)
 
     try {
-      // Generate signature message
-      const message = [
-        'Edit Project Information',
-        '',
-        `Project: ${project.token_name}`,
-        `Timestamp: ${Date.now()}`,
-        '',
-        'By signing, you authorize these changes.'
-      ].join('\n')
-
-      const messageBytes = new TextEncoder().encode(message)
-      const signature = await signMessage(messageBytes)
-      const signatureBase58 = bs58.encode(signature)
-
-      // Save changes via API
-      const response = await fetch('/api/projects/edit', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          project_id: project.id,
-          description: description.trim(),
-          profile_image_url: profileImageUrl.trim() || null,
-          wallet: publicKey.toBase58(),
-          signature: signatureBase58,
-          message
+      const walletAddress = publicKey.toBase58()
+      
+      // Save project info changes if any
+      if (hasProjectInfoChanges) {
+        const response = await fetch('/api/projects/edit', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            project_id: project.id,
+            description: description.trim(),
+            profile_image_url: profileImageUrl.trim() || null,
+            wallet: walletAddress
+          })
         })
-      })
 
-      const data = await response.json()
+        const data = await response.json()
 
-      if (!response.ok) {
-        throw new Error(data.error || 'Failed to save changes')
+        if (!response.ok) {
+          throw new Error(data.error || 'Failed to save project info')
+        }
+      }
+
+      // Save social changes if any
+      if (hasSocialChanges) {
+        const { error: updateError } = await supabase
+          .from('projects')
+          .update({
+            website: domains.length > 0 ? domains[0] : null,
+            telegram: telegram || null,
+            domains: domains.length > 0 ? domains : null,
+          })
+          .eq('id', project.id)
+
+        if (updateError) throw updateError
+        
+        // Update original values to reflect saved state
+        setOriginalTelegram(telegram)
+        setOriginalDomains([...domains])
+        setHasChangedSocial(false)
       }
 
       // Success
+      setSuccessMessage('All changes saved successfully!')
+      setTimeout(() => setSuccessMessage(null), 3000)
       onProjectUpdated()
-      onClose()
       setHasChanges(false)
+      onClose()
 
     } catch (error) {
-      console.error('[Edit Project Modal] Error saving project:', error)
+      console.error('[Edit Project Modal] Error saving:', error)
       alert(error instanceof Error ? error.message : 'Failed to save changes')
     } finally {
       setIsSaving(false)
@@ -679,7 +704,7 @@ export default function EditProjectModal({
    * Handle close with unsaved changes warning
    */
   const handleClose = () => {
-    if (hasChanges && !isSaving && currentTab === 0) {
+    if (hasAnyChanges && !isSaving) {
       if (confirm('You have unsaved changes. Are you sure you want to close?')) {
         onClose()
       }
@@ -2649,8 +2674,8 @@ export default function EditProjectModal({
           gap: 'var(--space-sm)',
         }}
       >
-        {currentTab === 0 ? (
-          // Project Info Tab Actions
+        {(currentTab === 0 || currentTab === 2) ? (
+          // Project Info & Social Tabs - Unified Save
           <>
             <Button
               type="button"
@@ -2666,79 +2691,14 @@ export default function EditProjectModal({
               type="button"
               variant="primary"
               size="lg"
-              onClick={handleSave}
-              disabled={isSaving || !hasChanges}
-        >
-          {isSaving && (
-                <CircularProgress size={16} style={{ color: '#FFFFFF', marginRight: '4px' }} />
-          )}
-          {isSaving ? 'Saving...' : 'Save Changes'}
-            </Button>
-          </>
-        ) : currentTab === 2 ? (
-          // Social & Links Tab Actions
-          <>
-            <Button
-              type="button"
-              variant="secondary"
-              size="lg"
-              onClick={handleClose}
-              disabled={isSaving}
+              onClick={handleSaveAll}
+              disabled={isSaving || !hasAnyChanges}
             >
-              Cancel
+              {isSaving && (
+                <CircularProgress size={16} style={{ color: '#FFFFFF', marginRight: '4px' }} />
+              )}
+              {isSaving ? 'Saving...' : 'Save All Changes'}
             </Button>
-            
-            {hasChangedSocial && (
-              <Button
-                type="button"
-                variant="primary"
-                size="lg"
-                onClick={async () => {
-                  if (!publicKey) {
-                    alert('Please connect your wallet')
-                    return
-                  }
-
-                  setIsSaving(true)
-                  try {
-                    // Get signature for authentication
-                    const message = `Update social assets for project: ${project.name}`
-                    const encodedMessage = new TextEncoder().encode(message)
-                    const signature = await signMessage(encodedMessage)
-                    const signatureBase58 = bs58.encode(signature)
-
-                    // Update telegram and domains in projects table
-                    // Save first domain as website for backward compatibility
-                    const { error: updateError } = await supabase
-                      .from('projects')
-                      .update({
-                        website: domains.length > 0 ? domains[0] : null,
-                        telegram: telegram || null,
-                        domains: domains.length > 0 ? domains : null,
-                      })
-                      .eq('id', project.id)
-
-                    if (updateError) throw updateError
-
-                    setHasChangedSocial(false)
-                    setSuccessMessage('Social information updated!')
-                    setTimeout(() => setSuccessMessage(null), 3000)
-                    onProjectUpdated()
-                  } catch (err) {
-                    console.error('Error saving social:', err)
-                    alert('Failed to save social information')
-                  } finally {
-                    setIsSaving(false)
-                  }
-                }}
-                disabled={isSaving}
-              >
-                {isSaving && (
-                  <CircularProgress size={16} style={{ color: '#FFFFFF', marginRight: '4px' }} />
-                )}
-                {isSaving ? 'Saving...' : 'Save Changes'}
-              </Button>
-            )}
           </>
         ) : (
           // Other Tabs - Just Close

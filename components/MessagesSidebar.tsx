@@ -92,7 +92,8 @@ export function MessagesSidebar({
   
   // Project context state (for social asset feed)
   const [projectId, setProjectId] = useState<string | null>(initialProjectId || null)
-  const [isCreatorOrEditor, setIsCreatorOrEditor] = useState(false)
+  const [isCreatorOrEditor, setIsCreatorOrEditor] = useState(false)  // For specific project in URL
+  const [hasAnyProjectRole, setHasAnyProjectRole] = useState(false)  // For ANY project (used to show asset reviews)
   const [isGlobalAdmin, setIsGlobalAdmin] = useState(false)
   const [pendingAssetsCount, setPendingAssetsCount] = useState(0)
   const [activeSection, setActiveSection] = useState<'messages' | 'social-assets'>(initialSection || 'messages')
@@ -143,6 +144,49 @@ export function MessagesSidebar({
     }
 
     checkGlobalAdmin()
+  }, [currentWallet])
+  
+  // Check if user is creator or editor of ANY project (for showing asset reviews regardless of current page)
+  useEffect(() => {
+    if (!currentWallet) {
+      setHasAnyProjectRole(false)
+      return
+    }
+
+    async function checkAnyProjectRole() {
+      try {
+        // Check if user is creator of any project
+        const { data: creatorProjects, error: creatorError } = await supabase
+          .from('projects')
+          .select('id')
+          .eq('creator_wallet', currentWallet)
+          .limit(1)
+
+        if (!creatorError && creatorProjects && creatorProjects.length > 0) {
+          setHasAnyProjectRole(true)
+          return
+        }
+
+        // Check if user is editor of any project
+        const { data: editorProjects, error: editorError } = await supabase
+          .from('projects')
+          .select('id')
+          .contains('editor_wallets', [currentWallet])
+          .limit(1)
+
+        if (!editorError && editorProjects && editorProjects.length > 0) {
+          setHasAnyProjectRole(true)
+          return
+        }
+
+        setHasAnyProjectRole(false)
+      } catch (error) {
+        console.error('Error checking project roles:', error)
+        setHasAnyProjectRole(false)
+      }
+    }
+
+    checkAnyProjectRole()
   }, [currentWallet])
   
   // Message search state
@@ -1068,7 +1112,7 @@ export function MessagesSidebar({
                       }}
                       filter={filterTab}
                       refreshTrigger={refreshTrigger}
-                      showAssetReviews={isGlobalAdmin || isCreatorOrEditor}
+                      showAssetReviews={isGlobalAdmin || hasAnyProjectRole}
                     />
                   ) : (
                     <Box sx={{ p: 4, textAlign: 'center' }}>
@@ -1084,7 +1128,7 @@ export function MessagesSidebar({
             )}
 
             {/* Social Asset Feed Section - For global admins OR project creators/editors */}
-            {activeSection === 'social-assets' && (isGlobalAdmin || (projectId && isCreatorOrEditor)) && (
+            {activeSection === 'social-assets' && (isGlobalAdmin || hasAnyProjectRole) && (
               <Box sx={{ flex: 1, overflow: 'auto', display: 'flex', flexDirection: 'column' }}>
                 {/* Back Button Header */}
                 <Box sx={{ 
@@ -1123,11 +1167,12 @@ export function MessagesSidebar({
                 
                 {/* Asset Feed */}
                 <Box sx={{ flex: 1, overflow: 'auto', p: 2 }}>
-                  <SocialAssetFeed
-                    projectId={isGlobalAdmin && !projectId ? 'all' : projectId!}
-                    editorWallet={currentWallet}
-                    highlightAssetId={highlightAssetId}
-                  />
+                <SocialAssetFeed
+                  projectId={isGlobalAdmin ? (projectId || 'all') : (isCreatorOrEditor && projectId ? projectId : 'all')}
+                  editorWallet={currentWallet}
+                  highlightAssetId={highlightAssetId}
+                  isGlobalAdmin={isGlobalAdmin}
+                />
                 </Box>
               </Box>
             )}

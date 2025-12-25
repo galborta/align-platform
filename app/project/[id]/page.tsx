@@ -28,9 +28,11 @@ import { getProjectPermissions } from '@/lib/permissions'
 import type { ProjectPermissions } from '@/lib/permissions'
 import { Box } from '@mui/material'
 import VerifiedIcon from '@mui/icons-material/Verified'
-import CheckCircleIcon from '@mui/icons-material/CheckCircle'
+import CheckIcon from '@mui/icons-material/Check'
 import ArrowBackIcon from '@mui/icons-material/ArrowBack'
 import OpenInNewIcon from '@mui/icons-material/OpenInNew'
+import ContentCopyIcon from '@mui/icons-material/ContentCopy'
+import LaunchIcon from '@mui/icons-material/Launch'
 import { WalletAddressWithMessage } from '@/components/WalletAddressWithMessage'
 import { SocialAssets } from '@/components/project/SocialAssets'
 
@@ -103,6 +105,18 @@ export default function ProjectDetailPage() {
   
   // Edit modal state
   const [showEditModal, setShowEditModal] = useState(false)
+  
+  // Copy feedback state
+  const [contractCopied, setContractCopied] = useState(false)
+
+  // Copy contract address to clipboard
+  const copyContractAddress = async () => {
+    if (project?.token_mint) {
+      await navigator.clipboard.writeText(project.token_mint)
+      setContractCopied(true)
+      setTimeout(() => setContractCopied(false), 2000)
+    }
+  }
 
   // Fetch editor metadata with SWR
   const { data: editorMetadata, mutate: mutateEditors } = useSWR(
@@ -376,30 +390,48 @@ export default function ProjectDetailPage() {
                 <h1 className="font-display text-3xl font-bold text-text-primary mb-1">
                   {project.token_name}
                 </h1>
-                <p className="font-body text-lg text-text-secondary">
-                  ${project.token_symbol}
-                </p>
+                <div className="flex items-center gap-1.5 justify-center sm:justify-start mb-1">
+                  <p className="font-body text-lg text-text-secondary">
+                    ${project.token_symbol}
+                  </p>
+                  <button
+                    onClick={copyContractAddress}
+                    className="inline-flex items-center justify-center p-0.5 hover:opacity-80 transition-opacity duration-150"
+                    title="Copy contract address"
+                  >
+                    {contractCopied ? (
+                      <CheckIcon 
+                        sx={{ fontSize: 14 }} 
+                        className="text-accent-success"
+                      />
+                    ) : (
+                      <ContentCopyIcon 
+                        sx={{ fontSize: 14 }} 
+                        className="text-text-muted hover:text-accent-primary transition-colors"
+                      />
+                    )}
+                  </button>
+                </div>
                 {/* Domains inline under name/symbol, if available */}
                 {((project as any).domains && (project as any).domains.length > 0) && (
-                  <div className="flex flex-wrap items-center gap-1.5 justify-center sm:justify-start mb-3">
+                  <div className="flex flex-wrap items-center gap-2 justify-center sm:justify-start mb-3 mt-1">
                     {(project as any).domains.map((domain: string, idx: number) => (
-                      <span key={`domain-wrapper-${idx}`} className="inline-flex items-center gap-1.5">
-                        {idx > 0 && <span className="text-text-muted text-sm">•</span>}
-                        <a
-                          href={domain.startsWith('http') ? domain : `https://${domain}`}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="font-body text-sm text-text-secondary hover:text-accent-primary transition-colors"
-                        >
-                          {domain}
-                        </a>
-                      </span>
+                      <a
+                        key={`domain-wrapper-${idx}`}
+                        href={domain.startsWith('http') ? domain : `https://${domain}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1.5 px-3 py-1 bg-accent-primary-soft hover:bg-accent-primary/10 text-accent-primary rounded-full text-sm font-medium transition-colors underline-offset-2 hover:underline"
+                      >
+                        <LaunchIcon sx={{ fontSize: 14 }} />
+                        <span>{domain.replace(/^https?:\/\//, '')}</span>
+                      </a>
                     ))}
                   </div>
                 )}
                 <div className="flex flex-wrap items-center gap-2 justify-center sm:justify-start mb-4">
                   {getVerifiedSocialsCount() > 0 && (
-                    <div className="flex items-center gap-1 px-3 py-1 bg-accent-primary-soft text-accent-primary rounded-full text-sm font-medium">
+                    <div className="flex items-center gap-1 px-3 py-1 bg-accent-success-soft text-accent-success rounded-full text-sm font-medium">
                       <VerifiedIcon sx={{ fontSize: 18 }} />
                       <span>Verified</span>
                     </div>
@@ -625,28 +657,14 @@ export default function ProjectDetailPage() {
             )}
 
             {/* Affiliated Social Assets - Separate Section */}
+            {/* SocialAssets component handles its own Card wrapper and returns null if empty */}
             {project.status === 'live' && (
-              <Box 
-                sx={{ 
-                  order: { xs: 4, lg: 4 },
-                  // Hide entire box when CardContent is empty
-                  '& .MuiCardContent-root:empty': {
-                    display: 'none'
-                  },
-                  '& .MuiCard-root:has(.MuiCardContent-root:empty)': {
-                    display: 'none'
-                  }
-                }}
-              >
-                <Card>
-                  <CardContent>
-                    <SocialAssets 
-                      projectId={project.id}
-                      tokenName={project.token_name}
-                      type="affiliated"
-                    />
-                  </CardContent>
-                </Card>
+              <Box sx={{ order: { xs: 4, lg: 4 } }}>
+                <SocialAssets 
+                  projectId={project.id}
+                  tokenName={project.token_name}
+                  type="affiliated"
+                />
               </Box>
             )}
 

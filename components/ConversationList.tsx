@@ -53,9 +53,11 @@ interface ConversationWithDetails extends Conversation {
 interface SocialAssetReviewsEntry {
   type: 'social_asset_reviews'
   pendingCount: number
+  totalCount: number  // Total manageable assets (pending + verified + rejected + hidden)
   latestSubmitter?: string
   latestSubmitterProfile?: UserProfile
   latestAssetSummary?: string
+  latestAssetStatus?: string  // Status of latest asset
   latestCreatedAt: string
   isUnread: boolean
 }
@@ -143,11 +145,17 @@ export function ConversationList({
 
     async function loadAssetReviewsEntry() {
       try {
-        // Build query for counting and getting latest
-        let countQuery = supabase
+        // Build query for counting PENDING assets (for badge) and ALL assets (to show entry)
+        let pendingCountQuery = supabase
           .from('pending_assets')
           .select('id', { count: 'exact', head: true })
           .eq('verification_status', 'pending')
+
+        // Count ALL manageable assets (to determine if entry should show)
+        let totalCountQuery = supabase
+          .from('pending_assets')
+          .select('id', { count: 'exact', head: true })
+          .in('verification_status', ['pending', 'verified', 'rejected', 'hidden'])
 
         let latestQuery = supabase
           .from('pending_assets')
@@ -156,9 +164,10 @@ export function ConversationList({
             asset_type,
             asset_data,
             submitter_wallet,
-            created_at
+            created_at,
+            verification_status
           `)
-          .eq('verification_status', 'pending')
+          .in('verification_status', ['pending', 'verified', 'rejected', 'hidden'])
           .order('created_at', { ascending: false })
           .limit(1)
 
@@ -166,7 +175,8 @@ export function ConversationList({
         if (!userPermissions.isGlobalAdmin) {
           const allProjects = [...userPermissions.creatorProjects, ...userPermissions.editorProjects]
           if (allProjects.length > 0) {
-            countQuery = countQuery.in('project_id', allProjects)
+            pendingCountQuery = pendingCountQuery.in('project_id', allProjects)
+            totalCountQuery = totalCountQuery.in('project_id', allProjects)
             latestQuery = latestQuery.in('project_id', allProjects)
           } else {
             setAssetReviewsEntry(null)
@@ -174,16 +184,20 @@ export function ConversationList({
           }
         }
 
-        const [countResult, latestResult] = await Promise.all([countQuery, latestQuery])
+        const [pendingCountResult, totalCountResult, latestResult] = await Promise.all([
+          pendingCountQuery, totalCountQuery, latestQuery
+        ])
 
-        if (countResult.error || latestResult.error) {
-          console.error('Error loading asset reviews:', countResult.error || latestResult.error)
+        if (pendingCountResult.error || totalCountResult.error || latestResult.error) {
+          console.error('Error loading asset reviews:', pendingCountResult.error || totalCountResult.error || latestResult.error)
           return
         }
 
-        const pendingCount = countResult.count || 0
+        const pendingCount = pendingCountResult.count || 0
+        const totalCount = totalCountResult.count || 0
         
-        if (pendingCount === 0) {
+        // Show entry if there are ANY assets to manage (not just pending)
+        if (totalCount === 0) {
           setAssetReviewsEntry(null)
           return
         }
@@ -211,11 +225,13 @@ export function ConversationList({
         setAssetReviewsEntry({
           type: 'social_asset_reviews',
           pendingCount,
+          totalCount,
           latestSubmitter: latestAsset?.submitter_wallet,
           latestSubmitterProfile: latestProfile,
           latestAssetSummary,
+          latestAssetStatus: latestAsset?.verification_status,
           latestCreatedAt: latestAsset?.created_at || new Date().toISOString(),
-          isUnread: true // Always unread if there are pending items
+          isUnread: pendingCount > 0 // Only unread if there are pending items
         })
       } catch (error) {
         console.error('Error in loadAssetReviewsEntry:', error)
@@ -592,7 +608,7 @@ export function ConversationList({
             const latestDisplayName = getAssetReviewDisplayName(entry)
             
             return (
-              <ListItem
+                <ListItem
                 key="social-asset-reviews"
                 disablePadding
                 sx={{
@@ -610,7 +626,7 @@ export function ConversationList({
                 >
                   <ListItemAvatar>
                     <Badge
-                      badgeContent={entry.pendingCount}
+                      badgeContent={entry.pendingCount > 0 ? entry.pendingCount : entry.totalCount}
                       max={99}
                       sx={{
                         '& .MuiBadge-badge': {
@@ -649,7 +665,7 @@ export function ConversationList({
                           Social Asset Reviews
                         </Typography>
                         
-                        {/* Asset Review Tag - Yellow */}
+                        {/* Asset Review Tag - Always yellow */}
                         <Chip
                           label="Asset Review"
                           size="small"
@@ -669,16 +685,18 @@ export function ConversationList({
                               whiteSpace: 'nowrap',
                               overflow: 'visible'
                             },
-                            animation: `${pulseAnimation} 2s ease-in-out infinite`
+                            animation: entry.pendingCount > 0 ? `${pulseAnimation} 2s ease-in-out infinite` : 'none'
                           }}
                         />
 
-                        <FiberManualRecordIcon
-                          sx={{
-                            fontSize: 10,
-                            color: '#FFB800'
-                          }}
-                        />
+                        {entry.pendingCount > 0 && (
+                          <FiberManualRecordIcon
+                            sx={{
+                              fontSize: 10,
+                              color: '#FFB800'
+                            }}
+                          />
+                        )}
                       </Box>
                     }
                     secondary={
@@ -695,7 +713,10 @@ export function ConversationList({
                             whiteSpace: 'nowrap'
                           }}
                         >
-                          {entry.pendingCount} pending {entry.pendingCount === 1 ? 'review' : 'reviews'}
+                          {entry.pendingCount > 0 
+                            ? `${entry.pendingCount} pending ${entry.pendingCount === 1 ? 'review' : 'reviews'}`
+                            : `${entry.totalCount} ${entry.totalCount === 1 ? 'asset' : 'assets'} to manage`
+                          }
                         </Typography>
                         <Typography
                           variant="caption"
@@ -707,6 +728,9 @@ export function ConversationList({
                           }}
                         >
                           Latest: {entry.latestAssetSummary} by {latestDisplayName}
+                          {entry.latestAssetStatus === 'hidden' && ' (User Banned)'}
+                          {entry.latestAssetStatus === 'verified' && ' (Approved)'}
+                          {entry.latestAssetStatus === 'rejected' && ' (Rejected)'}
                         </Typography>
                       </Box>
                     }

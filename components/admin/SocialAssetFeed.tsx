@@ -12,20 +12,19 @@ import { supabase } from '@/lib/supabase'
 import { FeedSkeleton } from '@/components/FeedSkeleton'
 
 interface SocialAssetFeedProps {
-  projectId: string  // 'all' for global admin view
+  projectId: string  // 'all' for viewing multiple projects
   editorWallet: string
   highlightAssetId?: string | null  // Can be passed directly as prop
+  isGlobalAdmin?: boolean  // Explicitly passed from parent
 }
 
-export function SocialAssetFeed({ projectId, editorWallet, highlightAssetId: propHighlightId }: SocialAssetFeedProps) {
+export function SocialAssetFeed({ projectId, editorWallet, highlightAssetId: propHighlightId, isGlobalAdmin = false }: SocialAssetFeedProps) {
   const [items, setItems] = useState<SocialAssetFeedItemType[]>([])
   const [loading, setLoading] = useState(true)
   const [hasMore, setHasMore] = useState(true)
   const [offset, setOffset] = useState(0)
   const [loadingMore, setLoadingMore] = useState(false)
-  
-  // Check if this is a global admin view
-  const isGlobalAdmin = projectId === 'all'
+  const [userProjectIds, setUserProjectIds] = useState<string[]>([])  // Projects user can manage
   
   // Highlight ID passed as prop from parent
   const highlightId = propHighlightId
@@ -34,16 +33,68 @@ export function SocialAssetFeed({ projectId, editorWallet, highlightAssetId: pro
 
   const ITEMS_PER_PAGE = 20
 
+  // For non-global-admin users with projectId='all', fetch their project IDs first
+  useEffect(() => {
+    if (projectId !== 'all' || isGlobalAdmin) {
+      setUserProjectIds([])
+      return
+    }
+
+    async function loadUserProjects() {
+      try {
+        // Get projects where user is creator
+        const { data: creatorProjects } = await supabase
+          .from('projects')
+          .select('id')
+          .eq('creator_wallet', editorWallet)
+
+        // Get projects where user is editor
+        const { data: editorProjects } = await supabase
+          .from('projects')
+          .select('id')
+          .contains('editor_wallets', [editorWallet])
+
+        const allProjectIds = new Set<string>()
+        creatorProjects?.forEach(p => allProjectIds.add(p.id))
+        editorProjects?.forEach(p => allProjectIds.add(p.id))
+        
+        setUserProjectIds(Array.from(allProjectIds))
+      } catch (error) {
+        console.error('Error loading user projects:', error)
+        setUserProjectIds([])
+      }
+    }
+
+    loadUserProjects()
+  }, [projectId, isGlobalAdmin, editorWallet])
+
   // Load initial feed
   const loadFeed = useCallback(async () => {
+    // Wait for userProjectIds to be loaded if needed
+    if (projectId === 'all' && !isGlobalAdmin && userProjectIds.length === 0) {
+      // Don't load yet - waiting for user project IDs
+      return
+    }
+
     try {
       setLoading(true)
-      // Global admins (projectId === 'all') see ALL assets across all projects
-      const rawAssets = await fetchPendingSocialAssets(
-        projectId === 'all' ? null : projectId, 
-        ITEMS_PER_PAGE, 
-        0
-      )
+      
+      let rawAssets
+      if (projectId === 'all') {
+        if (isGlobalAdmin) {
+          // Global admins see ALL assets across all projects
+          rawAssets = await fetchPendingSocialAssets(null, ITEMS_PER_PAGE, 0)
+        } else {
+          // Non-admin users see assets from their projects only
+          rawAssets = await fetchPendingSocialAssets(null, ITEMS_PER_PAGE * 5, 0) // Fetch more to filter
+          rawAssets = rawAssets.filter(asset => userProjectIds.includes(asset.project_id))
+          rawAssets = rawAssets.slice(0, ITEMS_PER_PAGE)
+        }
+      } else {
+        // Specific project
+        rawAssets = await fetchPendingSocialAssets(projectId, ITEMS_PER_PAGE, 0)
+      }
+      
       const transformed = rawAssets.map(transformPendingAsset)
       
       setItems(transformed)
@@ -54,7 +105,7 @@ export function SocialAssetFeed({ projectId, editorWallet, highlightAssetId: pro
     } finally {
       setLoading(false)
     }
-  }, [projectId])
+  }, [projectId, isGlobalAdmin, userProjectIds])
 
   // Load more items
   const loadMore = async () => {
@@ -63,12 +114,21 @@ export function SocialAssetFeed({ projectId, editorWallet, highlightAssetId: pro
     setLoadingMore(true)
     try {
       const nextOffset = offset + ITEMS_PER_PAGE
-      // Global admins see ALL assets across all projects
-      const rawAssets = await fetchPendingSocialAssets(
-        projectId === 'all' ? null : projectId, 
-        ITEMS_PER_PAGE, 
-        nextOffset
-      )
+      
+      let rawAssets
+      if (projectId === 'all') {
+        if (isGlobalAdmin) {
+          rawAssets = await fetchPendingSocialAssets(null, ITEMS_PER_PAGE, nextOffset)
+        } else {
+          // Non-admin users see assets from their projects only
+          rawAssets = await fetchPendingSocialAssets(null, ITEMS_PER_PAGE * 5, nextOffset)
+          rawAssets = rawAssets.filter(asset => userProjectIds.includes(asset.project_id))
+          rawAssets = rawAssets.slice(0, ITEMS_PER_PAGE)
+        }
+      } else {
+        rawAssets = await fetchPendingSocialAssets(projectId, ITEMS_PER_PAGE, nextOffset)
+      }
+      
       const transformed = rawAssets.map(transformPendingAsset)
       
       setItems(prev => [...prev, ...transformed])
@@ -86,10 +146,17 @@ export function SocialAssetFeed({ projectId, editorWallet, highlightAssetId: pro
     loadFeed()
   }, [loadFeed])
 
-  // Initial load
+  // Initial load - only when we have the necessary data
   useEffect(() => {
-    loadFeed()
-  }, [loadFeed])
+    // For non-global-admin with 'all', wait for userProjectIds
+    if (projectId === 'all' && !isGlobalAdmin) {
+      if (userProjectIds.length > 0) {
+        loadFeed()
+      }
+    } else {
+      loadFeed()
+    }
+  }, [loadFeed, projectId, isGlobalAdmin, userProjectIds])
 
   // Handle asset highlighting from URL
   useEffect(() => {
@@ -122,7 +189,7 @@ export function SocialAssetFeed({ projectId, editorWallet, highlightAssetId: pro
     console.log('🔌 Setting up social asset feed subscription')
 
     const channelName = projectId === 'all' 
-      ? 'social-assets:global'
+      ? `social-assets:global:${editorWallet}`
       : `social-assets:${projectId}`
 
     const subscriptionConfig: any = {
@@ -131,7 +198,7 @@ export function SocialAssetFeed({ projectId, editorWallet, highlightAssetId: pro
       table: 'pending_assets'
     }
 
-    // Only add project filter for specific projects (not for global admins)
+    // Only add project filter for specific projects
     if (projectId !== 'all') {
       subscriptionConfig.filter = `project_id=eq.${projectId}`
     }
@@ -140,6 +207,14 @@ export function SocialAssetFeed({ projectId, editorWallet, highlightAssetId: pro
       .channel(channelName)
       .on('postgres_changes', subscriptionConfig, (payload) => {
         console.log('🔔 Social asset change:', payload)
+        
+        // For non-global-admin with 'all', filter by user's projects
+        const newRecord = payload.new as any
+        if (projectId === 'all' && !isGlobalAdmin && newRecord?.project_id) {
+          if (!userProjectIds.includes(newRecord.project_id)) {
+            return // Ignore updates for projects user doesn't manage
+          }
+        }
         
         if (payload.eventType === 'INSERT') {
           // New asset submitted - prepend to feed
@@ -162,7 +237,7 @@ export function SocialAssetFeed({ projectId, editorWallet, highlightAssetId: pro
       console.log('🔌 Cleaning up social asset feed subscription')
       subscription.unsubscribe()
     }
-  }, [projectId])
+  }, [projectId, isGlobalAdmin, userProjectIds, editorWallet])
 
   if (loading) {
     return (
@@ -203,7 +278,7 @@ export function SocialAssetFeed({ projectId, editorWallet, highlightAssetId: pro
         >
           <SocialAssetFeedItem
             item={item}
-            projectId={isGlobalAdmin && item.projectId ? item.projectId : projectId}
+            projectId={item.projectId || projectId}  // Use item's project ID when viewing 'all'
             editorWallet={editorWallet}
             onActionComplete={handleActionComplete}
             isHighlighted={item.id === highlightedAssetId}

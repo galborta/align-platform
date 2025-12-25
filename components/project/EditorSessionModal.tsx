@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { Dialog, DialogTitle, DialogContent, DialogActions, CircularProgress } from '@mui/material'
 import { useWallet } from '@solana/wallet-adapter-react'
 import { createEditorSession } from '@/lib/editors'
+import bs58 from 'bs58'
 import InfoIcon from '@mui/icons-material/InfoOutlined'
 import ErrorIcon from '@mui/icons-material/ErrorOutline'
 import VerifiedIcon from '@mui/icons-material/VerifiedUserOutlined'
@@ -83,7 +84,7 @@ export default function EditorSessionModal({
       const signatureBytes = await signMessage(messageBytes)
       
       // Convert signature to base58 for storage
-      const signatureBase58 = Buffer.from(signatureBytes).toString('base64')
+      const signatureBase58 = bs58.encode(signatureBytes)
 
       // Create session in database
       const result = await createEditorSession(
