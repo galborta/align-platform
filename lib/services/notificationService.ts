@@ -1107,6 +1107,37 @@ class NotificationService {
           body: `Your job "${metadata.job_title || 'a job'}" status changed to ${metadata.new_status || 'updated'}`
         };
 
+      // Social asset review notifications
+      case 'social_asset_pending':
+        const assetInfo = metadata.asset_platform 
+          ? `@${metadata.asset_handle} on ${metadata.asset_platform}`
+          : metadata.asset_domain || 'an asset';
+        const classificationLabel = metadata.asset_classification === 'affiliated' ? 'Affiliated' : 'Official';
+        return {
+          title: `🔶 New ${classificationLabel} Asset Submitted`,
+          body: `${actorName} submitted ${assetInfo} for review`
+        };
+
+      case 'social_asset_approved':
+        const approvedAsset = metadata.asset_platform 
+          ? `@${metadata.asset_handle} on ${metadata.asset_platform}`
+          : metadata.asset_domain || 'Your asset';
+        return {
+          title: '✅ Asset Approved!',
+          body: `${approvedAsset} was approved! +${metadata.karma_points?.toFixed(1) || '0'} karma earned`
+        };
+
+      case 'social_asset_rejected':
+        const rejectedAsset = metadata.asset_platform 
+          ? `@${metadata.asset_handle} on ${metadata.asset_platform}`
+          : metadata.asset_domain || 'Your asset';
+        return {
+          title: '❌ Asset Rejected',
+          body: metadata.rejection_reason 
+            ? `${rejectedAsset} was rejected: ${metadata.rejection_reason}`
+            : `${rejectedAsset} was rejected`
+        };
+
       default:
         return {
           title: '🔔 Notification',

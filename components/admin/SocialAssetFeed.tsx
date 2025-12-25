@@ -13,20 +13,25 @@ import { supabase } from '@/lib/supabase'
 import { FeedSkeleton } from '@/components/FeedSkeleton'
 
 interface SocialAssetFeedProps {
-  projectId: string
+  projectId: string  // 'all' for global admin view
   editorWallet: string
+  highlightAssetId?: string | null  // Can be passed directly as prop
 }
 
-export function SocialAssetFeed({ projectId, editorWallet }: SocialAssetFeedProps) {
+export function SocialAssetFeed({ projectId, editorWallet, highlightAssetId: propHighlightId }: SocialAssetFeedProps) {
   const [items, setItems] = useState<SocialAssetFeedItemType[]>([])
   const [loading, setLoading] = useState(true)
   const [hasMore, setHasMore] = useState(true)
   const [offset, setOffset] = useState(0)
   const [loadingMore, setLoadingMore] = useState(false)
   
-  // URL parameter reading for highlighting
+  // Check if this is a global admin view
+  const isGlobalAdmin = projectId === 'all'
+  
+  // URL parameter reading for highlighting (prop takes priority)
   const searchParams = useSearchParams()
-  const highlightId = searchParams.get('highlight')
+  const urlHighlightId = searchParams.get('highlight')
+  const highlightId = propHighlightId || urlHighlightId
   const [highlightedAssetId, setHighlightedAssetId] = useState<string | null>(null)
   const highlightedRef = useRef<HTMLDivElement | null>(null)
 
@@ -36,7 +41,12 @@ export function SocialAssetFeed({ projectId, editorWallet }: SocialAssetFeedProp
   const loadFeed = useCallback(async () => {
     try {
       setLoading(true)
-      const rawAssets = await fetchPendingSocialAssets(projectId, ITEMS_PER_PAGE, 0)
+      // Global admins (projectId === 'all') see ALL assets across all projects
+      const rawAssets = await fetchPendingSocialAssets(
+        projectId === 'all' ? null : projectId, 
+        ITEMS_PER_PAGE, 
+        0
+      )
       const transformed = rawAssets.map(transformPendingAsset)
       
       setItems(transformed)
@@ -56,7 +66,12 @@ export function SocialAssetFeed({ projectId, editorWallet }: SocialAssetFeedProp
     setLoadingMore(true)
     try {
       const nextOffset = offset + ITEMS_PER_PAGE
-      const rawAssets = await fetchPendingSocialAssets(projectId, ITEMS_PER_PAGE, nextOffset)
+      // Global admins see ALL assets across all projects
+      const rawAssets = await fetchPendingSocialAssets(
+        projectId === 'all' ? null : projectId, 
+        ITEMS_PER_PAGE, 
+        nextOffset
+      )
       const transformed = rawAssets.map(transformPendingAsset)
       
       setItems(prev => [...prev, ...transformed])
@@ -109,35 +124,41 @@ export function SocialAssetFeed({ projectId, editorWallet }: SocialAssetFeedProp
   useEffect(() => {
     console.log('🔌 Setting up social asset feed subscription')
 
+    const channelName = projectId === 'all' 
+      ? 'social-assets:global'
+      : `social-assets:${projectId}`
+
+    const subscriptionConfig: any = {
+      event: '*',
+      schema: 'public',
+      table: 'pending_assets'
+    }
+
+    // Only add project filter for specific projects (not for global admins)
+    if (projectId !== 'all') {
+      subscriptionConfig.filter = `project_id=eq.${projectId}`
+    }
+
     const subscription = supabase
-      .channel(`social-assets:${projectId}`)
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'pending_assets',
-          filter: `project_id=eq.${projectId}`
-        },
-        (payload) => {
-          console.log('🔔 Social asset change:', payload)
-          
-          if (payload.eventType === 'INSERT') {
-            // New asset submitted - prepend to feed
-            const transformed = transformPendingAsset(payload.new)
-            setItems(prev => [transformed, ...prev])
-          } else if (payload.eventType === 'UPDATE') {
-            // Asset approved/rejected - update in place
-            const transformed = transformPendingAsset(payload.new)
-            setItems(prev => prev.map(item => 
-              item.id === transformed.id ? transformed : item
-            ))
-          } else if (payload.eventType === 'DELETE') {
-            // Asset deleted - remove from feed
-            setItems(prev => prev.filter(item => item.id !== payload.old.id))
-          }
+      .channel(channelName)
+      .on('postgres_changes', subscriptionConfig, (payload) => {
+        console.log('🔔 Social asset change:', payload)
+        
+        if (payload.eventType === 'INSERT') {
+          // New asset submitted - prepend to feed
+          const transformed = transformPendingAsset(payload.new)
+          setItems(prev => [transformed, ...prev])
+        } else if (payload.eventType === 'UPDATE') {
+          // Asset approved/rejected - update in place
+          const transformed = transformPendingAsset(payload.new)
+          setItems(prev => prev.map(item => 
+            item.id === transformed.id ? transformed : item
+          ))
+        } else if (payload.eventType === 'DELETE') {
+          // Asset deleted - remove from feed
+          setItems(prev => prev.filter(item => item.id !== payload.old.id))
         }
-      )
+      })
       .subscribe()
 
     return () => {
@@ -185,10 +206,11 @@ export function SocialAssetFeed({ projectId, editorWallet }: SocialAssetFeedProp
         >
           <SocialAssetFeedItem
             item={item}
-            projectId={projectId}
+            projectId={isGlobalAdmin && item.projectId ? item.projectId : projectId}
             editorWallet={editorWallet}
             onActionComplete={handleActionComplete}
             isHighlighted={item.id === highlightedAssetId}
+            isGlobalAdmin={isGlobalAdmin}
           />
         </Box>
       ))}

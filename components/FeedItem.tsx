@@ -384,7 +384,12 @@ function getActivityContent(item: FeedItemType, projectId: string, tokenMint?: s
             tokenMint={tokenMint}
           />
           {' submitted '}
-          <span className="feed-item-link">{data.assetType} asset</span>
+          <span className="feed-item-link">
+            {data.assetName || `${data.assetType} asset`}
+          </span>
+          {data.assetType === 'social' && data.assetName && (
+            <span style={{ color: '#666' }}> ({data.assetType})</span>
+          )}
         </>
       )
     case 'asset_upvoted':
@@ -403,7 +408,9 @@ function getActivityContent(item: FeedItemType, projectId: string, tokenMint?: s
               {batchedCount} holders
             </span>
             {' upvoted '}
-            <span className="feed-item-link">{data.assetType} asset</span>
+            <span className="feed-item-link">
+              {data.assetName || `${data.assetType} asset`}
+            </span>
           </>
         )
       }
@@ -418,25 +425,39 @@ function getActivityContent(item: FeedItemType, projectId: string, tokenMint?: s
             tokenMint={tokenMint}
           />
           {' upvoted '}
-          <span className="feed-item-link">{data.assetType} asset</span>
+          <span className="feed-item-link">
+            {data.assetName || `${data.assetType} asset`}
+          </span>
         </>
       )
     case 'asset_backed':
       return (
         <>
-          <span className="feed-item-link">{data.assetType} asset</span> reached <strong>backing threshold</strong>
+          <span className="feed-item-link">
+            {data.assetName || `${data.assetType} asset`}
+          </span>
+          {' reached '}
+          <strong>backing threshold</strong>
         </>
       )
     case 'asset_verified':
       return (
         <>
-          <span className="feed-item-link">{data.assetType} asset</span> <strong>verified</strong> ✓
+          <span className="feed-item-link">
+            {data.assetName || `${data.assetType} asset`}
+          </span>
+          {' was '}
+          <strong>verified</strong>
+          {' ✓'}
         </>
       )
     case 'asset_hidden':
       return (
         <>
-          <span className="feed-item-link">{data.assetType} asset</span> hidden
+          <span className="feed-item-link">
+            {data.assetName || `${data.assetType} asset`}
+          </span>
+          {' hidden'}
         </>
       )
     case 'tip_sent':
@@ -510,6 +531,9 @@ function formatRelativeTime(date: Date): string {
   const now = new Date()
   const seconds = Math.floor((now.getTime() - date.getTime()) / 1000)
   
+  // Handle future dates or very recent (within 5 seconds)
+  if (seconds < 0) return 'just now'
+  if (seconds < 5) return 'just now'
   if (seconds < 60) return `${seconds}s ago`
   const minutes = Math.floor(seconds / 60)
   if (minutes < 60) return `${minutes}m ago`

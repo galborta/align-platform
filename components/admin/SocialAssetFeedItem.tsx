@@ -24,6 +24,7 @@ import {
   CheckCircle as ApproveIcon,
   Cancel as RejectIcon,
   Block as BanIcon,
+  RemoveCircleOutline as UnbanIcon,
   MoreVert as MoreIcon
 } from '@mui/icons-material'
 import { WalletAddressWithButtons } from '@/components/WalletAddressWithButtons'
@@ -37,15 +38,20 @@ interface SocialAssetFeedItemProps {
   editorWallet: string
   onActionComplete: () => void
   isHighlighted?: boolean
+  isGlobalAdmin?: boolean  // Show project name when viewing as global admin
 }
 
 export function SocialAssetFeedItem({ 
   item, 
-  projectId, 
+  projectId: propProjectId, 
   editorWallet,
   onActionComplete,
-  isHighlighted = false
+  isHighlighted = false,
+  isGlobalAdmin = false
 }: SocialAssetFeedItemProps) {
+  // Always use the item's actual projectId for API calls
+  // This is important for global admin view where propProjectId might be 'all'
+  const projectId = item.projectId || propProjectId
   const [loading, setLoading] = useState(false)
   const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null)
   const [rejectDialogOpen, setRejectDialogOpen] = useState(false)
@@ -57,6 +63,7 @@ export function SocialAssetFeedItem({
   const isPending = item.status === 'pending'
   const isApproved = item.status === 'verified'
   const isRejected = item.status === 'rejected'
+  const isHidden = item.status === 'hidden'  // User was banned
 
   // Get platform icon
   const getPlatformIcon = () => {
@@ -83,8 +90,9 @@ export function SocialAssetFeedItem({
     return item.classification === 'official' ? '#7C4DFF' : '#FFB800'
   }
 
+  // Approve asset (works for pending and rejected assets)
   const handleApprove = async () => {
-    if (!isPending) return
+    if (isApproved) return
 
     setLoading(true)
     try {
@@ -94,7 +102,8 @@ export function SocialAssetFeedItem({
         body: JSON.stringify({
           assetId: item.id,
           projectId,
-          editorWallet
+          editorWallet,
+          isReapproval: isRejected // Flag if this is re-approving a rejected asset
         })
       })
 
@@ -104,7 +113,11 @@ export function SocialAssetFeedItem({
         throw new Error(data.error || 'Failed to approve asset')
       }
 
-      toast.success(`Asset approved! Submitter earned ${data.karmaAwarded.toFixed(1)} karma`)
+      if (isRejected) {
+        toast.success('Asset re-approved successfully!')
+      } else {
+        toast.success(`Asset approved! Submitter earned ${data.karmaAwarded?.toFixed(1) || 0} karma`)
+      }
       onActionComplete()
     } catch (error) {
       console.error('Error approving asset:', error)
@@ -114,6 +127,7 @@ export function SocialAssetFeedItem({
     }
   }
 
+  // Reject asset (works for pending assets)
   const handleReject = async () => {
     if (!isPending) return
 
@@ -143,6 +157,38 @@ export function SocialAssetFeedItem({
     } catch (error) {
       console.error('Error rejecting asset:', error)
       toast.error(error instanceof Error ? error.message : 'Failed to reject asset')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  // Revoke approval (for approved assets)
+  const handleRevoke = async () => {
+    if (!isApproved) return
+
+    setLoading(true)
+    try {
+      const response = await fetch('/api/assets/revoke', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          assetId: item.id,
+          projectId,
+          editorWallet
+        })
+      })
+
+      const data = await response.json()
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to revoke asset')
+      }
+
+      toast.success('Asset approval revoked')
+      onActionComplete()
+    } catch (error) {
+      console.error('Error revoking asset:', error)
+      toast.error(error instanceof Error ? error.message : 'Failed to revoke asset')
     } finally {
       setLoading(false)
     }
@@ -181,6 +227,37 @@ export function SocialAssetFeedItem({
     }
   }
 
+  // Unban user and restore asset to pending
+  const handleUnban = async () => {
+    setLoading(true)
+    try {
+      const response = await fetch('/api/assets/unban-user', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userWallet: item.submitterWallet,
+          projectId,
+          editorWallet,
+          assetId: item.id
+        })
+      })
+
+      const data = await response.json()
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to unban user')
+      }
+
+      toast.success(`User unbanned. ${data.assetsRestored} assets restored`)
+      onActionComplete()
+    } catch (error) {
+      console.error('Error unbanning user:', error)
+      toast.error(error instanceof Error ? error.message : 'Failed to unban user')
+    } finally {
+      setLoading(false)
+    }
+  }
+
   return (
     <>
       <Box
@@ -189,14 +266,15 @@ export function SocialAssetFeedItem({
           border: '1px solid',
           borderColor: isHighlighted ? '#FFB800' : 'divider',
           borderRadius: 2,
-          bgcolor: isApproved 
-            ? 'success.light' 
+          bgcolor: isHidden
+            ? 'rgba(156, 39, 176, 0.08)'  // Purple for banned/hidden
+            : isApproved 
+            ? 'rgba(76, 175, 80, 0.08)' 
             : isRejected 
-            ? 'error.light' 
+            ? 'rgba(244, 67, 54, 0.08)' 
             : isHighlighted 
             ? 'rgba(255, 184, 0, 0.1)'
             : 'background.paper',
-          opacity: isApproved || isRejected ? 0.7 : 1,
           transition: 'all 0.2s',
           boxShadow: isHighlighted ? '0 0 0 2px rgba(255, 184, 0, 0.3)' : 'none',
           animation: isHighlighted ? 'pulse-yellow 2s ease-in-out 2' : 'none',
@@ -264,6 +342,15 @@ export function SocialAssetFeedItem({
               }
               {' • '}
               {formatDistanceToNow(new Date(item.createdAt), { addSuffix: true })}
+              {/* Show project name for global admin */}
+              {isGlobalAdmin && item.projectName && (
+                <>
+                  {' • '}
+                  <Box component="span" sx={{ fontWeight: 600, color: '#7C4DFF' }}>
+                    {item.projectName}
+                  </Box>
+                </>
+              )}
             </Typography>
           </Box>
 
@@ -284,17 +371,27 @@ export function SocialAssetFeedItem({
               color="error"
             />
           )}
-
-          {/* More Menu */}
-          {isPending && (
-            <IconButton
+          {isHidden && (
+            <Chip
+              icon={<BanIcon sx={{ fontSize: 14 }} />}
+              label="User Banned"
               size="small"
-              onClick={(e) => setAnchorEl(e.currentTarget)}
-              disabled={loading}
-            >
-              <MoreIcon />
-            </IconButton>
+              sx={{ 
+                bgcolor: '#9C27B0', 
+                color: 'white',
+                '& .MuiChip-icon': { color: 'white' }
+              }}
+            />
           )}
+
+          {/* More Menu - show for all statuses */}
+          <IconButton
+            size="small"
+            onClick={(e) => setAnchorEl(e.currentTarget)}
+            disabled={loading}
+          >
+            <MoreIcon />
+          </IconButton>
         </Box>
 
         {/* Submitter Row */}
@@ -338,13 +435,60 @@ export function SocialAssetFeedItem({
           </Box>
         )}
 
-        {/* Action Buttons (only for pending) */}
-        {isPending && (
-          <Box sx={{ 
-            display: 'flex', 
-            gap: 1,
-            flexDirection: { xs: 'column', sm: 'row' }
-          }}>
+        {/* Action Buttons */}
+        <Box sx={{ 
+          display: 'flex', 
+          gap: 1,
+          flexDirection: { xs: 'column', sm: 'row' }
+        }}>
+          {/* Pending: Show Approve and Reject */}
+          {isPending && (
+            <>
+              <Button
+                variant="contained"
+                color="success"
+                size="small"
+                startIcon={<ApproveIcon />}
+                onClick={handleApprove}
+                disabled={loading}
+                fullWidth
+                sx={{ flex: 1 }}
+              >
+                Approve
+              </Button>
+              <Button
+                variant="outlined"
+                color="error"
+                size="small"
+                startIcon={<RejectIcon />}
+                onClick={() => setRejectDialogOpen(true)}
+                disabled={loading}
+                fullWidth
+                sx={{ flex: 1 }}
+              >
+                Reject
+              </Button>
+            </>
+          )}
+          
+          {/* Approved: Show Revoke option */}
+          {isApproved && (
+            <Button
+              variant="outlined"
+              color="warning"
+              size="small"
+              startIcon={<RejectIcon />}
+              onClick={handleRevoke}
+              disabled={loading}
+              fullWidth
+              sx={{ flex: 1 }}
+            >
+              {loading ? 'Revoking...' : 'Revoke'}
+            </Button>
+          )}
+          
+          {/* Rejected: Show Re-approve option */}
+          {isRejected && (
             <Button
               variant="contained"
               color="success"
@@ -355,37 +499,39 @@ export function SocialAssetFeedItem({
               fullWidth
               sx={{ flex: 1 }}
             >
-              Approve
+              Re-approve
             </Button>
-            <Button
-              variant="outlined"
-              color="error"
-              size="small"
-              startIcon={<RejectIcon />}
-              onClick={() => setRejectDialogOpen(true)}
-              disabled={loading}
-              fullWidth
-              sx={{ flex: 1 }}
-            >
-              Reject
-            </Button>
-          </Box>
-        )}
+          )}
+          
+          {/* Hidden (Banned): No action buttons, use menu for unban */}
+        </Box>
       </Box>
 
-      {/* More Menu */}
+      {/* More Menu - Only ban/unban options */}
       <Menu
         anchorEl={anchorEl}
         open={Boolean(anchorEl)}
         onClose={() => setAnchorEl(null)}
       >
-        <MenuItem onClick={() => {
-          setAnchorEl(null)
-          setBanDialogOpen(true)
-        }}>
-          <BanIcon sx={{ mr: 1, fontSize: 18 }} />
-          Ban User
-        </MenuItem>
+        {/* For hidden (banned) assets: option to unban */}
+        {isHidden ? (
+          <MenuItem onClick={() => {
+            setAnchorEl(null)
+            handleUnban()
+          }}>
+            <UnbanIcon sx={{ mr: 1, fontSize: 18, color: '#9C27B0' }} />
+            Unban User
+          </MenuItem>
+        ) : (
+          /* Ban user option - available for non-hidden statuses */
+          <MenuItem onClick={() => {
+            setAnchorEl(null)
+            setBanDialogOpen(true)
+          }}>
+            <BanIcon sx={{ mr: 1, fontSize: 18, color: 'error.main' }} />
+            Ban User
+          </MenuItem>
+        )}
       </Menu>
 
       {/* Reject Dialog */}
@@ -480,6 +626,7 @@ export function SocialAssetFeedItem({
           </Button>
         </DialogActions>
       </Dialog>
+
     </>
   )
 }

@@ -7,6 +7,7 @@ export interface PermissionCheckResult {
   authorized: boolean
   isCreator: boolean
   isEditor: boolean
+  isGlobalAdmin: boolean
   project?: {
     id: string
     creator_wallet: string
@@ -19,6 +20,7 @@ export interface PermissionCheckResult {
  * Check if a wallet has editor permissions for a project
  * 
  * A wallet has editor permissions if:
+ * - It's a global admin, OR
  * - It's the project creator, OR
  * - It's in the project's editor_wallets array
  * 
@@ -31,6 +33,15 @@ export async function checkEditorPermission(
   walletAddress: string
 ): Promise<PermissionCheckResult> {
   try {
+    // Check if global admin first
+    const { data: adminData } = await supabase
+      .from('admin_wallets')
+      .select('wallet_address')
+      .eq('wallet_address', walletAddress)
+      .maybeSingle()
+    
+    const isGlobalAdmin = !!adminData
+
     // Fetch project with creator and editors
     const { data: project, error } = await supabase
       .from('projects')
@@ -39,10 +50,21 @@ export async function checkEditorPermission(
       .single()
 
     if (error || !project) {
+      // Global admins can still operate even if project not found in some cases
+      if (isGlobalAdmin) {
+        return {
+          authorized: true,
+          isCreator: false,
+          isEditor: false,
+          isGlobalAdmin: true,
+          error: 'Project not found but global admin'
+        }
+      }
       return {
         authorized: false,
         isCreator: false,
         isEditor: false,
+        isGlobalAdmin: false,
         error: 'Project not found'
       }
     }
@@ -52,9 +74,10 @@ export async function checkEditorPermission(
     const isEditor = project.editor_wallets?.includes(walletAddress) || false
 
     return {
-      authorized: isCreator || isEditor,
+      authorized: isGlobalAdmin || isCreator || isEditor,
       isCreator,
       isEditor,
+      isGlobalAdmin,
       project: {
         id: project.id,
         creator_wallet: project.creator_wallet,
@@ -67,6 +90,7 @@ export async function checkEditorPermission(
       authorized: false,
       isCreator: false,
       isEditor: false,
+      isGlobalAdmin: false,
       error: 'Failed to check permissions'
     }
   }
@@ -74,6 +98,7 @@ export async function checkEditorPermission(
 
 /**
  * Check if a wallet has creator permissions (stricter than editor)
+ * Global admins also have creator-level permissions
  * 
  * @param projectId - The project ID to check
  * @param walletAddress - The wallet address to check
@@ -87,7 +112,8 @@ export async function checkCreatorPermission(
   
   return {
     ...result,
-    authorized: result.isCreator
+    // Global admins have creator-level permissions
+    authorized: result.isCreator || result.isGlobalAdmin
   }
 }
 

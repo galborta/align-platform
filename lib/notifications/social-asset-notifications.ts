@@ -1,5 +1,6 @@
 import { supabase } from '@/lib/supabase'
 import type { Database } from '@/types/database'
+import { notificationService } from '@/lib/services/notificationService'
 
 type NotificationInsert = Database['public']['Tables']['notifications']['Insert']
 
@@ -27,21 +28,46 @@ export async function notifyAssetPending(
   classification: 'official' | 'affiliated'
 ) {
   try {
+    console.log('🔔 notifyAssetPending called with:', {
+      projectId,
+      assetId,
+      submitterWallet,
+      assetType,
+      classification
+    })
+
     // Get all editors for this project
-    const { data: project } = await supabase
+    const { data: project, error: projectError } = await supabase
       .from('projects')
       .select('creator_wallet, editor_wallets')
       .eq('id', projectId)
       .single()
     
-    if (!project) return
+    if (projectError) {
+      console.error('Error fetching project:', projectError)
+      return
+    }
+
+    if (!project) {
+      console.log('No project found for ID:', projectId)
+      return
+    }
     
+    console.log('Project data:', project)
+
     // Create notification for creator and all editors
     const editorWallets = [
       project.creator_wallet,
       ...(project.editor_wallets || [])
-    ]
+    ].filter(Boolean) // Remove any null/undefined values
     
+    console.log('Editor wallets:', editorWallets)
+
+    if (editorWallets.length === 0) {
+      console.log('No editor wallets found')
+      return
+    }
+
     const metadata: NotificationMetadata = {
       asset_id: assetId,
       asset_classification: classification,
@@ -70,12 +96,64 @@ export async function notifyAssetPending(
       priority: 'high'
     }))
     
-    const { error } = await supabase
+    console.log('Attempting to insert notifications:', notifications)
+
+    const { data, error } = await supabase
       .from('notifications')
       .insert(notifications)
+      .select()
     
     if (error) {
-      console.error('Failed to create asset pending notifications:', error)
+      console.error('Failed to create asset pending notifications:', {
+        error,
+        code: error.code,
+        message: error.message,
+        details: error.details,
+        hint: error.hint
+      })
+    } else {
+      console.log('✅ Notifications created successfully:', data)
+    }
+
+    // Also notify all global admins from admin_wallets table
+    console.log('🛡️ Notifying global admins...')
+    try {
+      const { data: admins, error: adminError } = await supabase
+        .from('admin_wallets')
+        .select('wallet_address')
+        .eq('is_active', true)
+
+      if (adminError) {
+        console.error('Error fetching admin wallets:', adminError)
+      } else if (admins && admins.length > 0) {
+        const adminNotifications: NotificationInsert[] = admins.map(admin => ({
+          user_wallet: admin.wallet_address,
+          type: 'social_asset_pending',
+          title: `New ${classification} ${assetType} asset submitted`,
+          message: assetType === 'social'
+            ? `@${assetData.handle} on ${assetData.platform}`
+            : assetData.domain,
+          actor_wallet: submitterWallet,
+          reference_id: assetId,
+          reference_type: 'asset',
+          metadata,
+          priority: 'high'
+        }))
+
+        const { error: adminNotifError } = await supabase
+          .from('notifications')
+          .insert(adminNotifications)
+
+        if (adminNotifError) {
+          console.error('Failed to notify admins:', adminNotifError)
+        } else {
+          console.log(`✅ Notified ${admins.length} global admin(s)`)
+        }
+      } else {
+        console.log('⚠️ No active admin wallets found')
+      }
+    } catch (adminErr) {
+      console.error('Error notifying admins:', adminErr)
     }
   } catch (err) {
     console.error('Error in notifyAssetPending:', err)
@@ -96,6 +174,15 @@ export async function notifyAssetApproved(
   karmaAwarded: number
 ) {
   try {
+    console.log('🔔 notifyAssetApproved called with:', {
+      submitterWallet,
+      projectId,
+      assetId,
+      assetType,
+      classification,
+      karmaAwarded
+    })
+
     const metadata: NotificationMetadata = {
       asset_id: assetId,
       asset_classification: classification,
@@ -124,12 +211,23 @@ export async function notifyAssetApproved(
       priority: 'normal'
     }
     
-    const { error } = await supabase
+    console.log('Attempting to insert approval notification:', notification)
+
+    const { data, error } = await supabase
       .from('notifications')
       .insert(notification)
+      .select()
     
     if (error) {
-      console.error('Failed to create asset approved notification:', error)
+      console.error('Failed to create asset approved notification:', {
+        error,
+        code: error.code,
+        message: error.message,
+        details: error.details,
+        hint: error.hint
+      })
+    } else {
+      console.log('✅ Approval notification created successfully:', data)
     }
   } catch (err) {
     console.error('Error in notifyAssetApproved:', err)
@@ -150,6 +248,15 @@ export async function notifyAssetRejected(
   reason?: string
 ) {
   try {
+    console.log('🔔 notifyAssetRejected called with:', {
+      submitterWallet,
+      projectId,
+      assetId,
+      assetType,
+      classification,
+      reason
+    })
+
     const metadata: NotificationMetadata = {
       asset_id: assetId,
       asset_classification: classification,
@@ -178,12 +285,23 @@ export async function notifyAssetRejected(
       priority: 'normal'
     }
     
-    const { error } = await supabase
+    console.log('Attempting to insert rejection notification:', notification)
+
+    const { data, error } = await supabase
       .from('notifications')
       .insert(notification)
+      .select()
     
     if (error) {
-      console.error('Failed to create asset rejected notification:', error)
+      console.error('Failed to create asset rejected notification:', {
+        error,
+        code: error.code,
+        message: error.message,
+        details: error.details,
+        hint: error.hint
+      })
+    } else {
+      console.log('✅ Rejection notification created successfully:', data)
     }
   } catch (err) {
     console.error('Error in notifyAssetRejected:', err)

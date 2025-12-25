@@ -21,7 +21,8 @@ export async function POST(req: NextRequest) {
     const { 
       assetId, 
       projectId, 
-      editorWallet 
+      editorWallet,
+      isReapproval = false // Flag for re-approving rejected assets
     } = body
 
     // Validate required fields
@@ -32,25 +33,16 @@ export async function POST(req: NextRequest) {
       )
     }
 
-    // 1. Verify editor has permission and get project data
-    const permissionCheck = await checkEditorPermission(projectId, editorWallet)
-    const permissionError = requireEditorPermission(permissionCheck)
+    // Check if user is a global admin first
+    const { data: adminData } = await supabase
+      .from('admin_wallets')
+      .select('wallet_address')
+      .eq('wallet_address', editorWallet)
+      .maybeSingle()
     
-    if (permissionError) {
-      return NextResponse.json(
-        { error: permissionError.error },
-        { status: permissionError.status }
-      )
-    }
+    const isGlobalAdmin = !!adminData
 
-    // Get project name for email
-    const { data: project } = await supabase
-      .from('projects')
-      .select('token_name')
-      .eq('id', projectId)
-      .single()
-
-    // 2. Get pending asset
+    // 2. Get pending asset first (to get actual projectId if needed)
     const { data: pendingAsset, error: fetchError } = await supabase
       .from('pending_assets')
       .select('*')
@@ -64,35 +56,71 @@ export async function POST(req: NextRequest) {
       )
     }
 
-    // Check if already approved/rejected
-    if (pendingAsset.verification_status !== 'pending') {
+    // Use asset's projectId if the passed one is 'all' (global admin view)
+    const actualProjectId = projectId === 'all' ? pendingAsset.project_id : projectId
+
+    // Global admins can do anything - skip project permission check
+    if (!isGlobalAdmin) {
+      // 1. Verify editor has permission and get project data
+      const permissionCheck = await checkEditorPermission(actualProjectId, editorWallet)
+      const permissionError = requireEditorPermission(permissionCheck)
+      
+      if (permissionError) {
+        return NextResponse.json(
+          { error: permissionError.error },
+          { status: permissionError.status }
+        )
+      }
+    }
+
+    // Get project name for email
+    const { data: project } = await supabase
+      .from('projects')
+      .select('token_name')
+      .eq('id', actualProjectId)
+      .single()
+
+    // Check status - allow approval for pending or rejected (re-approval)
+    if (pendingAsset.verification_status === 'verified') {
       return NextResponse.json(
-        { error: `Asset is already ${pendingAsset.verification_status}` },
+        { error: 'Asset is already verified' },
+        { status: 400 }
+      )
+    }
+    
+    // Ensure re-approval flag matches asset status
+    if (isReapproval && pendingAsset.verification_status !== 'rejected') {
+      return NextResponse.json(
+        { error: 'Can only re-approve rejected assets' },
         { status: 400 }
       )
     }
 
     // 3. Calculate karma reward (75% = 3x the immediate 25%)
-    const remainingKarmaMultiplier = 3 // 75% is 3 times the initial 25%
-    const baseKarma = calculateKarma('add', pendingAsset.submission_token_percentage, true)
-    const karmaReward = baseKarma * remainingKarmaMultiplier
+    // Only award karma for first-time approvals, not re-approvals
+    let karmaReward = 0
+    if (!isReapproval) {
+      const remainingKarmaMultiplier = 3 // 75% is 3 times the initial 25%
+      const baseKarma = calculateKarma('add', pendingAsset.submission_token_percentage, true)
+      karmaReward = baseKarma * remainingKarmaMultiplier
 
-    // 4. Award karma to submitter
-    const { error: karmaError } = await supabase.rpc('add_karma', {
-      p_wallet: pendingAsset.submitter_wallet,
-      p_project_id: projectId,
-      p_karma_delta: karmaReward
-    })
+      // 4. Award karma to submitter
+      const { error: karmaError } = await supabase.rpc('add_karma', {
+        p_wallet: pendingAsset.submitter_wallet,
+        p_project_id: actualProjectId,
+        p_karma_delta: karmaReward
+      })
 
-    if (karmaError) {
-      console.error('Failed to award karma:', karmaError)
-      // Continue anyway - don't fail the whole operation
+      if (karmaError) {
+        console.error('Failed to award karma:', karmaError)
+        // Continue anyway - don't fail the whole operation
+      }
     }
 
     // 5. Move asset to social_assets table
     const assetData = pendingAsset.asset_data as any
     let insertData: any = {
-      project_id: projectId,
+      project_id: actualProjectId,
       verified: true,
       verified_at: new Date().toISOString(),
       created_at: pendingAsset.created_at,
@@ -150,7 +178,7 @@ export async function POST(req: NextRequest) {
     // 7. Create notification for submitter
     await notifyAssetApproved(
       pendingAsset.submitter_wallet,
-      projectId,
+      actualProjectId,
       assetId,
       pendingAsset.asset_type,
       assetData,
@@ -192,7 +220,7 @@ export async function POST(req: NextRequest) {
         action: 'asset_approved',
         entity_type: 'social_asset',
         entity_id: assetId,
-        project_id: projectId,
+        project_id: actualProjectId,
         details: {
           asset_type: pendingAsset.asset_type,
           asset_classification: pendingAsset.asset_classification,

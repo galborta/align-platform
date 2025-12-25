@@ -53,11 +53,26 @@ export function CurationChatFeed({ projectId }: CurationChatFeedProps) {
       .order('created_at', { ascending: false })
     
     if (!error && data) {
-      setMessages(data)
-      setHasMore(data.length > displayCount)
+      // Filter out messages for assets that are no longer votable
+      // (verified, rejected, or hidden - only show pending/backed)
+      const filteredData = data.filter(msg => {
+        // Keep non-asset messages
+        if (msg.message_type !== 'asset_added') return true
+        
+        // For asset messages, only show if asset is still votable
+        const asset = msg.pending_assets
+        if (!asset) return false  // Asset was deleted, hide the message
+        
+        // Only show pending and backed assets for voting
+        const votableStatuses = ['pending', 'backed']
+        return votableStatuses.includes(asset.verification_status)
+      })
       
-      // Fetch display names for all wallet addresses in messages
-      const wallets = [...new Set(data.map(m => m.wallet_address).filter(Boolean) as string[])]
+      setMessages(filteredData)
+      setHasMore(filteredData.length > displayCount)
+      
+      // Fetch display names for all wallet addresses in filtered messages
+      const wallets = [...new Set(filteredData.map(m => m.wallet_address).filter(Boolean) as string[])]
       if (wallets.length > 0) {
         const { data: profiles } = await supabase
           .from('user_profiles')

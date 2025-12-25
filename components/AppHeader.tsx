@@ -28,7 +28,7 @@ export function AppHeader() {
     sender: string
     timestamp: string
   } | null>(null)
-  const { openMessages, unreadCount } = useMessaging()
+  const { openMessages, unreadCount, pendingAssetsCount, totalBadgeCount } = useMessaging()
   const [isMac, setIsMac] = useState(true)
 
   // Detect OS for keyboard shortcut display
@@ -91,7 +91,7 @@ export function AppHeader() {
   }, [wallet?.publicKey, unreadCount])
 
   const handleMessageHover = (event: React.MouseEvent<HTMLElement>) => {
-    if (latestMessage && unreadCount > 0) {
+    if (latestMessage && totalBadgeCount > 0) {
       setMessagePreviewAnchor(event.currentTarget)
     }
   }
@@ -175,8 +175,8 @@ export function AppHeader() {
                     }}
                   >
                     <Badge
-                      badgeContent={unreadCount}
-                      invisible={unreadCount === 0}
+                      badgeContent={totalBadgeCount}
+                      invisible={totalBadgeCount === 0}
                       showZero={false}
                       max={99}
                       anchorOrigin={{
@@ -185,8 +185,13 @@ export function AppHeader() {
                       }}
                       sx={{
                         '& .MuiBadge-badge': {
-                          bgcolor: '#EF4444',
-                          color: 'white',
+                          // Use yellow if only pending assets, red if messages, or gradient if both
+                          bgcolor: pendingAssetsCount > 0 && unreadCount === 0 
+                            ? '#FFB800' 
+                            : '#EF4444',
+                          color: pendingAssetsCount > 0 && unreadCount === 0 
+                            ? '#1A1A1E' 
+                            : 'white',
                           fontWeight: 700,
                           fontSize: '10px',
                           height: '16px',
@@ -196,7 +201,7 @@ export function AppHeader() {
                           boxShadow: '0 2px 4px rgba(0, 0, 0, 0.2)',
                           transform: 'scale(1) translate(50%, -50%)',
                           transformOrigin: '100% 0%',
-                          animation: unreadCount > 0 ? 'pulse 2s infinite' : 'none',
+                          animation: totalBadgeCount > 0 ? 'pulse 2s infinite' : 'none',
                           '@keyframes pulse': {
                             '0%, 100%': {
                               transform: 'scale(1) translate(50%, -50%)',

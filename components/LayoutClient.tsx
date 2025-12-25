@@ -11,7 +11,15 @@ import { useAutoSignIn } from '@/hooks/useAutoSignIn'
 
 function MessagesSidebarWrapper() {
   const wallet = useWallet()
-  const { isOpen, closeMessages, targetWallet, openMessages } = useMessaging()
+  const { 
+    isOpen, 
+    closeMessages, 
+    targetWallet, 
+    openMessages,
+    activeSection,
+    projectContext,
+    highlightAssetId
+  } = useMessaging()
   
   // Enable message notifications
   useMessageNotifications(
@@ -29,6 +37,9 @@ function MessagesSidebarWrapper() {
       onClose={closeMessages}
       currentWallet={wallet.publicKey?.toBase58() || ''}
       targetWallet={targetWallet}
+      initialSection={activeSection}
+      initialProjectId={projectContext}
+      initialHighlightAssetId={highlightAssetId}
     />
   )
 }

@@ -55,13 +55,20 @@ interface MessagesSidebarProps {
   onClose: () => void
   currentWallet: string
   targetWallet?: string | null
+  // New context props from MessagingContext
+  initialSection?: 'messages' | 'social-assets'
+  initialProjectId?: string | null
+  initialHighlightAssetId?: string | null
 }
 
 export function MessagesSidebar({
   isOpen,
   onClose,
   currentWallet,
-  targetWallet
+  targetWallet,
+  initialSection,
+  initialProjectId,
+  initialHighlightAssetId
 }: MessagesSidebarProps) {
   const router = useRouter()
   const pathname = usePathname()
@@ -84,10 +91,12 @@ export function MessagesSidebar({
   const [refreshTrigger, setRefreshTrigger] = useState(0)
   
   // Project context state (for social asset feed)
-  const [projectId, setProjectId] = useState<string | null>(null)
+  const [projectId, setProjectId] = useState<string | null>(initialProjectId || null)
   const [isCreatorOrEditor, setIsCreatorOrEditor] = useState(false)
+  const [isGlobalAdmin, setIsGlobalAdmin] = useState(false)
   const [pendingAssetsCount, setPendingAssetsCount] = useState(0)
-  const [activeSection, setActiveSection] = useState<'messages' | 'social-assets'>('messages')
+  const [activeSection, setActiveSection] = useState<'messages' | 'social-assets'>(initialSection || 'messages')
+  const [highlightAssetId, setHighlightAssetId] = useState<string | null>(initialHighlightAssetId || null)
   
   // Force refresh conversation list when sidebar opens
   useEffect(() => {
@@ -95,6 +104,46 @@ export function MessagesSidebar({
       setRefreshTrigger(prev => prev + 1)
     }
   }, [isOpen])
+
+  // Apply initial props when sidebar opens (from MessagingContext)
+  useEffect(() => {
+    if (isOpen) {
+      if (initialSection) {
+        setActiveSection(initialSection)
+      }
+      if (initialProjectId) {
+        setProjectId(initialProjectId)
+      }
+      if (initialHighlightAssetId) {
+        setHighlightAssetId(initialHighlightAssetId)
+      }
+    }
+  }, [isOpen, initialSection, initialProjectId, initialHighlightAssetId])
+
+  // Check if current user is a global admin
+  useEffect(() => {
+    if (!currentWallet) {
+      setIsGlobalAdmin(false)
+      return
+    }
+
+    async function checkGlobalAdmin() {
+      try {
+        const { data: admin } = await supabase
+          .from('admin_wallets')
+          .select('wallet_address')
+          .eq('wallet_address', currentWallet)
+          .eq('is_active', true)
+          .single()
+
+        setIsGlobalAdmin(!!admin)
+      } catch (error) {
+        setIsGlobalAdmin(false)
+      }
+    }
+
+    checkGlobalAdmin()
+  }, [currentWallet])
   
   // Message search state
   const [isSearching, setIsSearching] = useState(false)
@@ -185,41 +234,50 @@ export function MessagesSidebar({
     checkPermissions()
   }, [projectId, currentWallet])
 
-  // Fetch pending social assets count
+  // Fetch pending social assets count (for global admins or project editors/creators)
   useEffect(() => {
-    if (!projectId || !isCreatorOrEditor) {
+    // Global admins can see all pending assets, project editors can see their project's
+    if (!isGlobalAdmin && (!projectId || !isCreatorOrEditor)) {
       setPendingAssetsCount(0)
       return
     }
 
     async function loadPendingCount() {
-      const count = await countPendingSocialAssets(projectId!)
+      // Global admins see all pending assets, others see project-specific
+      const targetProjectId = isGlobalAdmin && !projectId ? 'all' : projectId
+      const count = await countPendingSocialAssets(targetProjectId)
       setPendingAssetsCount(count)
     }
 
     loadPendingCount()
 
     // Subscribe to changes
+    const channelName = isGlobalAdmin && !projectId 
+      ? 'pending-assets-count:global' 
+      : `pending-assets-count:${projectId}`
+    
+    const subscriptionConfig: any = {
+      event: '*',
+      schema: 'public',
+      table: 'pending_assets'
+    }
+
+    // Only filter by project_id for non-global admins
+    if (!isGlobalAdmin && projectId) {
+      subscriptionConfig.filter = `project_id=eq.${projectId}`
+    }
+
     const subscription = supabase
-      .channel(`pending-assets-count:${projectId}`)
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'pending_assets',
-          filter: `project_id=eq.${projectId}`
-        },
-        () => {
-          loadPendingCount()
-        }
-      )
+      .channel(channelName)
+      .on('postgres_changes', subscriptionConfig, () => {
+        loadPendingCount()
+      })
       .subscribe()
 
     return () => {
       subscription.unsubscribe()
     }
-  }, [projectId, isCreatorOrEditor])
+  }, [projectId, isCreatorOrEditor, isGlobalAdmin])
 
   // Save search to history
   const saveSearchToHistory = useCallback((query: string) => {
@@ -748,88 +806,7 @@ export function MessagesSidebar({
         {/* List View */}
         {view === 'list' && !isLoadingThread && (
           <Box sx={{ display: 'flex', flexDirection: 'column', flex: 1, overflow: 'hidden' }}>
-            {/* Section Selector (only show on project pages for creators/editors) */}
-            {projectId && isCreatorOrEditor && (
-              <Box sx={{ 
-                px: 2, 
-                pt: 2,
-                display: 'flex', 
-                gap: 1,
-                borderBottom: '1px solid',
-                borderColor: 'divider'
-              }}>
-                <Button
-                  fullWidth
-                  variant={activeSection === 'messages' ? 'contained' : 'outlined'}
-                  onClick={() => handleSectionChange('messages')}
-                  sx={{
-                    borderRadius: 2,
-                    py: 1,
-                    bgcolor: activeSection === 'messages' ? '#7C4DFF' : 'transparent',
-                    borderColor: activeSection === 'messages' ? '#7C4DFF' : 'divider',
-                    color: activeSection === 'messages' ? 'white' : 'text.primary',
-                    '&:hover': {
-                      bgcolor: activeSection === 'messages' ? '#6C3DDF' : 'rgba(124, 77, 255, 0.04)',
-                      borderColor: '#7C4DFF'
-                    }
-                  }}
-                >
-                  Messages
-                  {unreadCount > 0 && (
-                    <Badge
-                      badgeContent={unreadCount}
-                      sx={{
-                        ml: 1,
-                        '& .MuiBadge-badge': {
-                          bgcolor: activeSection === 'messages' ? 'white' : '#7C4DFF',
-                          color: activeSection === 'messages' ? '#7C4DFF' : 'white',
-                          fontWeight: 600,
-                          fontSize: '10px',
-                          height: '18px',
-                          minWidth: '18px',
-                          borderRadius: '9px'
-                        }
-                      }}
-                    />
-                  )}
-                </Button>
-                <Button
-                  fullWidth
-                  variant={activeSection === 'social-assets' ? 'contained' : 'outlined'}
-                  onClick={() => handleSectionChange('social-assets')}
-                  sx={{
-                    borderRadius: 2,
-                    py: 1,
-                    bgcolor: activeSection === 'social-assets' ? '#FFB800' : 'transparent',
-                    borderColor: activeSection === 'social-assets' ? '#FFB800' : 'divider',
-                    color: activeSection === 'social-assets' ? 'white' : 'text.primary',
-                    '&:hover': {
-                      bgcolor: activeSection === 'social-assets' ? '#E5A500' : 'rgba(255, 184, 0, 0.04)',
-                      borderColor: '#FFB800'
-                    }
-                  }}
-                >
-                  Asset Reviews
-                  {pendingAssetsCount > 0 && (
-                    <Badge
-                      badgeContent={pendingAssetsCount > 99 ? '99+' : pendingAssetsCount}
-                      sx={{
-                        ml: 1,
-                        '& .MuiBadge-badge': {
-                          bgcolor: activeSection === 'social-assets' ? 'white' : '#FFB800',
-                          color: activeSection === 'social-assets' ? '#FFB800' : 'white',
-                          fontWeight: 600,
-                          fontSize: '10px',
-                          height: '18px',
-                          minWidth: '18px',
-                          borderRadius: '9px'
-                        }
-                      }}
-                    />
-                  )}
-                </Button>
-              </Box>
-            )}
+            {/* Tabs removed - navigation is now done via conversation list items */}
 
             {/* Messages Section */}
             {activeSection === 'messages' && (
@@ -1084,8 +1061,14 @@ export function MessagesSidebar({
                     <ConversationList
                       currentWallet={currentWallet}
                       onSelectConversation={handleSelectConversation}
+                      onSelectAssetReviews={() => {
+                        // Switch to social-assets section when clicking "Social Asset Reviews" entry
+                        setActiveSection('social-assets')
+                        setHighlightAssetId(null) // Clear any specific highlight
+                      }}
                       filter={filterTab}
                       refreshTrigger={refreshTrigger}
+                      showAssetReviews={isGlobalAdmin || isCreatorOrEditor}
                     />
                   ) : (
                     <Box sx={{ p: 4, textAlign: 'center' }}>
@@ -1100,19 +1083,52 @@ export function MessagesSidebar({
               </>
             )}
 
-            {/* Social Asset Feed Section */}
-            {activeSection === 'social-assets' && projectId && isCreatorOrEditor && (
-              <Box sx={{ flex: 1, overflow: 'auto', p: 2 }}>
-                <Typography variant="h6" sx={{ mb: 1, fontWeight: 600, px: 1 }}>
-                  Social Asset Submissions
-                </Typography>
-                <Typography variant="body2" color="text.secondary" sx={{ mb: 3, px: 1 }}>
-                  Review community-submitted social accounts and domains for your project
-                </Typography>
-                <SocialAssetFeed
-                  projectId={projectId}
-                  editorWallet={currentWallet}
-                />
+            {/* Social Asset Feed Section - For global admins OR project creators/editors */}
+            {activeSection === 'social-assets' && (isGlobalAdmin || (projectId && isCreatorOrEditor)) && (
+              <Box sx={{ flex: 1, overflow: 'auto', display: 'flex', flexDirection: 'column' }}>
+                {/* Back Button Header */}
+                <Box sx={{ 
+                  p: 2, 
+                  borderBottom: '1px solid',
+                  borderColor: 'divider',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 1
+                }}>
+                  <IconButton 
+                    onClick={() => setActiveSection('messages')}
+                    size="small"
+                    sx={{ 
+                      color: 'text.secondary',
+                      '&:hover': {
+                        color: '#FFB800',
+                        bgcolor: 'rgba(255, 184, 0, 0.08)'
+                      }
+                    }}
+                  >
+                    <ArrowBackIcon fontSize="small" />
+                  </IconButton>
+                  <Box>
+                    <Typography variant="h6" sx={{ fontWeight: 600, lineHeight: 1.2 }}>
+                      🔶 {isGlobalAdmin && !projectId ? 'All Asset Reviews' : 'Social Asset Reviews'}
+                    </Typography>
+                    <Typography variant="caption" color="text.secondary">
+                      {isGlobalAdmin && !projectId 
+                        ? 'Review assets across all projects'
+                        : 'Review submitted assets for your project'
+                      }
+                    </Typography>
+                  </Box>
+                </Box>
+                
+                {/* Asset Feed */}
+                <Box sx={{ flex: 1, overflow: 'auto', p: 2 }}>
+                  <SocialAssetFeed
+                    projectId={isGlobalAdmin && !projectId ? 'all' : projectId!}
+                    editorWallet={currentWallet}
+                    highlightAssetId={highlightAssetId}
+                  />
+                </Box>
               </Box>
             )}
           </Box>

@@ -22,6 +22,7 @@ import {
 import PersonIcon from '@mui/icons-material/Person'
 import DeleteIcon from '@mui/icons-material/Delete'
 import FiberManualRecordIcon from '@mui/icons-material/FiberManualRecord'
+import VerifiedUserIcon from '@mui/icons-material/VerifiedUser'
 import { keyframes } from '@mui/system'
 
 // Pulse animation for unread submission tags
@@ -48,26 +49,201 @@ interface ConversationWithDetails extends Conversation {
   submission_id?: string | null
 }
 
+// Social Asset Reviews aggregated entry (single item like Project Submissions)
+interface SocialAssetReviewsEntry {
+  type: 'social_asset_reviews'
+  pendingCount: number
+  latestSubmitter?: string
+  latestSubmitterProfile?: UserProfile
+  latestAssetSummary?: string
+  latestCreatedAt: string
+  isUnread: boolean
+}
+
+// Combined list item type
+type ListItemData = 
+  | { type: 'conversation'; data: ConversationWithDetails }
+  | { type: 'social_asset_reviews'; data: SocialAssetReviewsEntry }
+
 interface ConversationListProps {
   currentWallet: string
   onSelectConversation: (conversationId: string) => void
+  onSelectAssetReviews?: () => void  // Called when clicking "Social Asset Reviews" entry
   filter?: 'all' | 'unread'
   refreshTrigger?: number // Change this to force a refresh
+  showAssetReviews?: boolean // Whether to show social asset reviews entry in the list
 }
 
 export function ConversationList({ 
   currentWallet, 
   onSelectConversation,
+  onSelectAssetReviews,
   filter = 'all',
-  refreshTrigger
+  refreshTrigger,
+  showAssetReviews = false
 }: ConversationListProps) {
   const [conversations, setConversations] = useState<ConversationWithDetails[]>([])
+  const [assetReviewsEntry, setAssetReviewsEntry] = useState<SocialAssetReviewsEntry | null>(null)
   const [loading, setLoading] = useState(true)
   const [loadingMore, setLoadingMore] = useState(false)
   const [hasMore, setHasMore] = useState(true)
   const [hoveredConvId, setHoveredConvId] = useState<string | null>(null)
+  const [userPermissions, setUserPermissions] = useState<{
+    isGlobalAdmin: boolean
+    editorProjects: string[]
+    creatorProjects: string[]
+  }>({ isGlobalAdmin: false, editorProjects: [], creatorProjects: [] })
   
   const CONVERSATIONS_PER_PAGE = 20
+
+  // Check user permissions for asset reviews
+  useEffect(() => {
+    if (!currentWallet || !showAssetReviews) return
+
+    async function checkPermissions() {
+      // Check if global admin
+      const { data: admin } = await supabase
+        .from('admin_wallets')
+        .select('wallet_address')
+        .eq('wallet_address', currentWallet)
+        .eq('is_active', true)
+        .maybeSingle()
+
+      // Get projects where user is creator
+      const { data: creatorProjects } = await supabase
+        .from('projects')
+        .select('id')
+        .eq('creator_wallet', currentWallet)
+
+      // Get projects where user is editor
+      const { data: editorProjects } = await supabase
+        .from('projects')
+        .select('id, editor_wallets')
+        .contains('editor_wallets', [currentWallet])
+
+      setUserPermissions({
+        isGlobalAdmin: !!admin,
+        creatorProjects: creatorProjects?.map(p => p.id) || [],
+        editorProjects: editorProjects?.map(p => p.id) || []
+      })
+    }
+
+    checkPermissions()
+  }, [currentWallet, showAssetReviews])
+
+  // Load social asset reviews entry (aggregated - single item)
+  useEffect(() => {
+    if (!showAssetReviews || !currentWallet) return
+    if (!userPermissions.isGlobalAdmin && 
+        userPermissions.creatorProjects.length === 0 && 
+        userPermissions.editorProjects.length === 0) {
+      setAssetReviewsEntry(null)
+      return
+    }
+
+    async function loadAssetReviewsEntry() {
+      try {
+        // Build query for counting and getting latest
+        let countQuery = supabase
+          .from('pending_assets')
+          .select('id', { count: 'exact', head: true })
+          .eq('verification_status', 'pending')
+
+        let latestQuery = supabase
+          .from('pending_assets')
+          .select(`
+            id,
+            asset_type,
+            asset_data,
+            submitter_wallet,
+            created_at
+          `)
+          .eq('verification_status', 'pending')
+          .order('created_at', { ascending: false })
+          .limit(1)
+
+        // If not global admin, filter by projects user can review
+        if (!userPermissions.isGlobalAdmin) {
+          const allProjects = [...userPermissions.creatorProjects, ...userPermissions.editorProjects]
+          if (allProjects.length > 0) {
+            countQuery = countQuery.in('project_id', allProjects)
+            latestQuery = latestQuery.in('project_id', allProjects)
+          } else {
+            setAssetReviewsEntry(null)
+            return
+          }
+        }
+
+        const [countResult, latestResult] = await Promise.all([countQuery, latestQuery])
+
+        if (countResult.error || latestResult.error) {
+          console.error('Error loading asset reviews:', countResult.error || latestResult.error)
+          return
+        }
+
+        const pendingCount = countResult.count || 0
+        
+        if (pendingCount === 0) {
+          setAssetReviewsEntry(null)
+          return
+        }
+
+        const latestAsset = latestResult.data?.[0]
+        
+        // Get profile for latest submitter
+        let latestProfile: UserProfile | undefined
+        if (latestAsset?.submitter_wallet) {
+          const { data: profile } = await supabase
+            .from('user_profiles')
+            .select('wallet_address, display_name, avatar_url')
+            .eq('wallet_address', latestAsset.submitter_wallet)
+            .maybeSingle()
+          
+          latestProfile = profile as UserProfile | undefined
+        }
+
+        // Build asset summary
+        const assetData = latestAsset?.asset_data as any
+        const latestAssetSummary = latestAsset?.asset_type === 'social'
+          ? `@${assetData?.handle} on ${assetData?.platform}`
+          : assetData?.domain || 'Domain'
+
+        setAssetReviewsEntry({
+          type: 'social_asset_reviews',
+          pendingCount,
+          latestSubmitter: latestAsset?.submitter_wallet,
+          latestSubmitterProfile: latestProfile,
+          latestAssetSummary,
+          latestCreatedAt: latestAsset?.created_at || new Date().toISOString(),
+          isUnread: true // Always unread if there are pending items
+        })
+      } catch (error) {
+        console.error('Error in loadAssetReviewsEntry:', error)
+      }
+    }
+
+    loadAssetReviewsEntry()
+
+    // Subscribe to changes
+    const channel = supabase
+      .channel(`asset-reviews-entry-${currentWallet}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'pending_assets'
+        },
+        () => {
+          loadAssetReviewsEntry()
+        }
+      )
+      .subscribe()
+
+    return () => {
+      channel.unsubscribe()
+    }
+  }, [showAssetReviews, currentWallet, userPermissions])
 
   // Load conversations with pagination and optimization
   const loadConversations = useCallback(async (loadMore = false) => {
@@ -356,8 +532,26 @@ export function ConversationList({
     ? conversations.filter(conv => conv.isUnread)
     : conversations
 
+  // Include asset reviews entry (single item) if showing and has pending items
+  const showAssetReviewsEntry = showAssetReviews && assetReviewsEntry && 
+    (filter !== 'unread' || assetReviewsEntry.isUnread)
+
+  // Combine and sort all items by date
+  const allItems: ListItemData[] = [
+    ...(showAssetReviewsEntry ? [{ type: 'social_asset_reviews' as const, data: assetReviewsEntry }] : []),
+    ...filteredConversations.map(c => ({ type: 'conversation' as const, data: c }))
+  ].sort((a, b) => {
+    const dateA = a.type === 'conversation' 
+      ? new Date(a.data.last_message_at).getTime()
+      : new Date(a.data.latestCreatedAt).getTime()
+    const dateB = b.type === 'conversation'
+      ? new Date(b.data.last_message_at).getTime()
+      : new Date(b.data.latestCreatedAt).getTime()
+    return dateB - dateA
+  })
+
   // Empty state
-  if (filteredConversations.length === 0) {
+  if (allItems.length === 0) {
     return (
       <Box
         sx={{
@@ -379,11 +573,154 @@ export function ConversationList({
     )
   }
 
-  // Conversations list
+  // Helper to get display name for latest asset review submitter
+  const getAssetReviewDisplayName = (entry: SocialAssetReviewsEntry) => {
+    if (entry.latestSubmitterProfile?.display_name) {
+      return entry.latestSubmitterProfile.display_name
+    }
+    return entry.latestSubmitter ? formatAddress(entry.latestSubmitter) : 'Unknown'
+  }
+
+  // Conversations list (with asset reviews entry)
   return (
     <>
       <List sx={{ width: '100%', bgcolor: 'background.paper', p: 0 }}>
-        {filteredConversations.map((conv) => {
+        {allItems.map((item) => {
+          // Render Social Asset Reviews Entry (single aggregated item like Project Submissions)
+          if (item.type === 'social_asset_reviews') {
+            const entry = item.data
+            const latestDisplayName = getAssetReviewDisplayName(entry)
+            
+            return (
+              <ListItem
+                key="social-asset-reviews"
+                disablePadding
+                sx={{
+                  borderBottom: '1px solid',
+                  borderColor: 'divider',
+                  bgcolor: 'rgba(255, 184, 0, 0.08)',
+                  '&:hover': {
+                    bgcolor: 'rgba(255, 184, 0, 0.15)'
+                  }
+                }}
+              >
+                <ListItemButton
+                  onClick={() => onSelectAssetReviews?.()}
+                  sx={{ py: 2 }}
+                >
+                  <ListItemAvatar>
+                    <Badge
+                      badgeContent={entry.pendingCount}
+                      max={99}
+                      sx={{
+                        '& .MuiBadge-badge': {
+                          bgcolor: '#FFB800',
+                          color: '#1A1A1E',
+                          fontWeight: 700,
+                          fontSize: '11px',
+                          minWidth: 20,
+                          height: 20
+                        }
+                      }}
+                    >
+                      <Avatar
+                        sx={{ 
+                          bgcolor: '#FFB800',
+                          width: 48,
+                          height: 48
+                        }}
+                      >
+                        <VerifiedUserIcon />
+                      </Avatar>
+                    </Badge>
+                  </ListItemAvatar>
+
+                  <ListItemText
+                    primary={
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
+                        <Typography
+                          variant="subtitle1"
+                          component="span"
+                          sx={{
+                            fontWeight: 700,
+                            color: 'text.primary'
+                          }}
+                        >
+                          Social Asset Reviews
+                        </Typography>
+                        
+                        {/* Asset Review Tag - Yellow */}
+                        <Chip
+                          label="Asset Review"
+                          size="small"
+                          sx={{
+                            background: 'linear-gradient(135deg, #FFB800, #FFC933)',
+                            color: '#1A1A1E',
+                            borderRadius: '20px',
+                            height: '22px',
+                            fontSize: '11px',
+                            fontWeight: 600,
+                            letterSpacing: '0.3px',
+                            padding: '0 4px',
+                            flexShrink: 0,
+                            '& .MuiChip-label': {
+                              padding: '0 8px',
+                              lineHeight: '22px',
+                              whiteSpace: 'nowrap',
+                              overflow: 'visible'
+                            },
+                            animation: `${pulseAnimation} 2s ease-in-out infinite`
+                          }}
+                        />
+
+                        <FiberManualRecordIcon
+                          sx={{
+                            fontSize: 10,
+                            color: '#FFB800'
+                          }}
+                        />
+                      </Box>
+                    }
+                    secondary={
+                      <Box sx={{ mt: 0.5 }}>
+                        <Typography
+                          variant="body2"
+                          component="span"
+                          sx={{
+                            color: 'text.secondary',
+                            fontWeight: 600,
+                            display: 'block',
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                            whiteSpace: 'nowrap'
+                          }}
+                        >
+                          {entry.pendingCount} pending {entry.pendingCount === 1 ? 'review' : 'reviews'}
+                        </Typography>
+                        <Typography
+                          variant="caption"
+                          component="span"
+                          sx={{
+                            color: 'text.disabled',
+                            display: 'block',
+                            mt: 0.25
+                          }}
+                        >
+                          Latest: {entry.latestAssetSummary} by {latestDisplayName}
+                        </Typography>
+                      </Box>
+                    }
+                    secondaryTypographyProps={{
+                      component: 'div'
+                    }}
+                  />
+                </ListItemButton>
+              </ListItem>
+            )
+          }
+
+          // Render Conversation Item
+          const conv = item.data as ConversationWithDetails
           const displayName = getDisplayName(conv)
           const lastMessagePreview = conv.lastMessage
             ? truncateMessage(conv.lastMessage.content)

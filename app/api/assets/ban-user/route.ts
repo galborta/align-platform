@@ -31,15 +31,48 @@ export async function POST(req: NextRequest) {
       )
     }
 
-    // 1. Verify editor has permission
-    const permissionCheck = await checkEditorPermission(projectId, editorWallet)
-    const permissionError = requireEditorPermission(permissionCheck)
+    // Check if user is a global admin first
+    const { data: adminData } = await supabase
+      .from('admin_wallets')
+      .select('wallet_address')
+      .eq('wallet_address', editorWallet)
+      .maybeSingle()
     
-    if (permissionError) {
-      return NextResponse.json(
-        { error: permissionError.error },
-        { status: permissionError.status }
-      )
+    const isGlobalAdmin = !!adminData
+
+    // Use actual projectId (handle 'all' case for global admin)
+    let actualProjectId = projectId
+    if (projectId === 'all') {
+      // For global admin banning from 'all' view, get project from user's first asset
+      const { data: userAsset } = await supabase
+        .from('pending_assets')
+        .select('project_id')
+        .eq('submitter_wallet', userWallet)
+        .limit(1)
+        .single()
+      
+      if (userAsset) {
+        actualProjectId = userAsset.project_id
+      } else {
+        return NextResponse.json(
+          { error: 'No assets found for this user to determine project' },
+          { status: 400 }
+        )
+      }
+    }
+
+    // Global admins can do anything - skip project permission check
+    if (!isGlobalAdmin) {
+      // 1. Verify editor has permission
+      const permissionCheck = await checkEditorPermission(actualProjectId, editorWallet)
+      const permissionError = requireEditorPermission(permissionCheck)
+      
+      if (permissionError) {
+        return NextResponse.json(
+          { error: permissionError.error },
+          { status: permissionError.status }
+        )
+      }
     }
 
     // 2. Calculate ban expiration
@@ -56,7 +89,7 @@ export async function POST(req: NextRequest) {
       .from('wallet_karma')
       .select('*')
       .eq('wallet_address', userWallet)
-      .eq('project_id', projectId)
+      .eq('project_id', actualProjectId)
       .single()
 
     if (karmaFetchError || !karma) {
@@ -65,7 +98,7 @@ export async function POST(req: NextRequest) {
         .from('wallet_karma')
         .insert({
           wallet_address: userWallet,
-          project_id: projectId,
+          project_id: actualProjectId,
           is_banned: true,
           banned_at: new Date().toISOString(),
           ban_expires_at: banExpiresAt,
@@ -103,7 +136,7 @@ export async function POST(req: NextRequest) {
           warnings
         })
         .eq('wallet_address', userWallet)
-        .eq('project_id', projectId)
+        .eq('project_id', actualProjectId)
       
       if (updateError) {
         console.error('Failed to update karma record:', updateError)
@@ -114,16 +147,16 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // 4. Hide all pending assets from this user
-    const { data: pendingAssets } = await supabase
+    // 4. Hide ALL assets from this user (pending, verified, rejected - all become hidden)
+    const { data: userAssets } = await supabase
       .from('pending_assets')
-      .select('id')
+      .select('id, verification_status')
       .eq('submitter_wallet', userWallet)
-      .eq('project_id', projectId)
-      .eq('verification_status', 'pending')
+      .eq('project_id', actualProjectId)
+      .neq('verification_status', 'hidden')  // Don't update already hidden ones
 
-    if (pendingAssets && pendingAssets.length > 0) {
-      const assetIds = pendingAssets.map(a => a.id)
+    if (userAssets && userAssets.length > 0) {
+      const assetIds = userAssets.map(a => a.id)
       
       const { error: hideError } = await supabase
         .from('pending_assets')
@@ -134,10 +167,13 @@ export async function POST(req: NextRequest) {
         .in('id', assetIds)
       
       if (hideError) {
-        console.error('Failed to hide pending assets:', hideError)
+        console.error('Failed to hide assets:', hideError)
         // Continue anyway - ban is more important
       }
     }
+    
+    // Count includes all statuses that were hidden
+    const pendingAssets = userAssets || []
 
     // 5. Log admin action
     await supabase
@@ -147,7 +183,7 @@ export async function POST(req: NextRequest) {
         action: 'user_banned',
         entity_type: 'wallet_karma',
         entity_id: userWallet,
-        project_id: projectId,
+        project_id: actualProjectId,
         details: {
           banned_wallet: userWallet,
           reason: reason || 'Asset submission violations',

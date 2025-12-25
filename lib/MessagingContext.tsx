@@ -2,13 +2,30 @@
 
 import React, { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react'
 import { getUnreadCount } from '@/lib/messaging'
+import { countPendingSocialAssets } from '@/lib/feed-queries-social-assets'
 import { supabase } from '@/lib/supabase'
+
+// Section types for the messaging sidebar
+export type MessagingSidebarSection = 'messages' | 'social-assets'
+
+// Options for opening the messages sidebar
+export interface OpenMessagesOptions {
+  walletAddress?: string
+  section?: MessagingSidebarSection
+  projectId?: string
+  highlightAssetId?: string
+}
 
 interface MessagingContextType {
   isOpen: boolean
   targetWallet: string | null
+  activeSection: MessagingSidebarSection
+  projectContext: string | null
+  highlightAssetId: string | null
   unreadCount: number
-  openMessages: (walletAddress?: string) => Promise<void>
+  pendingAssetsCount: number  // Pending social asset reviews count
+  totalBadgeCount: number  // Combined count for header badge
+  openMessages: (options?: string | OpenMessagesOptions) => Promise<void>
   closeMessages: () => void
   toggleMessages: () => void
   refreshUnreadCount: () => Promise<void>
@@ -24,7 +41,13 @@ interface MessagingProviderProps {
 export function MessagingProvider({ children, currentWallet }: MessagingProviderProps) {
   const [isOpen, setIsOpen] = useState(false)
   const [targetWallet, setTargetWallet] = useState<string | null>(null)
+  const [activeSection, setActiveSection] = useState<MessagingSidebarSection>('messages')
+  const [projectContext, setProjectContext] = useState<string | null>(null)
+  const [highlightAssetId, setHighlightAssetId] = useState<string | null>(null)
   const [unreadCount, setUnreadCount] = useState(0)
+  const [pendingAssetsCount, setPendingAssetsCount] = useState(0)
+  const [isGlobalAdmin, setIsGlobalAdmin] = useState(false)
+  const [userProjects, setUserProjects] = useState<string[]>([]) // Projects user is creator/editor of
 
   // Load unread count
   const loadUnreadCount = useCallback(async () => {
@@ -38,6 +61,80 @@ export function MessagingProvider({ children, currentWallet }: MessagingProvider
     setUnreadCount(count)
   }, [currentWallet])
 
+  // Check user permissions (global admin, project creator/editor)
+  useEffect(() => {
+    if (!currentWallet) {
+      setIsGlobalAdmin(false)
+      setUserProjects([])
+      return
+    }
+
+    async function checkPermissions() {
+      try {
+        // Check if global admin
+        const { data: adminData } = await supabase
+          .from('global_admins')
+          .select('wallet_address')
+          .eq('wallet_address', currentWallet)
+          .maybeSingle()
+
+        setIsGlobalAdmin(!!adminData)
+
+        // Get projects where user is creator or editor
+        const { data: creatorProjects } = await supabase
+          .from('projects')
+          .select('id')
+          .eq('creator_wallet', currentWallet)
+
+        const { data: editorProjects } = await supabase
+          .from('projects')
+          .select('id')
+          .contains('editor_wallets', [currentWallet])
+
+        const allProjects = [
+          ...(creatorProjects || []).map(p => p.id),
+          ...(editorProjects || []).map(p => p.id)
+        ]
+        setUserProjects([...new Set(allProjects)])
+      } catch (error) {
+        console.error('[MessagingContext] Error checking permissions:', error)
+      }
+    }
+
+    checkPermissions()
+  }, [currentWallet])
+
+  // Load pending assets count for users who can review
+  const loadPendingAssetsCount = useCallback(async () => {
+    if (!currentWallet) {
+      setPendingAssetsCount(0)
+      return
+    }
+
+    // Global admins see all pending assets
+    if (isGlobalAdmin) {
+      const count = await countPendingSocialAssets('all')
+      console.log('[MessagingContext] Pending assets count (global admin):', count)
+      setPendingAssetsCount(count)
+      return
+    }
+
+    // Project creators/editors see their projects' pending assets
+    if (userProjects.length > 0) {
+      let totalCount = 0
+      for (const projectId of userProjects) {
+        const count = await countPendingSocialAssets(projectId)
+        totalCount += count
+      }
+      console.log('[MessagingContext] Pending assets count (project editor):', totalCount)
+      setPendingAssetsCount(totalCount)
+      return
+    }
+
+    // Regular users don't see pending assets
+    setPendingAssetsCount(0)
+  }, [currentWallet, isGlobalAdmin, userProjects])
+
   // Initial load
   useEffect(() => {
     loadUnreadCount()
@@ -47,6 +144,41 @@ export function MessagingProvider({ children, currentWallet }: MessagingProvider
     
     return () => clearInterval(interval)
   }, [loadUnreadCount])
+
+  // Load pending assets count when permissions change
+  useEffect(() => {
+    loadPendingAssetsCount()
+    
+    // Refresh every 30 seconds
+    const interval = setInterval(loadPendingAssetsCount, 30000)
+    
+    return () => clearInterval(interval)
+  }, [loadPendingAssetsCount])
+
+  // Subscribe to pending_assets changes for real-time updates
+  useEffect(() => {
+    if (!currentWallet || (!isGlobalAdmin && userProjects.length === 0)) return
+
+    const channel = supabase
+      .channel(`pending_assets_count_${currentWallet}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'pending_assets'
+        },
+        () => {
+          console.log('[MessagingContext] Pending assets change detected, refreshing count')
+          loadPendingAssetsCount()
+        }
+      )
+      .subscribe()
+
+    return () => {
+      supabase.removeChannel(channel)
+    }
+  }, [currentWallet, isGlobalAdmin, userProjects, loadPendingAssetsCount])
 
   // Subscribe to real-time message AND conversation updates
   useEffect(() => {
@@ -89,14 +221,30 @@ export function MessagingProvider({ children, currentWallet }: MessagingProvider
     }
   }, [currentWallet, loadUnreadCount])
 
-  // Open messages with optional target wallet
-  const openMessages = useCallback(async (walletAddress?: string) => {
-    if (walletAddress) {
-      // Just set the target wallet, don't create conversation yet
-      // Conversation will be created when first message is sent
-      setTargetWallet(walletAddress)
+  // Open messages with optional target wallet or options object
+  const openMessages = useCallback(async (options?: string | OpenMessagesOptions) => {
+    // Handle legacy string parameter (wallet address)
+    if (typeof options === 'string') {
+      setTargetWallet(options)
+      setActiveSection('messages')
+      setProjectContext(null)
+      setHighlightAssetId(null)
+    } else if (options) {
+      // Handle new options object
+      if (options.walletAddress) {
+        setTargetWallet(options.walletAddress)
+      } else {
+        setTargetWallet(null)
+      }
+      setActiveSection(options.section || 'messages')
+      setProjectContext(options.projectId || null)
+      setHighlightAssetId(options.highlightAssetId || null)
     } else {
+      // No options - just open to messages list
       setTargetWallet(null)
+      setActiveSection('messages')
+      setProjectContext(null)
+      setHighlightAssetId(null)
     }
     setIsOpen(true)
   }, [])
@@ -104,8 +252,13 @@ export function MessagingProvider({ children, currentWallet }: MessagingProvider
   // Close messages
   const closeMessages = useCallback(() => {
     setIsOpen(false)
-    // Clear target wallet after animation
-    setTimeout(() => setTargetWallet(null), 300)
+    // Clear state after animation
+    setTimeout(() => {
+      setTargetWallet(null)
+      setActiveSection('messages')
+      setProjectContext(null)
+      setHighlightAssetId(null)
+    }, 300)
   }, [])
 
   // Toggle messages
@@ -130,10 +283,18 @@ export function MessagingProvider({ children, currentWallet }: MessagingProvider
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [toggleMessages])
 
+  // Calculate total badge count (messages + pending assets)
+  const totalBadgeCount = unreadCount + pendingAssetsCount
+
   const value: MessagingContextType = {
     isOpen,
     targetWallet,
+    activeSection,
+    projectContext,
+    highlightAssetId,
     unreadCount,
+    pendingAssetsCount,
+    totalBadgeCount,
     openMessages,
     closeMessages,
     toggleMessages,

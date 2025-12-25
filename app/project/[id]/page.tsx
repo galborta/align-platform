@@ -32,6 +32,7 @@ import CheckCircleIcon from '@mui/icons-material/CheckCircle'
 import ArrowBackIcon from '@mui/icons-material/ArrowBack'
 import OpenInNewIcon from '@mui/icons-material/OpenInNew'
 import { WalletAddressWithMessage } from '@/components/WalletAddressWithMessage'
+import { SocialAssets } from '@/components/project/SocialAssets'
 
 type Project = Database['public']['Tables']['projects']['Row']
 type SocialAsset = Database['public']['Tables']['social_assets']['Row']
@@ -416,7 +417,7 @@ export default function ProjectDetailPage() {
                   )}
                 </div>
 
-                {/* Social Assets - Inline */}
+                {/* Official Social Assets - Inline */}
                 <div className="flex flex-wrap gap-2 mb-4">
                   {/* Show Telegram from projects table */}
                   {(project as any).telegram && (
@@ -444,27 +445,12 @@ export default function ProjectDetailPage() {
                       </a>
                     )}
                     
-                  {/* Show verified social accounts with platform/handle */}
-                  {project.social_assets && project.social_assets
-                    .filter(social => social.platform && social.handle && social.platform.toLowerCase() !== 'website')
-                    .map((social) => (
-                      <a
-                        key={social.id}
-                        href={getPlatformUrl(social.platform, social.handle)}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="flex items-center gap-2 px-3 py-2 bg-white rounded-lg border border-border-subtle hover:border-accent-primary transition-colors"
-                      >
-                        {platformIcons[social.platform.toLowerCase()] || '🌐'}
-                        <span className="font-body text-sm text-text-primary">
-                          @{social.handle}
-                        </span>
-                        {social.verified && (
-                          <CheckCircleIcon sx={{ color: '#7C4DFF', fontSize: 16 }} />
-                        )}
-                      </a>
-                    ))
-                  }
+                  {/* Official social assets */}
+                  <SocialAssets 
+                    projectId={project.id}
+                    tokenName={project.token_name}
+                    type="official"
+                  />
                 </div>
                 {/* Description */}
                 {project.description && (
@@ -638,8 +624,34 @@ export default function ProjectDetailPage() {
               </Box>
             )}
 
+            {/* Affiliated Social Assets - Separate Section */}
+            {project.status === 'live' && (
+              <Box 
+                sx={{ 
+                  order: { xs: 4, lg: 4 },
+                  // Hide entire box when CardContent is empty
+                  '& .MuiCardContent-root:empty': {
+                    display: 'none'
+                  },
+                  '& .MuiCard-root:has(.MuiCardContent-root:empty)': {
+                    display: 'none'
+                  }
+                }}
+              >
+                <Card>
+                  <CardContent>
+                    <SocialAssets 
+                      projectId={project.id}
+                      tokenName={project.token_name}
+                      type="affiliated"
+                    />
+                  </CardContent>
+                </Card>
+              </Box>
+            )}
+
             {/* Creative Assets - Album Style */}
-            <Box sx={{ order: { xs: 4, lg: 4 } }}>
+            <Box sx={{ order: { xs: 5, lg: 5 } }}>
               <Card>
                 <CardHeader>
                   <CardTitle className="text-lg">Creative Assets</CardTitle>

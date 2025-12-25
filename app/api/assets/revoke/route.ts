@@ -1,18 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabase } from '@/lib/supabase'
-import { notifyAssetRejected } from '@/lib/notifications/social-asset-notifications'
 import { checkEditorPermission, requireEditorPermission } from '@/lib/permissions/editor-permissions'
-import { sendAssetRejectedEmail } from '@/lib/emails/social-asset-emails'
 
 /**
- * POST /api/assets/reject
+ * POST /api/assets/revoke
  * 
- * Rejects a pending social asset submission
- * - Updates pending asset status to 'rejected'
- * - Records rejection reason and rejector
- * - Creates notification for submitter
+ * Revokes approval of a verified social asset
+ * - Updates pending_assets status back to 'rejected'
+ * - Removes the asset from social_assets table
  * - Logs admin action
- * - Does NOT revoke karma (immediate karma from submission is kept)
  * - Requires editor or creator permissions
  */
 export async function POST(req: NextRequest) {
@@ -42,7 +38,7 @@ export async function POST(req: NextRequest) {
     
     const isGlobalAdmin = !!adminData
 
-    // 2. Get pending asset first (to get actual projectId if needed)
+    // 2. Get the pending asset record first (to get actual projectId if needed)
     const { data: pendingAsset, error: fetchError } = await supabase
       .from('pending_assets')
       .select('*')
@@ -51,7 +47,7 @@ export async function POST(req: NextRequest) {
 
     if (fetchError || !pendingAsset) {
       return NextResponse.json(
-        { error: 'Pending asset not found' },
+        { error: 'Asset not found' },
         { status: 404 }
       )
     }
@@ -61,7 +57,7 @@ export async function POST(req: NextRequest) {
 
     // Global admins can do anything - skip project permission check
     if (!isGlobalAdmin) {
-      // 1. Verify editor has permission and get project data
+      // Verify editor has permission for this specific project
       const permissionCheck = await checkEditorPermission(actualProjectId, editorWallet)
       const permissionError = requireEditorPermission(permissionCheck)
       
@@ -73,84 +69,65 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // Get project name for email
-    const { data: project } = await supabase
-      .from('projects')
-      .select('token_name')
-      .eq('id', actualProjectId)
-      .single()
-
-    // Check if already approved/rejected
-    if (pendingAsset.verification_status !== 'pending') {
+    // Verify asset is currently verified
+    if (pendingAsset.verification_status !== 'verified') {
       return NextResponse.json(
-        { error: `Asset is already ${pendingAsset.verification_status}` },
+        { error: 'Can only revoke verified assets' },
         { status: 400 }
       )
     }
 
-    // 3. Update pending asset to rejected status
+    // 3. Find and delete the corresponding social_asset entry
+    const assetData = pendingAsset.asset_data as any
+    
+    // Build query to find the social asset
+    let deleteQuery = supabase
+      .from('social_assets')
+      .delete()
+      .eq('project_id', actualProjectId)
+
+    if (pendingAsset.asset_type === 'social') {
+      deleteQuery = deleteQuery
+        .eq('platform', assetData.platform?.toLowerCase())
+        .eq('handle', assetData.handle)
+    } else if (pendingAsset.asset_type === 'domain') {
+      deleteQuery = deleteQuery
+        .eq('platform', 'domain')
+        .eq('handle', assetData.domain)
+    }
+
+    const { error: deleteError } = await deleteQuery
+
+    if (deleteError) {
+      console.error('Error deleting social asset:', deleteError)
+      // Continue anyway - the pending_assets update is more important
+    }
+
+    // 4. Update pending asset status to rejected
     const { error: updateError } = await supabase
       .from('pending_assets')
       .update({
         verification_status: 'rejected',
         rejected_by: editorWallet,
         rejected_at: new Date().toISOString(),
-        rejection_reason: reason || null
+        rejection_reason: reason?.trim() ? `[REVOKED] ${reason.trim()}` : '[REVOKED]'
       })
       .eq('id', assetId)
 
     if (updateError) {
       console.error('Failed to update pending asset:', updateError)
       return NextResponse.json(
-        { error: 'Failed to reject asset' },
+        { error: 'Failed to revoke asset approval' },
         { status: 500 }
       )
     }
 
-    // 4. Create notification for submitter
-    const assetData = pendingAsset.asset_data as any
-    await notifyAssetRejected(
-      pendingAsset.submitter_wallet,
-      actualProjectId,
-      assetId,
-      pendingAsset.asset_type,
-      assetData,
-      pendingAsset.asset_classification,
-      editorWallet,
-      reason
-    )
-
-    // 5. Send email notification (if user has email)
-    try {
-      // Fetch user email from user_profiles
-      const { data: profile } = await supabase
-        .from('user_profiles')
-        .select('email')
-        .eq('wallet_address', pendingAsset.submitter_wallet)
-        .single()
-
-      if (profile?.email) {
-        await sendAssetRejectedEmail(
-          profile.email,
-          pendingAsset.submitter_wallet,
-          pendingAsset.asset_type,
-          assetData,
-          pendingAsset.asset_classification,
-          project?.token_name || 'this project',
-          reason
-        )
-      }
-    } catch (emailError) {
-      console.error('Failed to send rejection email:', emailError)
-      // Don't fail the whole operation if email fails
-    }
-
-    // 6. Log admin action
+    // 5. Log admin action
     await supabase
       .from('admin_logs')
       .insert({
         admin_wallet: editorWallet,
-        action: 'asset_rejected',
+        action: 'asset_revoked',
         entity_type: 'social_asset',
         entity_id: assetId,
         project_id: actualProjectId,
@@ -158,18 +135,18 @@ export async function POST(req: NextRequest) {
           asset_type: pendingAsset.asset_type,
           asset_classification: pendingAsset.asset_classification,
           submitter: pendingAsset.submitter_wallet,
-          rejection_reason: reason || 'No reason provided',
+          revocation_reason: reason?.trim() || 'No reason provided',
           asset_data: assetData
         }
       })
 
     return NextResponse.json({
       success: true,
-      message: 'Asset rejected successfully'
+      message: 'Asset approval revoked successfully'
     })
 
   } catch (error) {
-    console.error('Error in asset rejection:', error)
+    console.error('Error in asset revocation:', error)
     return NextResponse.json(
       { error: 'Internal server error' },
       { status: 500 }

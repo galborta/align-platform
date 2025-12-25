@@ -1387,6 +1387,7 @@ export type Database = {
           created_at: string | null
           creator_wallet: string
           description: string | null
+          editor_wallets: string[] | null
           id: string
           profile_image_url: string | null
           status: string | null
@@ -1399,6 +1400,7 @@ export type Database = {
           created_at?: string | null
           creator_wallet: string
           description?: string | null
+          editor_wallets?: string[] | null
           id?: string
           profile_image_url?: string | null
           status?: string | null
@@ -1411,6 +1413,7 @@ export type Database = {
           created_at?: string | null
           creator_wallet?: string
           description?: string | null
+          editor_wallets?: string[] | null
           id?: string
           profile_image_url?: string | null
           status?: string | null

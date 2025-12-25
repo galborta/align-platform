@@ -183,7 +183,7 @@ export function NotificationItem({
       }
     }
     
-    // Special handling for social asset notifications - route to yellow feed
+    // Special handling for social asset notifications - open sidebar with asset reviews section
     if (notification.type === 'social_asset_pending' || 
         notification.type === 'social_asset_approved' || 
         notification.type === 'social_asset_rejected') {
@@ -191,16 +191,28 @@ export function NotificationItem({
       const projectId = (notification.metadata as any)?.project_id
       const assetId = getAssetIdFromNotification(notification)
       
-      if (projectId) {
-        // Build URL with project and section parameters
-        let url = `/messages?project=${projectId}&section=social-assets`
+      if (messaging) {
+        console.log('[NotificationItem] Opening sidebar for social asset review:', {
+          projectId,
+          assetId,
+          type: notification.type
+        })
         
-        // Add highlight parameter for approved/rejected notifications (submitter view)
+        // Open the messaging sidebar with the social-assets section
+        messaging.openMessages({
+          section: 'social-assets',
+          projectId: projectId || undefined,
+          highlightAssetId: assetId || undefined
+        })
+        onClick(notification)
+        return
+      } else if (projectId) {
+        // Fallback: Navigate via URL if messaging context not available
+        let url = `/messages?project=${projectId}&section=social-assets`
         if (assetId && (notification.type === 'social_asset_approved' || notification.type === 'social_asset_rejected')) {
           url += `&highlight=${assetId}`
         }
-        
-        console.log('[NotificationItem] Navigating to yellow feed:', url)
+        console.log('[NotificationItem] Fallback: Navigating to yellow feed:', url)
         router.push(url)
         onClick(notification)
         return
