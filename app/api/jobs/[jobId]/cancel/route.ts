@@ -189,11 +189,12 @@ export async function POST(
     if (!skip_karma_penalty) {
     try {
       console.log('[Cancel Job API] Applying karma penalty...')
-      await applyJobCancellationPenalty(
+      const penaltyKarma = await applyJobCancellationPenalty(
         authenticatedWallet,
-        job.project_id
+        job.project_id,
+        job.payment_amount_usd
       )
-      console.log('[Cancel Job API] ✅ Karma penalty applied (-50 points)')
+      console.log(`[Cancel Job API] ✅ Karma penalty applied (${penaltyKarma} points)`)
     } catch (karmaError) {
       console.error('[Cancel Job API] Karma penalty failed:', karmaError)
       // Continue - karma failure shouldn't block cancellation

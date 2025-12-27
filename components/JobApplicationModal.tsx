@@ -20,7 +20,7 @@ import {
 // Date picker no longer needed - using simple days input
 import { applyToJob } from '@/lib/jobs'
 import { supabase } from '@/lib/supabase'
-import { calculateJobKarma, calculateJobCompletionKarma } from '@/lib/karma'
+import { calculateJobCompletionKarma } from '@/lib/karma'
 import { getWalletTokenData } from '@/lib/token-balance'
 import { toast } from 'react-hot-toast'
 import { addDays, format } from 'date-fns'
@@ -145,40 +145,40 @@ export function JobApplicationModal({
   }
 
   // Update karma calculation when days needed changes
+  // NEW SYSTEM (Dec 2024): No immediate karma for applying - karma on completion only
   useEffect(() => {
     const days = daysNeeded || (customDays ? parseInt(customDays, 10) : null)
-    if (days && tokenPercentage) {
+    if (days) {
       const bonusPercent = getDeadlineBonus(days)
       
-      // Recalculate with bonus
-      const baseImmediate = calculateJobKarma('APPLY_TO_JOB', tokenPercentage, true)
-      const baseDelayed = calculateJobKarma('APPLY_TO_JOB', tokenPercentage, false)
-      const completionBonus = calculateJobCompletionKarma(jobUsdValue)
+      // NEW SYSTEM: Workers earn only completion karma (USD × 50)
+      // No tier multipliers, no immediate/delayed split for applications
+      const completionKarma = calculateJobCompletionKarma(jobUsdValue, true) // true = worker
       
-      setImmediateKarma(Math.round(baseImmediate * (1 + bonusPercent / 100)))
-      setDelayedKarma(Math.round((baseDelayed + completionBonus) * (1 + bonusPercent / 100)))
+      setImmediateKarma(0) // No immediate karma for applying
+      setDelayedKarma(Math.round(completionKarma * (1 + bonusPercent / 100)))
     }
-  }, [daysNeeded, customDays, tokenPercentage, jobUsdValue])
+  }, [daysNeeded, customDays, jobUsdValue])
 
   const fetchTokenPercentageAndCalculateKarma = async () => {
     try {
+      // NEW SYSTEM (Dec 2024): Token percentage no longer affects job karma
+      // Workers earn only completion karma (USD × 50), no tier multipliers
       const tokenData = await getWalletTokenData(walletAddress, tokenMint)
       const percentage = tokenData?.percentage || 0
       setTokenPercentage(percentage)
 
-      // Calculate immediate karma (25%)
-      const immediate = calculateJobKarma('APPLY_TO_JOB', percentage, true)
-      setImmediateKarma(immediate)
+      // NEW SYSTEM: No immediate karma for applying
+      setImmediateKarma(0)
 
-      // Calculate delayed karma (75% + completion bonus)
-      const delayed = calculateJobKarma('APPLY_TO_JOB', percentage, false)
-      const completionBonus = calculateJobCompletionKarma(jobUsdValue)
-      setDelayedKarma(delayed + completionBonus)
+      // Worker earns completion karma (USD × 50) upon successful job completion
+      const completionKarma = calculateJobCompletionKarma(jobUsdValue, true) // true = worker
+      setDelayedKarma(completionKarma)
     } catch (error) {
       console.error('Error calculating karma:', error)
       // Use default values if calculation fails
-      setImmediateKarma(12) // ~50 * 1 * 0.25 for small holder
-      setDelayedKarma(calculateJobCompletionKarma(jobUsdValue) + 37)
+      setImmediateKarma(0)
+      setDelayedKarma(calculateJobCompletionKarma(jobUsdValue, true))
     }
   }
 

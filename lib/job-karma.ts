@@ -1,6 +1,14 @@
 /**
  * Job Karma Helper Functions
  * Convenience functions for awarding karma during job lifecycle events
+ * 
+ * KARMA SYSTEM - NEW SYSTEM (December 2024)
+ * - Removed tier multipliers from all job-related actions
+ * - Worker completion karma: USD × 50
+ * - Poster completion karma: USD × 20
+ * - Voting bonuses: flat 50 karma
+ * - Penalties scale with job value
+ * - Old karma is grandfathered (not recalculated)
  */
 
 import { supabase } from './supabase'
@@ -8,19 +16,11 @@ import {
   calculateJobKarma,
   calculateJobCompletionKarma,
   calculateApplicationUpvoteBonusKarma,
-  calculateDisputeVoteBonusKarma
+  calculateDisputeVoteBonusKarma,
+  calculateCancellationPenalty,
+  calculateFailurePenalty
 } from './karma'
 import { notificationService } from './services/notificationService'
-
-/**
- * Get token percentage for a wallet in a project
- */
-async function getTokenPercentage(walletAddress: string, tokenMint: string): Promise<number> {
-  // TODO: Implement actual token balance checking via Helius/RPC
-  // For now, return a placeholder
-  console.warn('getTokenPercentage not implemented - using placeholder value')
-  return 0.5 // Placeholder: 0.5%
-}
 
 /**
  * Award karma to a wallet for a specific project
@@ -177,57 +177,47 @@ async function awardKarma(params: {
 }
 
 /**
- * Award karma when a user posts a job (immediate 25%)
+ * Award karma when a user posts a job
+ * NEW SYSTEM: No immediate karma for posting - karma is awarded only on completion
  */
 export async function awardPostJobKarma(
   posterWallet: string,
-  projectId: string,
-  tokenMint: string
+  projectId: string
 ) {
-  const tokenPercentage = await getTokenPercentage(posterWallet, tokenMint)
-  const immediateKarma = calculateJobKarma('POST_JOB', tokenPercentage, true)
-
-  await awardKarma({
-    walletAddress: posterWallet,
-    projectId,
-    karmaAmount: immediateKarma,
-    incrementJobsPosted: true
-  })
-
-  return immediateKarma
+  // NEW SYSTEM: No immediate karma for posting
+  // Karma is awarded only on completion (USD × 20)
+  return 0
 }
 
 /**
- * Award karma when a user applies to a job (immediate 25%)
+ * Award karma when a user applies to a job
+ * NEW SYSTEM: No immediate karma for applying - karma is awarded only on completion if you win
  */
 export async function awardApplyToJobKarma(
   applicantWallet: string,
-  projectId: string,
-  tokenMint: string
+  projectId: string
 ) {
-  const tokenPercentage = await getTokenPercentage(applicantWallet, tokenMint)
-  const immediateKarma = calculateJobKarma('APPLY_TO_JOB', tokenPercentage, true)
-
+  // NEW SYSTEM: No immediate karma for applying
+  // Karma is awarded only on completion if you win (USD × 50)
   await awardKarma({
     walletAddress: applicantWallet,
     projectId,
-    karmaAmount: immediateKarma,
+    karmaAmount: 0,
     incrementApplications: true
   })
-
-  return immediateKarma
+  
+  return 0
 }
 
 /**
  * Award karma when a user upvotes an application
+ * NEW SYSTEM: No tier multipliers - everyone earns same for same action
  */
 export async function awardUpvoteApplicationKarma(
   voterWallet: string,
-  projectId: string,
-  tokenMint: string
+  projectId: string
 ) {
-  const tokenPercentage = await getTokenPercentage(voterWallet, tokenMint)
-  const karma = calculateJobKarma('UPVOTE_APPLICATION', tokenPercentage, true)
+  const karma = calculateJobKarma('UPVOTE_APPLICATION', true)
 
   await awardKarma({
     walletAddress: voterWallet,
@@ -240,14 +230,13 @@ export async function awardUpvoteApplicationKarma(
 
 /**
  * Award karma when a user votes on a dispute
+ * NEW SYSTEM: No tier multipliers - everyone earns same for same action
  */
 export async function awardDisputeVoteKarma(
   voterWallet: string,
-  projectId: string,
-  tokenMint: string
+  projectId: string
 ) {
-  const tokenPercentage = await getTokenPercentage(voterWallet, tokenMint)
-  const karma = calculateJobKarma('VOTE_ON_DISPUTE', tokenPercentage, true)
+  const karma = calculateJobKarma('VOTE_ON_DISPUTE', true)
 
   await awardKarma({
     walletAddress: voterWallet,
@@ -261,7 +250,8 @@ export async function awardDisputeVoteKarma(
 
 /**
  * Award karma when a job completes successfully
- * Awards both USD-based completion karma and delayed karma from initial actions
+ * NEW SYSTEM: Worker earns USD × 50, Poster earns USD × 20
+ * No delayed karma bonuses (POST_JOB and APPLY_TO_JOB are 0)
  */
 export async function awardJobCompletionKarma(params: {
   jobId: string
@@ -274,50 +264,32 @@ export async function awardJobCompletionKarma(params: {
 }) {
   const {
     projectId,
-    tokenMint,
     posterWallet,
     workerWallet,
     jobUsdValue,
     winningApplicationId
   } = params
 
-  // 1. Award USD-based completion karma (no tier multiplier)
-  const completionKarma = calculateJobCompletionKarma(jobUsdValue)
+  // 1. Award USD-based completion karma (NEW SYSTEM: different amounts)
+  const posterCompletionKarma = calculateJobCompletionKarma(jobUsdValue, false)  // false = poster
+  const workerCompletionKarma = calculateJobCompletionKarma(jobUsdValue, true)   // true = worker
 
   await awardKarma({
     walletAddress: posterWallet,
     projectId,
-    karmaAmount: completionKarma
+    karmaAmount: posterCompletionKarma
   })
 
   await awardKarma({
     walletAddress: workerWallet,
     projectId,
-    karmaAmount: completionKarma,
+    karmaAmount: workerCompletionKarma,
     incrementJobsCompleted: true
   })
 
-  // 2. Award delayed karma to poster (75% of POST_JOB)
-  const posterTokenPercentage = await getTokenPercentage(posterWallet, tokenMint)
-  const delayedPosterKarma = calculateJobKarma('POST_JOB', posterTokenPercentage, false)
+  // 2. No delayed karma in new system (POST_JOB and APPLY_TO_JOB are 0)
 
-  await awardKarma({
-    walletAddress: posterWallet,
-    projectId,
-    karmaAmount: delayedPosterKarma
-  })
-
-  // 3. Award delayed karma to worker (75% of APPLY_TO_JOB)
-  const workerTokenPercentage = await getTokenPercentage(workerWallet, tokenMint)
-  const delayedWorkerKarma = calculateJobKarma('APPLY_TO_JOB', workerTokenPercentage, false)
-
-  await awardKarma({
-    walletAddress: workerWallet,
-    projectId,
-    karmaAmount: delayedWorkerKarma
-  })
-
-  // 4. Award bonus karma to voters who upvoted winning application
+  // 3. Award bonus karma to voters who upvoted winning application
   const { data: upvoters } = await supabase
     .from('job_application_votes')
     .select('voter_wallet')
@@ -336,14 +308,15 @@ export async function awardJobCompletionKarma(params: {
   }
 
   return {
-    posterKarma: completionKarma + delayedPosterKarma,
-    workerKarma: completionKarma + delayedWorkerKarma,
+    posterKarma: posterCompletionKarma,
+    workerKarma: workerCompletionKarma,
     upvoterBonus: upvoters ? calculateApplicationUpvoteBonusKarma(jobUsdValue) : 0
   }
 }
 
 /**
  * Award bonus karma to dispute voters on the winning side
+ * NEW SYSTEM: Flat 50 karma bonus for correct vote
  */
 export async function awardDisputeResolutionKarma(params: {
   disputeId: string
@@ -382,12 +355,14 @@ export async function awardDisputeResolutionKarma(params: {
 
 /**
  * Apply penalty when a job is cancelled
+ * NEW SYSTEM: Penalty scales with job value (USD × 5)
  */
 export async function applyJobCancellationPenalty(
   posterWallet: string,
-  projectId: string
+  projectId: string,
+  jobUsdValue: number
 ) {
-  const penaltyKarma = -50 // No tier multiplier on penalties
+  const penaltyKarma = calculateCancellationPenalty(jobUsdValue)
 
   await awardKarma({
     walletAddress: posterWallet,
@@ -400,12 +375,14 @@ export async function applyJobCancellationPenalty(
 
 /**
  * Apply penalty when worker fails to deliver (dispute lost)
+ * NEW SYSTEM: Penalty scales with job value (USD × 10)
  */
 export async function applyFailToDeliverPenalty(
   workerWallet: string,
-  projectId: string
+  projectId: string,
+  jobUsdValue: number
 ) {
-  const penaltyKarma = -50 // No tier multiplier on penalties
+  const penaltyKarma = calculateFailurePenalty(jobUsdValue)
 
   await awardKarma({
     walletAddress: workerWallet,
@@ -453,18 +430,9 @@ export async function getJobKarmaStats(walletAddress: string, projectId: string)
 }
 
 /**
- * Calculate tier multiplier based on token percentage
- */
-function calculateTierMultiplier(tokenPercentage: number): number {
-  if (tokenPercentage >= 3) return 7 // Mega holder
-  if (tokenPercentage >= 1) return 5.5 // Whale
-  if (tokenPercentage >= 0.1) return 3 // Holder
-  return 1 // Small holder
-}
-
-/**
  * Award bonus karma to voters who upvoted the winning application
- * Called when a job completes successfully
+ * Called when a job completes successfully (payment released)
+ * NEW SYSTEM (Dec 2024): Flat 50 karma bonus instead of USD-based
  */
 export async function awardApplicationUpvoterBonuses(
   jobId: string,
@@ -501,7 +469,7 @@ export async function awardApplicationUpvoterBonuses(
     // Get all voters who upvoted the winning application
     const { data: votes, error: votesError } = await supabase
       .from('job_application_votes')
-      .select('voter_wallet, vote_weight')
+      .select('voter_wallet')
       .eq('application_id', winningApp.id)
 
     if (votesError) throw votesError
@@ -510,27 +478,17 @@ export async function awardApplicationUpvoterBonuses(
       return
     }
 
-    // Award bonus karma to each voter
+    // NEW SYSTEM: Flat 50 karma bonus for all voters (no tier multipliers)
+    const bonusKarma = calculateApplicationUpvoteBonusKarma(jobUsdValue)
+
+    // Award karma to each voter
     for (const vote of votes) {
-      // Calculate tier multiplier based on token percentage
-      const tierMultiplier = calculateTierMultiplier(vote.vote_weight)
-      
-      // Bonus formula: job_usd_value × 5 × tier_multiplier
-      const bonusKarma = jobUsdValue * 5 * tierMultiplier
-
-      // Award karma
-      const { error: karmaError } = await supabase.rpc('increment_karma', {
-        p_wallet_address: vote.voter_wallet,
-        p_project_id: job.project_id,
-        p_karma_points: bonusKarma,
-        p_reason: 'application_upvote_bonus'
+      await awardKarma({
+        walletAddress: vote.voter_wallet,
+        projectId: job.project_id,
+        karmaAmount: bonusKarma
       })
-
-      if (karmaError) {
-        console.error(`Failed to award bonus to ${vote.voter_wallet}:`, karmaError)
-      } else {
-        console.log(`✅ Awarded ${bonusKarma.toFixed(1)} bonus karma to ${vote.voter_wallet}`)
-      }
+      console.log(`✅ Awarded ${bonusKarma} bonus karma to ${vote.voter_wallet}`)
     }
 
     console.log(`Completed upvoter bonus distribution for job ${jobId} (${votes.length} voters)`)
@@ -538,5 +496,3 @@ export async function awardApplicationUpvoterBonuses(
     console.error('Error awarding upvoter bonuses:', error)
   }
 }
-
-

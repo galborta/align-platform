@@ -98,9 +98,10 @@ export function WorkSubmissionModal({
   }, [isOpen, existingSubmission])
 
   // Calculate completion karma
+  // NEW SYSTEM (Dec 2024): Worker earns USD × 50
   useEffect(() => {
     if (isOpen && jobUsdValue) {
-      const karma = calculateJobCompletionKarma(jobUsdValue)
+      const karma = calculateJobCompletionKarma(jobUsdValue, true) // true = worker
       setCompletionKarma(karma)
     }
   }, [isOpen, jobUsdValue])
