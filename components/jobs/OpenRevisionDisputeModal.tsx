@@ -237,12 +237,17 @@ export function OpenRevisionDisputeModal({
             })
           }
 
-          // Notify admins
-          await notificationService.notifyAdminsOfNewDispute({
-            jobId: jobId,
-            jobTitle: job.title,
-            reason: `[${getDisputeTypeLabel(disputeType as DisputeType)}] ${reason.trim()}`,
-            creatorWallet: openedBy === 'poster' ? job.poster_wallet : job.assigned_to!
+          // Notify admins via API route (sends in-app + email notifications)
+          await fetch('/api/disputes/notify-admin', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              disputeId: disputeData.id,
+              jobId: jobId,
+              disputingParty: openedBy,
+              disputingWallet: openedBy === 'poster' ? job.poster_wallet : job.assigned_to!,
+              reason: `[${getDisputeTypeLabel(disputeType as DisputeType)}] ${reason.trim()}`
+            })
           })
         }
       } catch (notificationError) {

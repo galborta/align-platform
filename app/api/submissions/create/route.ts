@@ -727,6 +727,39 @@ async function processSubmissionBackground(
     console.error('[Background] ❌ Skipping email notification')
   }
   
+  // ==================== SEND CONFIRMATION EMAIL TO SUBMITTER ====================
+  try {
+    console.log('[Background] 📧 Sending confirmation email to submitter:', data.email.slice(0, 3) + '***')
+    
+    // Import the direct email function
+    const { sendEmailDirect } = await import('@/app/api/emails/send/route')
+    
+    const submitterEmailResult = await sendEmailDirect({
+      type: 'submission_received',
+      to: data.email,
+      data: {
+        submitterName: data.name,
+        tokenSymbol: data.tokenSymbol,
+        tokenName: data.tokenName,
+        submittedAt: new Date().toLocaleString('en-US', {
+          dateStyle: 'long',
+          timeStyle: 'short'
+        })
+      }
+    })
+    
+    if (submitterEmailResult.success) {
+      console.log('[Background] ✅ Confirmation email sent to submitter!')
+      console.log('[Background] ✅ Message ID:', submitterEmailResult.messageId)
+    } else {
+      console.error('[Background] ❌ Failed to send confirmation email to submitter')
+      console.error('[Background] ❌ Error:', submitterEmailResult.error)
+    }
+  } catch (submitterEmailError) {
+    console.error('[Background] ❌ Exception sending confirmation email to submitter:')
+    console.error('[Background] ❌ Error:', submitterEmailError)
+  }
+  
   const duration = Date.now() - startTime
   console.log(`[Background] ✅ Background processing completed in ${duration}ms`)
 }

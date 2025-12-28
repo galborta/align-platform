@@ -4,6 +4,7 @@ import { NextResponse } from 'next/server';
 import AdminNotification from '@/emails/templates/AdminNotification';
 import ProjectApproved from '@/emails/templates/ProjectApproved';
 import ProjectRejected from '@/emails/templates/ProjectRejected';
+import SubmissionReceived from '@/emails/templates/SubmissionReceived';
 
 const FROM_EMAIL = process.env.EMAIL_FROM || 'Orggly <notifications@orggly.com>';
 
@@ -21,7 +22,7 @@ function getResendClient() {
 // without needing to make HTTP requests
 
 export interface SendEmailParams {
-  type: 'admin_notification' | 'project_approved' | 'project_rejected';
+  type: 'admin_notification' | 'project_approved' | 'project_rejected' | 'submission_received';
   to: string | string[];
   data: {
     submitterName?: string;
@@ -138,6 +139,27 @@ export async function sendEmailDirect(params: SendEmailParams): Promise<SendEmai
             submitterName: data.submitterName,
             tokenSymbol: data.tokenSymbol,
             tokenName: data.tokenName
+          })
+        );
+        break;
+      
+      case 'submission_received':
+        if (!data.submitterName) {
+          return {
+            success: false,
+            error: 'Missing required fields for submission_received'
+          };
+        }
+        subject = `📬 We received your submission for ${data.tokenSymbol}!`;
+        emailHtml = await render(
+          SubmissionReceived({
+            submitterName: data.submitterName,
+            tokenSymbol: data.tokenSymbol,
+            tokenName: data.tokenName,
+            submittedAt: data.submittedAt || new Date().toLocaleString('en-US', {
+              dateStyle: 'long',
+              timeStyle: 'short'
+            })
           })
         );
         break;

@@ -6,7 +6,7 @@ import { countPendingSocialAssets } from '@/lib/feed-queries-social-assets'
 import { supabase } from '@/lib/supabase'
 
 // Section types for the messaging sidebar
-export type MessagingSidebarSection = 'messages' | 'social-assets'
+export type MessagingSidebarSection = 'messages' | 'social-assets' | 'disputes'
 
 // Options for opening the messages sidebar
 export interface OpenMessagesOptions {
@@ -14,6 +14,7 @@ export interface OpenMessagesOptions {
   section?: MessagingSidebarSection
   projectId?: string
   highlightAssetId?: string
+  disputeId?: string
 }
 
 interface MessagingContextType {
@@ -22,8 +23,10 @@ interface MessagingContextType {
   activeSection: MessagingSidebarSection
   projectContext: string | null
   highlightAssetId: string | null
+  highlightDisputeId: string | null
   unreadCount: number
   pendingAssetsCount: number  // Pending social asset reviews count
+  pendingDisputesCount: number  // Pending disputes count (admin only)
   totalBadgeCount: number  // Combined count for header badge
   openMessages: (options?: string | OpenMessagesOptions) => Promise<void>
   closeMessages: () => void
@@ -44,8 +47,10 @@ export function MessagingProvider({ children, currentWallet }: MessagingProvider
   const [activeSection, setActiveSection] = useState<MessagingSidebarSection>('messages')
   const [projectContext, setProjectContext] = useState<string | null>(null)
   const [highlightAssetId, setHighlightAssetId] = useState<string | null>(null)
+  const [highlightDisputeId, setHighlightDisputeId] = useState<string | null>(null)
   const [unreadCount, setUnreadCount] = useState(0)
   const [pendingAssetsCount, setPendingAssetsCount] = useState(0)
+  const [pendingDisputesCount, setPendingDisputesCount] = useState(0)
   const [isGlobalAdmin, setIsGlobalAdmin] = useState(false)
   const [userProjects, setUserProjects] = useState<string[]>([]) // Projects user is creator/editor of
 
@@ -180,6 +185,69 @@ export function MessagingProvider({ children, currentWallet }: MessagingProvider
     }
   }, [currentWallet, isGlobalAdmin, userProjects, loadPendingAssetsCount])
 
+  // Load pending disputes count (global admins only)
+  const loadPendingDisputesCount = useCallback(async () => {
+    if (!currentWallet || !isGlobalAdmin) {
+      setPendingDisputesCount(0)
+      return
+    }
+
+    try {
+      const { count, error } = await supabase
+        .from('job_disputes')
+        .select('id', { count: 'exact', head: true })
+        .is('admin_wallet', null)
+        .in('status', ['open', 'pending'])
+
+      if (error) {
+        console.error('[MessagingContext] Error counting pending disputes:', error)
+        setPendingDisputesCount(0)
+        return
+      }
+
+      console.log('[MessagingContext] Pending disputes count:', count)
+      setPendingDisputesCount(count || 0)
+    } catch (err) {
+      console.error('[MessagingContext] Error in loadPendingDisputesCount:', err)
+      setPendingDisputesCount(0)
+    }
+  }, [currentWallet, isGlobalAdmin])
+
+  // Load pending disputes count when admin status changes
+  useEffect(() => {
+    loadPendingDisputesCount()
+    
+    // Refresh every 30 seconds
+    const interval = setInterval(loadPendingDisputesCount, 30000)
+    
+    return () => clearInterval(interval)
+  }, [loadPendingDisputesCount])
+
+  // Subscribe to disputes changes for real-time updates (admins only)
+  useEffect(() => {
+    if (!currentWallet || !isGlobalAdmin) return
+
+    const channel = supabase
+      .channel(`pending_disputes_count_${currentWallet}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'job_disputes'
+        },
+        () => {
+          console.log('[MessagingContext] Dispute change detected, refreshing count')
+          loadPendingDisputesCount()
+        }
+      )
+      .subscribe()
+
+    return () => {
+      supabase.removeChannel(channel)
+    }
+  }, [currentWallet, isGlobalAdmin, loadPendingDisputesCount])
+
   // Subscribe to real-time message AND conversation updates
   useEffect(() => {
     if (!currentWallet) return
@@ -229,6 +297,7 @@ export function MessagingProvider({ children, currentWallet }: MessagingProvider
       setActiveSection('messages')
       setProjectContext(null)
       setHighlightAssetId(null)
+      setHighlightDisputeId(null)
     } else if (options) {
       // Handle new options object
       if (options.walletAddress) {
@@ -239,12 +308,14 @@ export function MessagingProvider({ children, currentWallet }: MessagingProvider
       setActiveSection(options.section || 'messages')
       setProjectContext(options.projectId || null)
       setHighlightAssetId(options.highlightAssetId || null)
+      setHighlightDisputeId(options.disputeId || null)
     } else {
       // No options - just open to messages list
       setTargetWallet(null)
       setActiveSection('messages')
       setProjectContext(null)
       setHighlightAssetId(null)
+      setHighlightDisputeId(null)
     }
     setIsOpen(true)
   }, [])
@@ -258,6 +329,7 @@ export function MessagingProvider({ children, currentWallet }: MessagingProvider
       setActiveSection('messages')
       setProjectContext(null)
       setHighlightAssetId(null)
+      setHighlightDisputeId(null)
     }, 300)
   }, [])
 
@@ -283,8 +355,8 @@ export function MessagingProvider({ children, currentWallet }: MessagingProvider
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [toggleMessages])
 
-  // Calculate total badge count (messages + pending assets)
-  const totalBadgeCount = unreadCount + pendingAssetsCount
+  // Calculate total badge count (messages + pending assets + pending disputes)
+  const totalBadgeCount = unreadCount + pendingAssetsCount + pendingDisputesCount
 
   const value: MessagingContextType = {
     isOpen,
@@ -292,8 +364,10 @@ export function MessagingProvider({ children, currentWallet }: MessagingProvider
     activeSection,
     projectContext,
     highlightAssetId,
+    highlightDisputeId,
     unreadCount,
     pendingAssetsCount,
+    pendingDisputesCount,
     totalBadgeCount,
     openMessages,
     closeMessages,

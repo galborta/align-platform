@@ -133,12 +133,17 @@ export function OpenDisputeModal({
             })
           }
 
-          // Notify all admins
-          await notificationService.notifyAdminsOfNewDispute({
-            jobId: jobId,
-            jobTitle: job.title,
-            reason: reason.trim(),
-            creatorWallet: openedBy === 'poster' ? job.poster_wallet : job.assigned_to!
+          // Notify all admins via API route (sends in-app + email notifications)
+          await fetch('/api/disputes/notify-admin', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              disputeId: disputeData.id,
+              jobId: jobId,
+              disputingParty: openedBy,
+              disputingWallet: openedBy === 'poster' ? job.poster_wallet : job.assigned_to!,
+              reason: reason.trim()
+            })
           })
         }
       } catch (notificationError) {

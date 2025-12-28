@@ -72,6 +72,9 @@ const NOTIFICATION_ICONS: Record<NotificationType, LucideIcon> = {
   social_asset_pending: BadgeCheck,
   social_asset_approved: CheckCircle,
   social_asset_rejected: XCircle,
+  // Dispute admin notifications
+  job_dispute_admin: AlertTriangle,
+  job_dispute_resolved: CheckCircle,
 }
 
 // Icon color mapping
@@ -81,11 +84,15 @@ const NOTIFICATION_COLORS: Record<string, string> = {
   error: '#EF4444',
   info: '#3B82F6',
   admin: '#7C4DFF',
+  dispute: '#FF6B35', // Red/orange for disputes
   default: '#6B7280',
 }
 
-function getNotificationIconColor(type: NotificationType): string {
+function getNotificationIconColor(type: NotificationType | string): string {
   if (type.startsWith('admin_')) return NOTIFICATION_COLORS.admin
+  
+  // Dispute notifications get distinct red/orange color
+  if (type === 'job_dispute_admin') return NOTIFICATION_COLORS.dispute
   
   const successTypes: NotificationType[] = [
     'job_completed', 'asset_verified', 'payment_released', 'karma_milestone', 'social_asset_approved'
@@ -98,10 +105,10 @@ function getNotificationIconColor(type: NotificationType): string {
     'job_assigned', 'tip_received', 'message_received'
   ]
 
-  if (successTypes.includes(type)) return NOTIFICATION_COLORS.success
-  if (warningTypes.includes(type)) return NOTIFICATION_COLORS.warning
-  if (errorTypes.includes(type)) return NOTIFICATION_COLORS.error
-  if (infoTypes.includes(type)) return NOTIFICATION_COLORS.info
+  if (successTypes.includes(type as NotificationType)) return NOTIFICATION_COLORS.success
+  if (warningTypes.includes(type as NotificationType)) return NOTIFICATION_COLORS.warning
+  if (errorTypes.includes(type as NotificationType)) return NOTIFICATION_COLORS.error
+  if (infoTypes.includes(type as NotificationType)) return NOTIFICATION_COLORS.info
   
   return NOTIFICATION_COLORS.default
 }
@@ -147,6 +154,9 @@ export function NotificationItem({
   
   // Check if this is an admin notification
   const isAdminNotification = notification.type.startsWith('admin_')
+  
+  // Check if this is a dispute admin notification (distinct styling)
+  const isDisputeAdminNotification = notification.type === ('job_dispute_admin' as any)
   
   // Check if this is a voluntary revision that needs action
   const isVoluntaryRevisionRequest = notification.type === 'voluntary_revision_requested'
@@ -214,6 +224,37 @@ export function NotificationItem({
         }
         console.log('[NotificationItem] Fallback: Navigating to yellow feed:', url)
         router.push(url)
+        onClick(notification)
+        return
+      }
+    }
+    
+    // Special handling for dispute admin notifications - open sidebar with disputes section
+    if (notification.type === 'job_dispute_admin' as any) {
+      const disputeId = notification.reference_id
+      const jobId = (notification.metadata as any)?.job_id
+      
+      console.log('[NotificationItem] Opening sidebar for dispute review:', {
+        disputeId,
+        jobId,
+        type: notification.type
+      })
+      
+      if (messaging) {
+        // Open the messaging sidebar with the disputes section
+        messaging.openMessages({
+          section: 'disputes' as any, // TODO: Add 'disputes' to MessagingSidebarSection type
+          disputeId: disputeId || undefined
+        } as any)
+        onClick(notification)
+        return
+      } else {
+        // Fallback: Navigate to job disputes page if messaging context not available
+        const fallbackUrl = jobId 
+          ? `/jobs/${jobId}?tab=disputes`
+          : `/messages?section=disputes&dispute=${disputeId}`
+        console.log('[NotificationItem] Fallback: Navigating to disputes:', fallbackUrl)
+        router.push(fallbackUrl)
         onClick(notification)
         return
       }
@@ -302,7 +343,7 @@ export function NotificationItem({
           : 'bg-white hover:bg-gray-50'
         }
         border border-transparent hover:border-gray-200
-        ${isAdminNotification ? 'border-l-4 border-l-purple-500' : ''}
+        ${isDisputeAdminNotification ? 'border-l-4 border-l-orange-500' : isAdminNotification ? 'border-l-4 border-l-purple-500' : ''}
         min-h-[60px] sm:min-h-0
       `}
     >
@@ -310,6 +351,13 @@ export function NotificationItem({
       {isAdminNotification && (
         <div className="absolute top-2 right-2">
           <Shield size={16} className="text-purple-500" />
+        </div>
+      )}
+      
+      {/* Dispute Badge (top-right corner) - orange for disputes */}
+      {isDisputeAdminNotification && (
+        <div className="absolute top-2 right-2">
+          <AlertTriangle size={16} className="text-orange-500" />
         </div>
       )}
 

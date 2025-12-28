@@ -18,7 +18,8 @@ function MessagesSidebarWrapper() {
     openMessages,
     activeSection,
     projectContext,
-    highlightAssetId
+    highlightAssetId,
+    highlightDisputeId
   } = useMessaging()
   
   // Enable message notifications
@@ -40,6 +41,7 @@ function MessagesSidebarWrapper() {
       initialSection={activeSection}
       initialProjectId={projectContext}
       initialHighlightAssetId={highlightAssetId}
+      initialDisputeId={highlightDisputeId}
     />
   )
 }

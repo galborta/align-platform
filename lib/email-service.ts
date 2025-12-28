@@ -37,7 +37,14 @@ interface ProjectRejectedData extends BaseEmailData {
   tokenName: string;
 }
 
-type EmailType = 'admin_notification' | 'project_approved' | 'project_rejected';
+interface SubmissionReceivedData extends BaseEmailData {
+  submitterName: string;
+  tokenSymbol: string;
+  tokenName: string;
+  submittedAt?: string;
+}
+
+type EmailType = 'admin_notification' | 'project_approved' | 'project_rejected' | 'submission_received';
 
 interface SendEmailParams {
   type: EmailType;
@@ -139,6 +146,20 @@ export async function sendProjectRejection(
   });
 }
 
+/**
+ * Send submission received confirmation email to submitter
+ */
+export async function sendSubmissionReceived(
+  submitterEmail: string,
+  data: SubmissionReceivedData
+): Promise<SendEmailResponse> {
+  return sendEmail({
+    type: 'submission_received',
+    to: submitterEmail,
+    data,
+  });
+}
+
 // ==================== EXPORTS ====================
 
 export type {
@@ -147,6 +168,7 @@ export type {
   AdminNotificationData,
   ProjectApprovedData,
   ProjectRejectedData,
+  SubmissionReceivedData,
 };
 
 

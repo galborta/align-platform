@@ -62,30 +62,50 @@ interface SocialAssetReviewsEntry {
   isUnread: boolean
 }
 
+// Dispute Reviews aggregated entry (for global admins)
+interface DisputeReviewsEntry {
+  type: 'dispute_reviews'
+  pendingCount: number
+  latestDispute?: {
+    id: string
+    jobTitle: string
+    openedBy: 'poster' | 'worker'
+    reason: string
+    createdAt: string
+  }
+  isUnread: boolean
+}
+
 // Combined list item type
 type ListItemData = 
   | { type: 'conversation'; data: ConversationWithDetails }
   | { type: 'social_asset_reviews'; data: SocialAssetReviewsEntry }
+  | { type: 'dispute_reviews'; data: DisputeReviewsEntry }
 
 interface ConversationListProps {
   currentWallet: string
   onSelectConversation: (conversationId: string) => void
   onSelectAssetReviews?: () => void  // Called when clicking "Social Asset Reviews" entry
+  onSelectDisputeReviews?: () => void  // Called when clicking "Dispute Reviews" entry
   filter?: 'all' | 'unread'
   refreshTrigger?: number // Change this to force a refresh
   showAssetReviews?: boolean // Whether to show social asset reviews entry in the list
+  showDisputeReviews?: boolean // Whether to show dispute reviews entry in the list (admin only)
 }
 
 export function ConversationList({ 
   currentWallet, 
   onSelectConversation,
   onSelectAssetReviews,
+  onSelectDisputeReviews,
   filter = 'all',
   refreshTrigger,
-  showAssetReviews = false
+  showAssetReviews = false,
+  showDisputeReviews = false
 }: ConversationListProps) {
   const [conversations, setConversations] = useState<ConversationWithDetails[]>([])
   const [assetReviewsEntry, setAssetReviewsEntry] = useState<SocialAssetReviewsEntry | null>(null)
+  const [disputeReviewsEntry, setDisputeReviewsEntry] = useState<DisputeReviewsEntry | null>(null)
   const [loading, setLoading] = useState(true)
   const [loadingMore, setLoadingMore] = useState(false)
   const [hasMore, setHasMore] = useState(true)
@@ -260,6 +280,95 @@ export function ConversationList({
       channel.unsubscribe()
     }
   }, [showAssetReviews, currentWallet, userPermissions])
+
+  // Load dispute reviews entry (aggregated - single item) - only for global admins
+  useEffect(() => {
+    if (!showDisputeReviews || !currentWallet || !userPermissions.isGlobalAdmin) {
+      setDisputeReviewsEntry(null)
+      return
+    }
+
+    async function loadDisputeReviewsEntry() {
+      try {
+        // Count pending disputes
+        const { count: pendingCount, error: countError } = await supabase
+          .from('job_disputes')
+          .select('id', { count: 'exact', head: true })
+          .is('admin_wallet', null)
+          .in('status', ['open', 'pending'])
+
+        if (countError) {
+          console.error('Error counting pending disputes:', countError)
+          return
+        }
+
+        // If no pending disputes, don't show the entry
+        if (!pendingCount || pendingCount === 0) {
+          setDisputeReviewsEntry(null)
+          return
+        }
+
+        // Get latest pending dispute with job info
+        const { data: latestDispute, error: disputeError } = await supabase
+          .from('job_disputes')
+          .select(`
+            id,
+            opened_by,
+            reason,
+            created_at,
+            jobs (
+              title
+            )
+          `)
+          .is('admin_wallet', null)
+          .in('status', ['open', 'pending'])
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .single()
+
+        if (disputeError && disputeError.code !== 'PGRST116') {
+          console.error('Error fetching latest dispute:', disputeError)
+        }
+
+        setDisputeReviewsEntry({
+          type: 'dispute_reviews',
+          pendingCount: pendingCount || 0,
+          latestDispute: latestDispute ? {
+            id: latestDispute.id,
+            jobTitle: (latestDispute.jobs as any)?.title || 'Unknown Job',
+            openedBy: latestDispute.opened_by as 'poster' | 'worker',
+            reason: latestDispute.reason,
+            createdAt: latestDispute.created_at
+          } : undefined,
+          isUnread: (pendingCount || 0) > 0
+        })
+      } catch (error) {
+        console.error('Error in loadDisputeReviewsEntry:', error)
+      }
+    }
+
+    loadDisputeReviewsEntry()
+
+    // Subscribe to changes
+    const channel = supabase
+      .channel(`dispute-reviews-entry-${currentWallet}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'job_disputes'
+        },
+        () => {
+          loadDisputeReviewsEntry()
+        }
+      )
+      .subscribe()
+
+    return () => {
+      channel.unsubscribe()
+    }
+  }, [showDisputeReviews, currentWallet, userPermissions.isGlobalAdmin])
 
   // Load conversations with pagination and optimization
   const loadConversations = useCallback(async (loadMore = false) => {
@@ -552,17 +661,30 @@ export function ConversationList({
   const showAssetReviewsEntry = showAssetReviews && assetReviewsEntry && 
     (filter !== 'unread' || assetReviewsEntry.isUnread)
 
+  // Include dispute reviews entry (single item) if showing and has pending items
+  const showDisputeReviewsEntry = showDisputeReviews && disputeReviewsEntry && 
+    (filter !== 'unread' || disputeReviewsEntry.isUnread)
+
   // Combine and sort all items by date
   const allItems: ListItemData[] = [
     ...(showAssetReviewsEntry ? [{ type: 'social_asset_reviews' as const, data: assetReviewsEntry }] : []),
+    ...(showDisputeReviewsEntry ? [{ type: 'dispute_reviews' as const, data: disputeReviewsEntry }] : []),
     ...filteredConversations.map(c => ({ type: 'conversation' as const, data: c }))
   ].sort((a, b) => {
     const dateA = a.type === 'conversation' 
       ? new Date(a.data.last_message_at).getTime()
-      : new Date(a.data.latestCreatedAt).getTime()
+      : a.type === 'social_asset_reviews'
+        ? new Date(a.data.latestCreatedAt).getTime()
+        : a.data.latestDispute 
+          ? new Date(a.data.latestDispute.createdAt).getTime()
+          : 0
     const dateB = b.type === 'conversation'
       ? new Date(b.data.last_message_at).getTime()
-      : new Date(b.data.latestCreatedAt).getTime()
+      : b.type === 'social_asset_reviews'
+        ? new Date(b.data.latestCreatedAt).getTime()
+        : b.data.latestDispute 
+          ? new Date(b.data.latestDispute.createdAt).getTime()
+          : 0
     return dateB - dateA
   })
 
@@ -732,6 +854,142 @@ export function ConversationList({
                           {entry.latestAssetStatus === 'verified' && ' (Approved)'}
                           {entry.latestAssetStatus === 'rejected' && ' (Rejected)'}
                         </Typography>
+                      </Box>
+                    }
+                    secondaryTypographyProps={{
+                      component: 'div'
+                    }}
+                  />
+                </ListItemButton>
+              </ListItem>
+            )
+          }
+
+          // Render Dispute Reviews Entry (single aggregated item for admins)
+          if (item.type === 'dispute_reviews') {
+            const entry = item.data
+            
+            return (
+              <ListItem
+                key="dispute-reviews"
+                disablePadding
+                sx={{
+                  borderBottom: '1px solid',
+                  borderColor: 'divider',
+                  bgcolor: 'rgba(255, 107, 53, 0.08)',
+                  '&:hover': {
+                    bgcolor: 'rgba(255, 107, 53, 0.15)'
+                  }
+                }}
+              >
+                <ListItemButton
+                  onClick={() => onSelectDisputeReviews?.()}
+                  sx={{ py: 2 }}
+                >
+                  <ListItemAvatar>
+                    <Badge
+                      badgeContent={entry.pendingCount}
+                      max={99}
+                      sx={{
+                        '& .MuiBadge-badge': {
+                          bgcolor: '#FF6B35',
+                          color: '#fff',
+                          fontWeight: 700,
+                          fontSize: '11px',
+                          minWidth: 20,
+                          height: 20
+                        }
+                      }}
+                    >
+                      <Avatar
+                        sx={{ 
+                          bgcolor: '#FF6B35',
+                          width: 48,
+                          height: 48
+                        }}
+                      >
+                        ⚖️
+                      </Avatar>
+                    </Badge>
+                  </ListItemAvatar>
+
+                  <ListItemText
+                    primary={
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
+                        <Typography
+                          variant="subtitle1"
+                          component="span"
+                          sx={{
+                            fontWeight: 700,
+                            color: 'text.primary'
+                          }}
+                        >
+                          Dispute Resolutions
+                        </Typography>
+                        
+                        {/* Dispute Tag - Always orange */}
+                        <Chip
+                          label="Admin Action"
+                          size="small"
+                          sx={{
+                            background: 'linear-gradient(135deg, #FF6B35, #FF8A5B)',
+                            color: '#fff',
+                            borderRadius: '20px',
+                            height: '22px',
+                            fontSize: '11px',
+                            fontWeight: 600,
+                            letterSpacing: '0.3px',
+                            padding: '0 4px',
+                            flexShrink: 0,
+                            '& .MuiChip-label': {
+                              padding: '0 8px',
+                              lineHeight: '22px',
+                              whiteSpace: 'nowrap',
+                              overflow: 'visible'
+                            },
+                            animation: entry.pendingCount > 0 ? `${pulseAnimation} 2s ease-in-out infinite` : 'none'
+                          }}
+                        />
+
+                        {entry.pendingCount > 0 && (
+                          <FiberManualRecordIcon
+                            sx={{
+                              fontSize: 10,
+                              color: '#FF6B35'
+                            }}
+                          />
+                        )}
+                      </Box>
+                    }
+                    secondary={
+                      <Box sx={{ mt: 0.5 }}>
+                        <Typography
+                          variant="body2"
+                          component="span"
+                          sx={{
+                            color: 'text.secondary',
+                            fontWeight: 600,
+                            display: 'block',
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                            whiteSpace: 'nowrap'
+                          }}
+                        >
+                          {entry.pendingCount} pending {entry.pendingCount === 1 ? 'dispute' : 'disputes'}
+                        </Typography>
+                        {entry.latestDispute && (
+                          <Typography
+                            variant="caption"
+                            component="span"
+                            sx={{
+                              color: 'text.disabled',
+                              display: 'block',
+                              mt: 0.25
+                            }}
+                          >
+                            Latest: {entry.latestDispute.jobTitle} ({entry.latestDispute.openedBy === 'poster' ? 'Poster' : 'Worker'})
+                          </Typography>
+                        )}
                       </Box>
                     }
                     secondaryTypographyProps={{

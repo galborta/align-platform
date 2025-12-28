@@ -8,7 +8,9 @@ import { ConversationList } from '@/components/ConversationList'
 import { MessageThread } from '@/components/MessageThread'
 import { MessageComposer } from '@/components/MessageComposer'
 import { SocialAssetFeed } from '@/components/admin/SocialAssetFeed'
+import { DisputeFeed } from '@/components/admin/DisputeFeed'
 import { countPendingSocialAssets } from '@/lib/feed-queries-social-assets'
+import { getPendingDisputesCount } from '@/lib/notifications/dispute-notifications'
 import {
   Drawer,
   Box,
@@ -56,9 +58,10 @@ interface MessagesSidebarProps {
   currentWallet: string
   targetWallet?: string | null
   // New context props from MessagingContext
-  initialSection?: 'messages' | 'social-assets'
+  initialSection?: 'messages' | 'social-assets' | 'disputes'
   initialProjectId?: string | null
   initialHighlightAssetId?: string | null
+  initialDisputeId?: string | null
 }
 
 export function MessagesSidebar({
@@ -68,7 +71,8 @@ export function MessagesSidebar({
   targetWallet,
   initialSection,
   initialProjectId,
-  initialHighlightAssetId
+  initialHighlightAssetId,
+  initialDisputeId
 }: MessagesSidebarProps) {
   const router = useRouter()
   const pathname = usePathname()
@@ -96,8 +100,10 @@ export function MessagesSidebar({
   const [hasAnyProjectRole, setHasAnyProjectRole] = useState(false)  // For ANY project (used to show asset reviews)
   const [isGlobalAdmin, setIsGlobalAdmin] = useState(false)
   const [pendingAssetsCount, setPendingAssetsCount] = useState(0)
-  const [activeSection, setActiveSection] = useState<'messages' | 'social-assets'>(initialSection || 'messages')
+  const [pendingDisputesCount, setPendingDisputesCount] = useState(0)
+  const [activeSection, setActiveSection] = useState<'messages' | 'social-assets' | 'disputes'>(initialSection || 'messages')
   const [highlightAssetId, setHighlightAssetId] = useState<string | null>(initialHighlightAssetId || null)
+  const [highlightDisputeId, setHighlightDisputeId] = useState<string | null>(initialDisputeId || null)
   
   // Force refresh conversation list when sidebar opens
   useEffect(() => {
@@ -118,8 +124,11 @@ export function MessagesSidebar({
       if (initialHighlightAssetId) {
         setHighlightAssetId(initialHighlightAssetId)
       }
+      if (initialDisputeId) {
+        setHighlightDisputeId(initialDisputeId)
+      }
     }
-  }, [isOpen, initialSection, initialProjectId, initialHighlightAssetId])
+  }, [isOpen, initialSection, initialProjectId, initialHighlightAssetId, initialDisputeId])
 
   // Check if current user is a global admin
   useEffect(() => {
@@ -227,13 +236,13 @@ export function MessagesSidebar({
 
   // Apply URL section parameter on mount
   useEffect(() => {
-    if (urlSection && (urlSection === 'messages' || urlSection === 'social-assets')) {
-      setActiveSection(urlSection as 'messages' | 'social-assets')
+    if (urlSection && (urlSection === 'messages' || urlSection === 'social-assets' || urlSection === 'disputes')) {
+      setActiveSection(urlSection as 'messages' | 'social-assets' | 'disputes')
     }
   }, [urlSection])
 
   // Helper function to handle section changes and update URL
-  const handleSectionChange = useCallback((section: 'messages' | 'social-assets') => {
+  const handleSectionChange = useCallback((section: 'messages' | 'social-assets' | 'disputes') => {
     setActiveSection(section)
     
     // Update URL without full page reload
@@ -322,6 +331,37 @@ export function MessagesSidebar({
       subscription.unsubscribe()
     }
   }, [projectId, isCreatorOrEditor, isGlobalAdmin])
+
+  // Fetch pending disputes count (for global admins only)
+  useEffect(() => {
+    if (!isGlobalAdmin) {
+      setPendingDisputesCount(0)
+      return
+    }
+
+    async function loadPendingDisputesCount() {
+      const count = await getPendingDisputesCount()
+      setPendingDisputesCount(count)
+    }
+
+    loadPendingDisputesCount()
+
+    // Subscribe to dispute changes
+    const subscription = supabase
+      .channel('pending-disputes-count')
+      .on('postgres_changes', {
+        event: '*',
+        schema: 'public',
+        table: 'job_disputes'
+      }, () => {
+        loadPendingDisputesCount()
+      })
+      .subscribe()
+
+    return () => {
+      subscription.unsubscribe()
+    }
+  }, [isGlobalAdmin])
 
   // Save search to history
   const saveSearchToHistory = useCallback((query: string) => {
@@ -1110,9 +1150,15 @@ export function MessagesSidebar({
                         setActiveSection('social-assets')
                         setHighlightAssetId(null) // Clear any specific highlight
                       }}
+                      onSelectDisputeReviews={() => {
+                        // Switch to disputes section when clicking "Dispute Reviews" entry
+                        setActiveSection('disputes')
+                        setHighlightDisputeId(null) // Clear any specific highlight
+                      }}
                       filter={filterTab}
                       refreshTrigger={refreshTrigger}
                       showAssetReviews={isGlobalAdmin || hasAnyProjectRole}
+                      showDisputeReviews={isGlobalAdmin}
                     />
                   ) : (
                     <Box sx={{ p: 4, textAlign: 'center' }}>
@@ -1173,6 +1219,67 @@ export function MessagesSidebar({
                   highlightAssetId={highlightAssetId}
                   isGlobalAdmin={isGlobalAdmin}
                 />
+                </Box>
+              </Box>
+            )}
+
+            {/* Disputes Section - For global admins only */}
+            {activeSection === 'disputes' && isGlobalAdmin && (
+              <Box sx={{ flex: 1, overflow: 'auto', display: 'flex', flexDirection: 'column' }}>
+                {/* Back Button Header */}
+                <Box sx={{ 
+                  p: 2, 
+                  borderBottom: '1px solid',
+                  borderColor: 'divider',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 1
+                }}>
+                  <IconButton 
+                    onClick={() => setActiveSection('messages')}
+                    size="small"
+                    sx={{ 
+                      color: 'text.secondary',
+                      '&:hover': {
+                        color: '#FF6B35',
+                        bgcolor: 'rgba(255, 107, 53, 0.08)'
+                      }
+                    }}
+                  >
+                    <ArrowBackIcon fontSize="small" />
+                  </IconButton>
+                  <Box sx={{ flex: 1 }}>
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                      <Typography variant="h6" sx={{ fontWeight: 600, lineHeight: 1.2 }}>
+                        ⚖️ Dispute Resolutions
+                      </Typography>
+                      {pendingDisputesCount > 0 && (
+                        <Badge
+                          badgeContent={pendingDisputesCount}
+                          sx={{
+                            '& .MuiBadge-badge': {
+                              bgcolor: '#FF6B35',
+                              color: 'white',
+                              fontWeight: 700,
+                              fontSize: '11px'
+                            }
+                          }}
+                        />
+                      )}
+                    </Box>
+                    <Typography variant="caption" color="text.secondary">
+                      Review and resolve pending disputes
+                    </Typography>
+                  </Box>
+                </Box>
+                
+                {/* Dispute Feed */}
+                <Box sx={{ flex: 1, overflow: 'auto', p: 2 }}>
+                  <DisputeFeed
+                    editorWallet={currentWallet}
+                    highlightDisputeId={highlightDisputeId}
+                    isGlobalAdmin={isGlobalAdmin}
+                  />
                 </Box>
               </Box>
             )}
