@@ -1,6 +1,7 @@
 import { Resend } from 'resend'
 
 const resend = new Resend(process.env.RESEND_API_KEY)
+const FROM_EMAIL = process.env.EMAIL_FROM || 'Orggly <notifications@orggly.com>'
 
 /**
  * Email template for asset approval notification
@@ -22,7 +23,7 @@ export async function sendAssetApprovedEmail(
     const classificationLabel = classification === 'official' ? 'Official' : 'Affiliated'
 
     const { data, error } = await resend.emails.send({
-      from: 'Align <notifications@align.xyz>',
+      from: FROM_EMAIL,
       to: recipientEmail,
       subject: `✅ Your ${classificationLabel} ${assetType === 'social' ? 'social account' : 'domain'} was approved!`,
       html: `
@@ -119,7 +120,7 @@ export async function sendAssetRejectedEmail(
     const classificationLabel = classification === 'official' ? 'Official' : 'Affiliated'
 
     const { data, error } = await resend.emails.send({
-      from: 'Align <notifications@align.xyz>',
+      from: FROM_EMAIL,
       to: recipientEmail,
       subject: `Asset Submission Review - ${projectName}`,
       html: `

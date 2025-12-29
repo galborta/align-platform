@@ -46,6 +46,8 @@ import WarningIcon from '@mui/icons-material/Warning'
 import { useConnection, useWallet } from '@solana/wallet-adapter-react'
 import { LAMPORTS_PER_SOL, PublicKey } from '@solana/web3.js'
 import { ProtectedAction } from '@/components/ProtectedAction'
+import { useRouter } from 'next/navigation'
+import Link from 'next/link'
 
 interface CreateJobModalProps {
   isOpen: boolean
@@ -108,6 +110,10 @@ export function CreateJobModal({
   const [showConfirmation, setShowConfirmation] = useState(false)
   const [isLocking, setIsLocking] = useState(false)
   const [lockError, setLockError] = useState<string | null>(null)
+  const [recoveryInfo, setRecoveryInfo] = useState<{ 
+    isRecoverable: boolean
+    txSignature?: string 
+  } | null>(null)
   const [feePercentage, setFeePercentage] = useState<number>(5.0)
   const [solBalance, setSolBalance] = useState<number>(0)
   const [tokenBalance, setTokenBalance] = useState<number>(0)
@@ -274,6 +280,7 @@ export function CreateJobModal({
     setShowConfirmation(false)
     setIsLocking(false)
     setLockError(null)
+    setRecoveryInfo(null)
     setFeePercentage(5.0)
     setSolBalance(0)
     setTokenBalance(0)
@@ -520,6 +527,7 @@ export function CreateJobModal({
   const handleConfirmAndLock = async () => {
     setIsLocking(true)
     setLockError(null)
+    setRecoveryInfo(null)
     
     // Track escrow transaction for draft recovery
     let escrowTxSignature: string | undefined
@@ -876,13 +884,23 @@ export function CreateJobModal({
         }
       }
     } catch (error) {
-      console.error(`Error ${mode === 'edit' ? 'updating' : 'creating'} job:`, error)
+      // Detailed error logging for debugging
+      console.error(`[CreateJobModal] Error ${mode === 'edit' ? 'updating' : 'creating'} job:`, {
+        error,
+        errorMessage: error instanceof Error ? error.message : 'Unknown error',
+        errorName: error instanceof Error ? error.name : 'Unknown',
+        escrowTxSignature,
+        projectId,
+        title: title.trim(),
+        timestamp: new Date().toISOString()
+      })
+      
       const errorMessage = error instanceof Error ? error.message : 'Unknown error'
       toast.dismiss('escrow-lock')
       
       // If escrow succeeded but job creation failed, save draft for recovery
       if (mode === 'create' && escrowTxSignature) {
-        console.log('Escrow succeeded but job creation failed - saving draft for recovery')
+        console.log('[CreateJobModal] Escrow succeeded but job creation failed - saving draft for recovery')
         
         const amount = parseFloat(paymentAmount)
         const totalEscrowAmount = calculateEscrowAmount(amount, feePercentage)
@@ -914,22 +932,28 @@ export function CreateJobModal({
         
         if (draft) {
           setLockError(
-            '⚠️ Tokens were locked successfully, but job creation failed. ' +
-            'Your progress has been saved and can be recovered. ' +
-            'Please refresh the page to see recovery options, or contact support. ' +
-            `Transaction: ${escrowTxSignature.slice(0, 8)}...`
+            '⚠️ Your tokens were locked successfully, but job creation failed due to a network issue. ' +
+            `Your funds are safe! Click "Recover Job" below to complete the job creation.`
           )
-          toast.error('Job saved as draft for recovery', {
+          setRecoveryInfo({
+            isRecoverable: true,
+            txSignature: escrowTxSignature
+          })
+          toast.error('Job needs recovery - click the button below', {
             duration: 8000,
             icon: '💾'
           })
         } else {
           setLockError(
             `⚠️ CRITICAL: Tokens locked but job creation failed. ` +
-            `Transaction signature: ${escrowTxSignature}. ` +
-            `Please save this signature and contact support immediately.`
+            `Your funds are safe in escrow. Transaction: ${escrowTxSignature}. ` +
+            `Please go to the Jobs tab and click "Recover" to complete job creation, or contact support.`
           )
-          toast.error('Please save your transaction signature!', {
+          setRecoveryInfo({
+            isRecoverable: true,
+            txSignature: escrowTxSignature
+          })
+          toast.error('Please recover your job from the Jobs tab!', {
             duration: 10000,
             icon: '⚠️'
           })
@@ -1202,8 +1226,47 @@ export function CreateJobModal({
 
           {/* Error Display */}
           {lockError && (
-            <Alert severity="error" sx={{ mb: 2 }}>
-              {lockError}
+            <Alert 
+              severity={recoveryInfo?.isRecoverable ? "warning" : "error"} 
+              sx={{ mb: 2 }}
+              action={
+                recoveryInfo?.isRecoverable && (
+                  <Button 
+                    color="inherit" 
+                    size="small"
+                    variant="outlined"
+                    onClick={() => {
+                      // Navigate to jobs page where recovery banner will show
+                      window.location.href = `/project/${projectId}/jobs?recover=true`
+                    }}
+                    sx={{ 
+                      whiteSpace: 'nowrap',
+                      fontWeight: 600,
+                      borderColor: 'currentColor',
+                      '&:hover': {
+                        borderColor: 'currentColor',
+                        bgcolor: 'rgba(255,255,255,0.1)'
+                      }
+                    }}
+                  >
+                    🔧 Recover Job
+                  </Button>
+                )
+              }
+            >
+              <Box>
+                <Typography variant="body2" sx={{ fontWeight: 600, mb: 0.5 }}>
+                  {recoveryInfo?.isRecoverable ? 'Recovery Required' : 'Error'}
+                </Typography>
+                <Typography variant="body2">
+                  {lockError}
+                </Typography>
+                {recoveryInfo?.txSignature && (
+                  <Typography variant="caption" sx={{ display: 'block', mt: 1, fontFamily: 'monospace' }}>
+                    Transaction: {recoveryInfo.txSignature.slice(0, 12)}...{recoveryInfo.txSignature.slice(-8)}
+                  </Typography>
+                )}
+              </Box>
             </Alert>
           )}
         </DialogContent>

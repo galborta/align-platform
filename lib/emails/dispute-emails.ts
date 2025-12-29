@@ -1,6 +1,7 @@
 import { Resend } from 'resend'
 
-const APP_URL = process.env.NEXT_PUBLIC_APP_URL || 'https://align.xyz'
+const APP_URL = process.env.NEXT_PUBLIC_APP_URL || 'https://orggly.com'
+const FROM_EMAIL = process.env.EMAIL_FROM || 'Orggly <notifications@orggly.com>'
 
 // Lazy initialization to avoid errors on client-side imports
 let resendInstance: Resend | null = null
@@ -41,7 +42,7 @@ export async function sendDisputeCreatedEmail(
     })
 
     const { data, error } = await getResend().emails.send({
-      from: 'Align <notifications@align.xyz>',
+      from: FROM_EMAIL,
       to: adminEmail,
       subject: `⚖️ [Admin Action Required] New Dispute: ${disputeData.jobTitle}`,
       html: `
@@ -172,7 +173,7 @@ export async function sendDisputeResolvedEmail(
     }
 
     const { data, error } = await getResend().emails.send({
-      from: 'Align <notifications@align.xyz>',
+      from: FROM_EMAIL,
       to: userEmail,
       subject: `⚖️ Dispute Resolved: ${resolutionData.jobTitle}`,
       html: `

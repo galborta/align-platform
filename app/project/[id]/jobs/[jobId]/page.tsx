@@ -73,6 +73,7 @@ import Alert from '@mui/material/Alert'
 import AlertTitle from '@mui/material/AlertTitle'
 import CalendarTodayIcon from '@mui/icons-material/CalendarToday'
 import LoopIcon from '@mui/icons-material/Loop'
+import CheckCircleOutlineIcon from '@mui/icons-material/CheckCircleOutline'
 import AllInclusiveIcon from '@mui/icons-material/AllInclusive'
 import Typography from '@mui/material/Typography'
 import Box from '@mui/material/Box'
@@ -105,6 +106,7 @@ const statusColors: Record<string, string> = {
   submitted: '#7C4DFF',
   completed: '#6B7280',
   disputed: '#EF4444',
+  dispute_resolved: '#059669',
   cancelled: '#9CA3AF'
 }
 
@@ -114,6 +116,7 @@ const statusLabels: Record<string, string> = {
   submitted: 'Work Submitted',
   completed: 'Completed',
   disputed: 'In Dispute',
+  dispute_resolved: 'Dispute Resolved',
   cancelled: 'Cancelled'
 }
 
@@ -457,8 +460,10 @@ export default function JobDetailPage() {
         setRevisionHistory(history)
       }
 
-      // Fetch dispute if job is disputed
-      if (jobData.status === 'disputed') {
+      // Fetch dispute if job is disputed, resolved, or completed/cancelled (may have been resolved via dispute)
+      // This handles backwards compatibility for old disputes resolved before status update logic
+      if (jobData.status === 'disputed' || jobData.status === 'dispute_resolved' || 
+          jobData.status === 'completed' || jobData.status === 'cancelled') {
         await fetchDisputeData(params.jobId as string, jobData.project_id)
       }
 
@@ -529,12 +534,14 @@ export default function JobDetailPage() {
 
   const fetchDisputeData = async (jobId: string, projectId: string) => {
     try {
-      // Fetch dispute
+      // Fetch dispute (active or resolved)
       const { data: disputeData, error: disputeError } = await supabase
         .from('job_disputes')
         .select('*')
         .eq('job_id', jobId)
-        .eq('status', 'active')
+        .in('status', ['active', 'resolved'])
+        .order('created_at', { ascending: false })
+        .limit(1)
         .maybeSingle()
 
       if (disputeError) throw disputeError
@@ -1754,23 +1761,21 @@ export default function JobDetailPage() {
                       className="text-2xl font-bold mb-2"
                       style={{ color: '#1A1A1E' }}
                     >
-                      ⚖️ This job is under community dispute
+                      This job is under dispute review
                     </h2>
                     
                     <div className="flex items-center gap-4 mb-2">
                       <Chip
-                        label="Active Voting"
+                        label="Under Review"
                         sx={{
                           backgroundColor: '#FEE2E2',
                           color: '#DC2626',
                           fontWeight: 600
                         }}
                       />
-                      {dispute.ends_at && (
-                        <p className="text-sm font-medium" style={{ color: '#DC2626' }}>
-                          ⏱️ Voting ends {formatDistanceToNow(new Date(dispute.ends_at), { addSuffix: true })}
-                        </p>
-                      )}
+                      <p className="text-sm font-medium" style={{ color: '#6F7280' }}>
+                        The Orggly team will review and resolve this dispute fairly
+                      </p>
                     </div>
                   </div>
                 </div>
@@ -1879,257 +1884,216 @@ export default function JobDetailPage() {
                   style={{ backgroundColor: '#E5E7F0' }}
                 />
 
-                {/* Current Voting Results */}
+                {/* Resolution Status */}
                 <div className="mb-6">
                   <h4 
                     className="text-lg font-bold mb-4"
                     style={{ color: '#1A1A1E' }}
                   >
-                    Current Voting Results
+                    Resolution Status
                   </h4>
 
-                  {(() => {
-                    // Calculate vote percentages
-                    const releaseVotes = disputeVotes.filter(v => v.vote === 'release')
-                    const refundVotes = disputeVotes.filter(v => v.vote === 'refund')
-                    
-                    const releaseWeight = releaseVotes.reduce((sum, v) => sum + v.vote_weight, 0)
-                    const refundWeight = refundVotes.reduce((sum, v) => sum + v.vote_weight, 0)
-                    const totalWeight = releaseWeight + refundWeight
-                    
-                    const releasePercent = totalWeight > 0 ? (releaseWeight / 100) * 100 : 0
-                    const refundPercent = totalWeight > 0 ? (refundWeight / 100) * 100 : 0
-                    const notVotedPercent = 100 - releasePercent - refundPercent
-
-                    const isReleaseWinning = releaseWeight > refundWeight
-
-                    return (
-                      <>
-                        {/* Release to Worker Bar */}
-                        <div className="mb-4">
-                          <div className="flex justify-between items-center mb-2">
-                            <span className="text-sm font-semibold" style={{ color: '#7C4DFF' }}>
-                              Release to Worker
-                            </span>
-                            <span className="text-sm font-bold" style={{ color: '#7C4DFF' }}>
-                              {releasePercent.toFixed(1)}%
-                            </span>
-                          </div>
-                          <LinearProgress
-                            variant="determinate"
-                            value={releasePercent}
-                            sx={{
-                              height: 10,
-                              borderRadius: 5,
-                              backgroundColor: '#E5E7F0',
-                              '& .MuiLinearProgress-bar': {
-                                backgroundColor: '#7C4DFF',
-                                borderRadius: 5
-                              }
-                            }}
-                          />
-                          <p className="text-xs mt-1" style={{ color: '#6F7280' }}>
-                            {releasePercent.toFixed(1)}% of supply voted to release ({releaseVotes.length} voter{releaseVotes.length !== 1 ? 's' : ''})
-                          </p>
-                        </div>
-
-                        {/* Refund to Poster Bar */}
-                        <div className="mb-4">
-                          <div className="flex justify-between items-center mb-2">
-                            <span className="text-sm font-semibold" style={{ color: '#FB923C' }}>
-                              Refund to Poster
-                            </span>
-                            <span className="text-sm font-bold" style={{ color: '#FB923C' }}>
-                              {refundPercent.toFixed(1)}%
-                            </span>
-                          </div>
-                          <LinearProgress
-                            variant="determinate"
-                            value={refundPercent}
-                            sx={{
-                              height: 10,
-                              borderRadius: 5,
-                              backgroundColor: '#E5E7F0',
-                              '& .MuiLinearProgress-bar': {
-                                backgroundColor: '#FB923C',
-                                borderRadius: 5
-                              }
-                            }}
-                          />
-                          <p className="text-xs mt-1" style={{ color: '#6F7280' }}>
-                            {refundPercent.toFixed(1)}% of supply voted to refund ({refundVotes.length} voter{refundVotes.length !== 1 ? 's' : ''})
-                          </p>
-                        </div>
-
-                        {/* Not Voted Yet */}
-                        <div className="mb-4">
-                          <p className="text-sm" style={{ color: '#6F7280' }}>
-                            {notVotedPercent.toFixed(1)}% have not voted yet
-                          </p>
-                        </div>
-
-                        {/* Current Leader */}
-                        {totalWeight > 0 && (
-                          <div 
-                            className="p-3 rounded-lg"
-                            style={{ 
-                              backgroundColor: isReleaseWinning ? '#EEE7FF' : '#FFF4E6'
-                            }}
-                          >
-                            <p 
-                              className="text-sm font-bold"
-                              style={{ color: isReleaseWinning ? '#7C4DFF' : '#FB923C' }}
-                            >
-                              {isReleaseWinning ? '🟣 Release to Worker is winning' : '🟠 Refund to Poster is winning'}
-                            </p>
-                          </div>
-                        )}
-                      </>
-                    )
-                  })()}
+                  <div 
+                    className="p-4 rounded-lg"
+                    style={{ backgroundColor: '#FFF4E6' }}
+                  >
+                    <div className="flex items-center gap-3 mb-3">
+                      <CircularProgress size={20} sx={{ color: '#FB923C' }} />
+                      <p className="text-sm font-bold" style={{ color: '#FB923C' }}>
+                        Awaiting Orggly Team Review
+                      </p>
+                    </div>
+                    <p className="text-sm" style={{ color: '#6F7280' }}>
+                      Our team is reviewing the KPIs, submitted work, and dispute reason. 
+                      We typically resolve disputes within 24-72 hours.
+                    </p>
+                  </div>
                 </div>
 
-                <div 
-                  className="h-px mb-6"
-                  style={{ backgroundColor: '#E5E7F0' }}
-                />
-
-                {/* Your Vote Section */}
-                {publicKey && (
-                  <div>
-                    <h4 
-                      className="text-lg font-bold mb-4"
-                      style={{ color: '#1A1A1E' }}
-                    >
-                      {userVote ? 'Your Vote' : 'Cast Your Vote'}
-                    </h4>
-
-                    {userVote ? (
-                      /* Already Voted */
-                      <div 
-                        className="p-4 rounded-lg"
-                        style={{ backgroundColor: '#E3F8ED' }}
+                {/* Poster Actions During Dispute */}
+                {isPoster && (
+                  <>
+                    <div 
+                      className="h-px mb-6"
+                      style={{ backgroundColor: '#E5E7F0' }}
+                    />
+                    <div className="mb-6">
+                      <h4 
+                        className="text-lg font-bold mb-4"
+                        style={{ color: '#1A1A1E' }}
                       >
-                        <p className="text-sm font-bold mb-2" style={{ color: '#36C170' }}>
-                          ✓ You voted to: {userVote === 'release' ? 'Release to Worker' : 'Refund to Poster'}
-                        </p>
-                        <p className="text-sm mb-1" style={{ color: '#6F7280' }}>
-                          Voting power: {userVoteWeight.toFixed(2)}% of supply
-                        </p>
-                        <p className="text-sm mb-1" style={{ color: '#6F7280' }}>
-                          Karma earned: +{(5 * tierMultiplier).toFixed(1)} karma
-                        </p>
-                        <p className="text-sm" style={{ color: '#36C170' }}>
-                          Bonus if correct: +{(job.payment_amount_usd * 5 * tierMultiplier).toFixed(0)} karma
-                        </p>
-                      </div>
-                    ) : (
-                      /* Haven't Voted Yet */
-                      <div>
-                        <FormControl component="fieldset" className="mb-4">
-                          <RadioGroup
-                            value={selectedVote}
-                            onChange={(e) => setSelectedVote(e.target.value as 'release' | 'refund')}
-                          >
-                            <FormControlLabel
-                              value="release"
-                              control={<Radio sx={{ color: '#7C4DFF', '&.Mui-checked': { color: '#7C4DFF' } }} />}
-                              label={
-                                <div>
-                                  <p className="font-semibold" style={{ color: '#1A1A1E' }}>
-                                    Release to Worker
-                                  </p>
-                                  <p className="text-xs" style={{ color: '#6F7280' }}>
-                                    The submitted work meets the KPIs
-                                  </p>
-                                </div>
-                              }
-                            />
-                            <FormControlLabel
-                              value="refund"
-                              control={<Radio sx={{ color: '#FB923C', '&.Mui-checked': { color: '#FB923C' } }} />}
-                              label={
-                                <div>
-                                  <p className="font-semibold" style={{ color: '#1A1A1E' }}>
-                                    Refund to Poster
-                                  </p>
-                                  <p className="text-xs" style={{ color: '#6F7280' }}>
-                                    The submitted work does not meet the KPIs
-                                  </p>
-                                </div>
-                              }
-                            />
-                          </RadioGroup>
-                        </FormControl>
-
-                        <div 
-                          className="p-4 rounded-lg mb-4"
-                          style={{ backgroundColor: '#F9FAFB' }}
-                        >
-                          <p className="text-sm mb-1" style={{ color: '#6F7280' }}>
-                            Your voting power: <span className="font-bold">{userVoteWeight.toFixed(2)}% of supply</span>
-                          </p>
-                          <p className="text-sm mb-1" style={{ color: '#6F7280' }}>
-                            Your tier: <span className="font-bold">
-                              {tierMultiplier === 7 ? 'Mega (7x)' : tierMultiplier === 5.5 ? 'Whale (5.5x)' : tierMultiplier === 3 ? 'Holder (3x)' : 'Small Holder (1x)'}
-                            </span>
-                          </p>
-                          <p className="text-sm font-bold" style={{ color: '#36C170' }}>
-                            Vote now: +{(5 * tierMultiplier).toFixed(1)} karma
-                          </p>
-                          <p className="text-sm font-bold" style={{ color: '#7C4DFF' }}>
-                            Bonus if correct: +{(job.payment_amount_usd * 5 * tierMultiplier).toFixed(0)} karma
-                          </p>
-                        </div>
-
+                        Change Your Mind?
+                      </h4>
+                      <p className="text-sm mb-4" style={{ color: '#6F7280' }}>
+                        If you&apos;d like to resolve this directly without waiting for the team review:
+                      </p>
+                      <div className="flex flex-wrap gap-3">
+                        {/* Check if revisions available */}
+                        {(() => {
+                          const assignedWorkerApp = applications.find(a => a.applicant_wallet === job.assigned_to)
+                          const hasRevisionsLeft = assignedWorkerApp && (
+                            assignedWorkerApp.revisions_remaining === null || 
+                            (assignedWorkerApp.revisions_remaining && assignedWorkerApp.revisions_remaining > 0)
+                          )
+                          return hasRevisionsLeft ? (
+                            <Button
+                              variant="outlined"
+                              onClick={() => setShowRevisionModal(true)}
+                              startIcon={<LoopIcon />}
+                              sx={{
+                                color: '#7C4DFF',
+                                borderColor: '#7C4DFF',
+                                textTransform: 'none',
+                                '&:hover': {
+                                  borderColor: '#6B3FE8',
+                                  backgroundColor: 'rgba(124, 77, 255, 0.04)'
+                                }
+                              }}
+                            >
+                              Request Revision Instead
+                            </Button>
+                          ) : null
+                        })()}
                         <Button
                           variant="contained"
-                          size="large"
-                          onClick={handleVote}
-                          disabled={voting}
-                          className="w-full"
+                          onClick={() => setShowReleaseConfirm(true)}
+                          startIcon={<CheckCircleOutlineIcon />}
                           sx={{
-                            backgroundColor: '#7C4DFF',
+                            backgroundColor: '#36C170',
                             color: '#fff',
                             textTransform: 'none',
-                            fontSize: '16px',
-                            py: 1.5,
                             '&:hover': {
-                              backgroundColor: '#6B3FEE'
-                            },
-                            '&:disabled': {
-                              backgroundColor: '#E5E7F0',
-                              color: '#A3A7B5'
+                              backgroundColor: '#2EA85D'
                             }
                           }}
                         >
-                          {voting ? (
-                            <>
-                              <CircularProgress size={20} sx={{ mr: 1, color: '#fff' }} />
-                              Submitting Vote...
-                            </>
-                          ) : (
-                            <>
-                              <GavelIcon sx={{ fontSize: 20, mr: 1 }} />
-                              Submit Vote
-                            </>
-                          )}
+                          Release Payment
                         </Button>
                       </div>
-                    )}
-                  </div>
-                )}
-
-                {!publicKey && (
-                  <Alert severity="info" sx={{ mt: 2 }}>
-                    <p className="text-sm">
-                      Connect your wallet to participate in voting and earn karma rewards!
-                    </p>
-                  </Alert>
+                    </div>
+                  </>
                 )}
               </CardContent>
             </Card>
           </>
+        )}
+
+        {/* Dispute Resolved Banner (for dispute_resolved jobs OR completed/cancelled with resolved dispute) */}
+        {dispute && dispute.status === 'resolved' && (job.status === 'dispute_resolved' || 
+         job.status === 'completed' || job.status === 'cancelled') && (
+          <Card className="mb-6" style={{ borderColor: '#059669', borderWidth: '2px' }}>
+            <CardContent className="p-6" style={{ backgroundColor: '#F0FDF4' }}>
+              <div className="flex items-start gap-4">
+                <GavelIcon sx={{ fontSize: 48, color: '#059669' }} />
+                <div className="flex-1">
+                  <h2 
+                    className="text-2xl font-bold mb-2"
+                    style={{ color: '#1A1A1E' }}
+                  >
+                    Dispute Resolved
+                  </h2>
+                  
+                  <div className="flex items-center gap-4 mb-4">
+                    <Chip
+                      label="Resolved"
+                      sx={{
+                        backgroundColor: '#DCFCE7',
+                        color: '#059669',
+                        fontWeight: 600
+                      }}
+                    />
+                    {dispute.resolved_at && (
+                      <p className="text-sm" style={{ color: '#6F7280' }}>
+                        Resolved {formatDistanceToNow(new Date(dispute.resolved_at), { addSuffix: true })}
+                      </p>
+                    )}
+                  </div>
+
+                  {/* Resolution Split */}
+                  <div 
+                    className="p-4 rounded-lg mb-4"
+                    style={{ backgroundColor: '#FFFFFF', border: '1px solid #E5E7F0' }}
+                  >
+                    <h4 
+                      className="text-sm font-semibold mb-3"
+                      style={{ color: '#1A1A1E' }}
+                    >
+                      RESOLUTION SPLIT
+                    </h4>
+                    <div className="flex items-center gap-6">
+                      <div className="flex-1">
+                        <div className="flex items-center justify-between mb-1">
+                          <span className="text-sm" style={{ color: '#6F7280' }}>Worker</span>
+                          <span 
+                            className="text-lg font-bold"
+                            style={{ color: dispute.worker_percentage > 0 ? '#059669' : '#9CA3AF' }}
+                          >
+                            {dispute.worker_percentage || 0}%
+                          </span>
+                        </div>
+                        <div 
+                          className="h-2 rounded-full"
+                          style={{ backgroundColor: '#E5E7F0' }}
+                        >
+                          <div 
+                            className="h-full rounded-full"
+                            style={{ 
+                              width: `${dispute.worker_percentage || 0}%`,
+                              backgroundColor: '#059669'
+                            }}
+                          />
+                        </div>
+                      </div>
+                      <div className="flex-1">
+                        <div className="flex items-center justify-between mb-1">
+                          <span className="text-sm" style={{ color: '#6F7280' }}>Poster</span>
+                          <span 
+                            className="text-lg font-bold"
+                            style={{ color: dispute.poster_percentage > 0 ? '#FB923C' : '#9CA3AF' }}
+                          >
+                            {dispute.poster_percentage || 0}%
+                          </span>
+                        </div>
+                        <div 
+                          className="h-2 rounded-full"
+                          style={{ backgroundColor: '#E5E7F0' }}
+                        >
+                          <div 
+                            className="h-full rounded-full"
+                            style={{ 
+                              width: `${dispute.poster_percentage || 0}%`,
+                              backgroundColor: '#FB923C'
+                            }}
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Admin Resolution Notes */}
+                  {dispute.admin_resolution_notes && (
+                    <div 
+                      className="p-4 rounded-lg"
+                      style={{ backgroundColor: '#FFFFFF', border: '1px solid #E5E7F0' }}
+                    >
+                      <h4 
+                        className="text-sm font-semibold mb-2"
+                        style={{ color: '#1A1A1E' }}
+                      >
+                        ADMIN NOTES
+                      </h4>
+                      <p 
+                        className="text-sm whitespace-pre-wrap"
+                        style={{ color: '#6F7280' }}
+                      >
+                        {dispute.admin_resolution_notes}
+                      </p>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </CardContent>
+          </Card>
         )}
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -2966,8 +2930,8 @@ export default function JobDetailPage() {
                   Actions
                 </h3>
 
-                {/* If user has already applied */}
-                {hasAlreadyApplied && !isPoster && (
+                {/* If user has already applied but is NOT the assigned worker */}
+                {hasAlreadyApplied && !isPoster && !isAssignedWorker && (
                   <div 
                     className="p-4 rounded-lg text-center"
                     style={{ backgroundColor: '#F0F9FF', borderLeft: '4px solid #3B82F6' }}
@@ -3060,6 +3024,81 @@ export default function JobDetailPage() {
                     >
                       Reassign if worker hasn't delivered
                     </p>
+                  </div>
+                )}
+
+                {/* If job is Submitted and user IS poster - Review Actions */}
+                {job.status === 'submitted' && isPoster && (
+                  <div className="space-y-3">
+                    {/* Release Payment Button - Success Green (matches submission section) */}
+                    <MuiButton
+                      variant="contained"
+                      onClick={() => setShowReleaseConfirm(true)}
+                      startIcon={<CheckCircleIcon />}
+                      fullWidth
+                      sx={{
+                        backgroundColor: '#36C170',
+                        color: '#fff',
+                        textTransform: 'none',
+                        fontSize: '15px',
+                        fontWeight: 600,
+                        py: 1.5,
+                        px: 3,
+                        borderRadius: '12px',
+                        boxShadow: '0 8px 20px 0 rgba(54, 193, 112, 0.3)',
+                        '&:hover': {
+                          backgroundColor: '#2DA862',
+                          boxShadow: '0 12px 24px 0 rgba(54, 193, 112, 0.4)',
+                        }
+                      }}
+                    >
+                      ✓ Release Payment
+                    </MuiButton>
+                    
+                    {/* Request Revision Button - Warning Yellow (matches submission section) */}
+                    <MuiButton
+                      variant="contained"
+                      onClick={() => setShowRevisionModal(true)}
+                      startIcon={<LoopIcon />}
+                      fullWidth
+                      sx={{
+                        backgroundColor: '#FFC857',
+                        color: '#1A1A1E',
+                        textTransform: 'none',
+                        fontSize: '15px',
+                        fontWeight: 600,
+                        py: 1.5,
+                        px: 3,
+                        borderRadius: '12px',
+                        boxShadow: '0 8px 20px 0 rgba(255, 200, 87, 0.3)',
+                        '&:hover': {
+                          backgroundColor: '#F5B83D',
+                          boxShadow: '0 12px 24px 0 rgba(255, 200, 87, 0.4)',
+                        }
+                      }}
+                    >
+                      Request Revision
+                    </MuiButton>
+                    
+                    {/* Open Dispute Link - Subtle text button (matches submission section) */}
+                    <MuiButton
+                      variant="text"
+                      onClick={handleOpenDispute}
+                      fullWidth
+                      sx={{
+                        color: '#6F7280',
+                        textTransform: 'none',
+                        fontSize: '14px',
+                        fontWeight: 500,
+                        py: 1,
+                        '&:hover': {
+                          color: '#EF4444',
+                          backgroundColor: 'rgba(239, 68, 68, 0.08)',
+                        }
+                      }}
+                    >
+                      Not satisfied? Open a Dispute →
+                    </MuiButton>
                   </div>
                 )}
 

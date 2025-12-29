@@ -63,6 +63,7 @@ const statusColors: Record<string, string> = {
   submitted: '#7C4DFF',
   completed: '#6B7280',
   disputed: '#EF4444',
+  dispute_resolved: '#059669',
   cancelled: '#9CA3AF'
 }
 

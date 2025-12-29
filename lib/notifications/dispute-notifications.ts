@@ -59,7 +59,7 @@ export async function notifyAdminNewDispute(
     console.log('🛡️ Fetching active global admins from admin_wallets...')
     const { data: admins, error: adminError } = await supabase
       .from('admin_wallets')
-      .select('wallet_address, email')
+      .select('wallet_address')
       .eq('is_active', true)
 
     if (adminError) {
@@ -82,10 +82,9 @@ export async function notifyAdminNewDispute(
     }
 
     // Create in-app notifications for each admin
-    // NOTE: 'job_dispute_admin' type needs to be added to NotificationType enum via migration
     const notifications: NotificationInsert[] = admins.map(admin => ({
       user_wallet: admin.wallet_address,
-      type: 'job_dispute_admin' as any, // TODO: Add to NotificationType enum
+      type: 'admin_dispute_new',
       title: `⚖️ New Dispute: ${jobTitle}`,
       message: `${disputingParty === 'poster' ? 'Job poster' : 'Worker'} opened a dispute`,
       actor_wallet: disputingWallet,
@@ -179,10 +178,9 @@ export async function notifyDisputeResolved(
     }
 
     // Notify the poster
-    // NOTE: 'job_dispute_resolved' type needs to be added to NotificationType enum via migration
     const posterNotification: NotificationInsert = {
       user_wallet: posterWallet,
-      type: 'job_dispute_resolved' as any, // TODO: Add to NotificationType enum
+      type: 'job_dispute_resolved',
       title: `⚖️ Dispute Resolved: ${jobTitle}`,
       message: `Admin resolved the dispute. You receive ${posterPercentage}% of escrow.`,
       actor_wallet: adminWallet,
@@ -195,7 +193,7 @@ export async function notifyDisputeResolved(
     // Notify the worker
     const workerNotification: NotificationInsert = {
       user_wallet: workerWallet,
-      type: 'job_dispute_resolved' as any, // TODO: Add to NotificationType enum
+      type: 'job_dispute_resolved',
       title: `⚖️ Dispute Resolved: ${jobTitle}`,
       message: `Admin resolved the dispute. You receive ${workerPercentage}% of escrow.`,
       actor_wallet: adminWallet,

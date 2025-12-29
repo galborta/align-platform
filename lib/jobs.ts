@@ -4,6 +4,36 @@ import { notificationService } from '@/lib/services/notificationService'
 import { requireVerifiedWallet } from '@/lib/middleware'
 
 type Job = Database['public']['Tables']['jobs']['Row']
+
+/**
+ * Retry a function with exponential backoff
+ * Used for critical operations like job creation that must not fail silently
+ */
+async function retryWithBackoff<T>(
+  fn: () => Promise<T>,
+  maxRetries: number = 3,
+  initialDelay: number = 1000,
+  context: string = 'operation'
+): Promise<T> {
+  let lastError: Error | null = null
+  
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
+    try {
+      return await fn()
+    } catch (error) {
+      lastError = error as Error
+      const delay = initialDelay * Math.pow(2, attempt)
+      console.warn(`[${context}] Attempt ${attempt + 1}/${maxRetries} failed:`, lastError.message)
+      
+      if (attempt < maxRetries - 1) {
+        console.log(`[${context}] Retrying in ${delay}ms...`)
+        await new Promise(resolve => setTimeout(resolve, delay))
+      }
+    }
+  }
+  
+  throw lastError
+}
 type JobInsert = Database['public']['Tables']['jobs']['Insert']
 type JobApplication = Database['public']['Tables']['job_applications']['Row']
 type JobApplicationInsert = Database['public']['Tables']['job_applications']['Insert']
@@ -38,6 +68,9 @@ export interface JobWithDetails extends Job {
 
 /**
  * Create a new job posting
+ * 
+ * This function includes retry logic for resilience against transient failures.
+ * Critical for escrow-locked jobs where funds have already been transferred.
  */
 export async function createJob(jobData: {
   project_id: string
@@ -67,14 +100,42 @@ export async function createJob(jobData: {
   contest_winner_selection_deadline?: string | null
   contest_submissions_visible?: boolean
 }): Promise<Job> {
-  const { data, error } = await supabase
-    .from('jobs')
-    .insert(jobData)
-    .select()
-    .single()
+  // Use retry logic for escrow-locked jobs since funds are already committed
+  const isEscrowLocked = jobData.escrow_locked && jobData.escrow_tx_signature
+  const maxRetries = isEscrowLocked ? 5 : 3 // More retries for escrow jobs
+  const initialDelay = isEscrowLocked ? 2000 : 1000 // Longer delay for escrow jobs
+  
+  return retryWithBackoff(
+    async () => {
+      console.log('[createJob] Attempting to insert job:', {
+        title: jobData.title,
+        escrow_locked: jobData.escrow_locked,
+        tx: jobData.escrow_tx_signature?.slice(0, 8)
+      })
+      
+      const { data, error } = await supabase
+        .from('jobs')
+        .insert(jobData)
+        .select()
+        .single()
 
-  if (error) throw error
-  return data
+      if (error) {
+        console.error('[createJob] Insert failed:', {
+          code: error.code,
+          message: error.message,
+          details: error.details,
+          hint: error.hint
+        })
+        throw error
+      }
+      
+      console.log('[createJob] Job created successfully:', data.id)
+      return data
+    },
+    maxRetries,
+    initialDelay,
+    'createJob'
+  )
 }
 
 /**

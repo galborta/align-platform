@@ -174,13 +174,13 @@ export function RequestRevisionModal({
         const filePath = `revision-references/${fileName}`
 
         const { error: uploadError } = await supabase.storage
-          .from('job-images')
+          .from('job-attachments')
           .upload(filePath, file, { upsert: true })
 
         if (uploadError) throw uploadError
 
         const { data: { publicUrl } } = supabase.storage
-          .from('job-images')
+          .from('job-attachments')
           .getPublicUrl(filePath)
 
         uploadedUrls.push(publicUrl)

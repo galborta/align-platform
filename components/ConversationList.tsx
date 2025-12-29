@@ -23,6 +23,7 @@ import PersonIcon from '@mui/icons-material/Person'
 import DeleteIcon from '@mui/icons-material/Delete'
 import FiberManualRecordIcon from '@mui/icons-material/FiberManualRecord'
 import VerifiedUserIcon from '@mui/icons-material/VerifiedUser'
+import GavelIcon from '@mui/icons-material/Gavel'
 import { keyframes } from '@mui/system'
 
 // Pulse animation for unread submission tags
@@ -66,6 +67,8 @@ interface SocialAssetReviewsEntry {
 interface DisputeReviewsEntry {
   type: 'dispute_reviews'
   pendingCount: number
+  needsDistributionCount?: number
+  resolvedCount?: number
   latestDispute?: {
     id: string
     jobTitle: string
@@ -295,44 +298,72 @@ export function ConversationList({
           .from('job_disputes')
           .select('id', { count: 'exact', head: true })
           .is('admin_wallet', null)
-          .in('status', ['open', 'pending'])
+          .neq('status', 'resolved')
 
         if (countError) {
           console.error('Error counting pending disputes:', countError)
-          return
         }
 
-        // If no pending disputes, don't show the entry
-        if (!pendingCount || pendingCount === 0) {
+        // Count resolved disputes that need distribution
+        const { count: needsDistributionCount, error: distError } = await supabase
+          .from('job_disputes')
+          .select('id', { count: 'exact', head: true })
+          .eq('status', 'resolved')
+          .eq('escrow_distributed', false)
+
+        if (distError) {
+          console.error('Error counting disputes needing distribution:', distError)
+        }
+
+        // Count total resolved disputes (for history)
+        const { count: resolvedCount, error: resolvedError } = await supabase
+          .from('job_disputes')
+          .select('id', { count: 'exact', head: true })
+          .eq('status', 'resolved')
+
+        if (resolvedError) {
+          console.error('Error counting resolved disputes:', resolvedError)
+        }
+
+        // Always show entry for admins (they can access History tab)
+        // Only hide if there are truly no disputes at all
+        const totalDisputes = (pendingCount || 0) + (resolvedCount || 0)
+        if (totalDisputes === 0) {
           setDisputeReviewsEntry(null)
           return
         }
 
-        // Get latest pending dispute with job info
-        const { data: latestDispute, error: disputeError } = await supabase
-          .from('job_disputes')
-          .select(`
-            id,
-            opened_by,
-            reason,
-            created_at,
-            jobs (
-              title
-            )
-          `)
-          .is('admin_wallet', null)
-          .in('status', ['open', 'pending'])
-          .order('created_at', { ascending: false })
-          .limit(1)
-          .single()
+        // Get latest pending dispute with job info (if any)
+        let latestDispute = null
+        if (pendingCount && pendingCount > 0) {
+          const { data: disputeData, error: disputeError } = await supabase
+            .from('job_disputes')
+            .select(`
+              id,
+              opened_by,
+              reason,
+              created_at,
+              jobs (
+                title
+              )
+            `)
+            .is('admin_wallet', null)
+            .neq('status', 'resolved')
+            .order('created_at', { ascending: false })
+            .limit(1)
+            .single()
 
-        if (disputeError && disputeError.code !== 'PGRST116') {
-          console.error('Error fetching latest dispute:', disputeError)
+          if (disputeError && disputeError.code !== 'PGRST116') {
+            console.error('Error fetching latest dispute:', disputeError)
+          }
+          latestDispute = disputeData
         }
 
         setDisputeReviewsEntry({
           type: 'dispute_reviews',
           pendingCount: pendingCount || 0,
+          needsDistributionCount: needsDistributionCount || 0,
+          resolvedCount: resolvedCount || 0,
           latestDispute: latestDispute ? {
             id: latestDispute.id,
             jobTitle: (latestDispute.jobs as any)?.title || 'Unknown Job',
@@ -340,7 +371,7 @@ export function ConversationList({
             reason: latestDispute.reason,
             createdAt: latestDispute.created_at
           } : undefined,
-          isUnread: (pendingCount || 0) > 0
+          isUnread: (pendingCount || 0) > 0 || (needsDistributionCount || 0) > 0
         })
       } catch (error) {
         console.error('Error in loadDisputeReviewsEntry:', error)
@@ -888,8 +919,9 @@ export function ConversationList({
                 >
                   <ListItemAvatar>
                     <Badge
-                      badgeContent={entry.pendingCount}
+                      badgeContent={entry.pendingCount > 0 ? entry.pendingCount : (entry.needsDistributionCount || 0)}
                       max={99}
+                      invisible={entry.pendingCount === 0 && !entry.needsDistributionCount}
                       sx={{
                         '& .MuiBadge-badge': {
                           bgcolor: '#FF6B35',
@@ -908,7 +940,7 @@ export function ConversationList({
                           height: 48
                         }}
                       >
-                        ⚖️
+                        <GavelIcon sx={{ color: '#fff', fontSize: 24 }} />
                       </Avatar>
                     </Badge>
                   </ListItemAvatar>
@@ -975,8 +1007,25 @@ export function ConversationList({
                             whiteSpace: 'nowrap'
                           }}
                         >
-                          {entry.pendingCount} pending {entry.pendingCount === 1 ? 'dispute' : 'disputes'}
+                          {entry.pendingCount > 0 
+                            ? `${entry.pendingCount} pending ${entry.pendingCount === 1 ? 'dispute' : 'disputes'}`
+                            : `${entry.resolvedCount || 0} resolved ${(entry.resolvedCount || 0) === 1 ? 'dispute' : 'disputes'}`
+                          }
                         </Typography>
+                        {entry.needsDistributionCount && entry.needsDistributionCount > 0 && (
+                          <Typography
+                            variant="caption"
+                            component="span"
+                            sx={{
+                              color: '#D97706',
+                              fontWeight: 600,
+                              display: 'block',
+                              mt: 0.25
+                            }}
+                          >
+                            ⚠️ {entry.needsDistributionCount} need token distribution
+                          </Typography>
+                        )}
                         {entry.latestDispute && (
                           <Typography
                             variant="caption"

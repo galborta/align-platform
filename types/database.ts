@@ -54,6 +54,7 @@ export type Database = {
         Row: {
           added_at: string | null
           added_by: string
+          email: string | null
           id: string
           is_active: boolean | null
           role: string
@@ -62,6 +63,7 @@ export type Database = {
         Insert: {
           added_at?: string | null
           added_by: string
+          email?: string | null
           id?: string
           is_active?: boolean | null
           role: string
@@ -70,6 +72,7 @@ export type Database = {
         Update: {
           added_at?: string | null
           added_by?: string
+          email?: string | null
           id?: string
           is_active?: boolean | null
           role?: string

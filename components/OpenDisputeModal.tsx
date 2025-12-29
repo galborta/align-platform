@@ -73,6 +73,26 @@ export function OpenDisputeModal({
     setError('')
 
     try {
+      // Check if there's already an active dispute for this job
+      const { data: existingDispute, error: checkError } = await supabase
+        .from('job_disputes')
+        .select('id')
+        .eq('job_id', jobId)
+        .neq('status', 'resolved')
+        .limit(1)
+        .maybeSingle()
+
+      if (checkError) {
+        console.error('Error checking existing dispute:', checkError)
+      }
+
+      if (existingDispute) {
+        setError('There is already an active dispute for this job.')
+        toast.error('A dispute is already open for this job')
+        setLoading(false)
+        return
+      }
+
       // Calculate dispute end date (14 days from now)
       const endsAt = new Date()
       endsAt.setDate(endsAt.getDate() + 14)
@@ -89,7 +109,16 @@ export function OpenDisputeModal({
         .select('id')
         .single()
 
-      if (disputeError) throw disputeError
+      if (disputeError) {
+        // Handle unique constraint violation
+        if (disputeError.code === '23505') {
+          setError('There is already an active dispute for this job.')
+          toast.error('A dispute is already open for this job')
+          setLoading(false)
+          return
+        }
+        throw disputeError
+      }
 
       // Update job status to disputed
       const { error: jobError } = await supabase
@@ -151,7 +180,7 @@ export function OpenDisputeModal({
         // Don't throw - notification failure is non-critical
       }
 
-      toast.success('Dispute opened. Community voting begins now. ⚖️', {
+      toast.success('Dispute opened. The Orggly team will review and resolve this fairly. ⚖️', {
         duration: 5000,
         icon: '⚖️'
       })
@@ -269,7 +298,7 @@ export function OpenDisputeModal({
             </p>
           </div>
           <p className="text-xs mt-2" style={{ color: '#6F7280' }}>
-            💡 The community will vote based on these success criteria
+            💡 The Orggly team will review based on these success criteria
           </p>
         </div>
 
@@ -313,7 +342,7 @@ export function OpenDisputeModal({
         {/* Dispute Process */}
         <Alert 
           severity="info"
-          icon={<HowToVoteIcon />}
+          icon={<GavelIcon />}
           sx={{ 
             mb: 3,
             backgroundColor: '#EEF2FF',
@@ -326,12 +355,12 @@ export function OpenDisputeModal({
           <div className="space-y-2">
             <p className="font-semibold text-sm">HOW DISPUTES WORK:</p>
             <ul className="text-sm space-y-1 ml-4">
-              <li>✓ Community voting begins immediately</li>
-              <li>⏱️ Voting lasts <strong>14 days</strong></li>
-              <li>⚖️ Token-weighted votes decide outcome</li>
-              <li>📦 If &gt;50% vote to <strong>release</strong>: Worker gets payment</li>
-              <li>💰 If &gt;50% vote to <strong>refund</strong>: Poster gets refund</li>
-              <li>🏆 All voters earn karma for participating</li>
+              <li>✓ The Orggly team will review your dispute</li>
+              <li>⏱️ Resolution typically within <strong>24-72 hours</strong></li>
+              <li>⚖️ Our team reviews the KPIs, submission, and both sides fairly</li>
+              <li>📦 If work meets KPIs: Worker gets payment</li>
+              <li>💰 If work doesn&apos;t meet KPIs: Poster gets refund</li>
+              <li>🤝 Partial splits may be awarded when appropriate</li>
             </ul>
           </div>
         </Alert>

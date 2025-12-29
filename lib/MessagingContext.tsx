@@ -197,7 +197,7 @@ export function MessagingProvider({ children, currentWallet }: MessagingProvider
         .from('job_disputes')
         .select('id', { count: 'exact', head: true })
         .is('admin_wallet', null)
-        .in('status', ['open', 'pending'])
+        .neq('status', 'resolved')
 
       if (error) {
         console.error('[MessagingContext] Error counting pending disputes:', error)

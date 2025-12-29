@@ -47,6 +47,17 @@ const categoryColors: Record<string, { bg: string; text: string }> = {
   other: { bg: 'var(--subtle-background)', text: 'var(--text-secondary)' }
 }
 
+// Status colors and labels
+const statusStyles: Record<string, { bg: string; text: string; label: string; pulse?: boolean }> = {
+  open: { bg: 'var(--accent-success-soft)', text: 'var(--accent-success)', label: 'Open', pulse: true },
+  assigned: { bg: '#FFF4E6', text: '#FB923C', label: 'In Progress' },
+  submitted: { bg: 'var(--accent-primary-soft)', text: 'var(--accent-primary)', label: 'Submitted' },
+  completed: { bg: '#E3F8ED', text: '#36C170', label: 'Completed' },
+  disputed: { bg: '#FEE2E2', text: '#EF4444', label: 'Disputed' },
+  dispute_resolved: { bg: '#F0FDF4', text: '#059669', label: 'Resolved' },
+  cancelled: { bg: '#F3F4F6', text: '#9CA3AF', label: 'Cancelled' }
+}
+
 export function ProjectJobsWidget({ projectId, tokenSymbol, tokenMint }: ProjectJobsWidgetProps) {
   const router = useRouter()
   const { publicKey } = useWallet()
@@ -57,11 +68,32 @@ export function ProjectJobsWidget({ projectId, tokenSymbol, tokenMint }: Project
   const [showSocialMediaModal, setShowSocialMediaModal] = useState(false)
   const [selectedJobType, setSelectedJobType] = useState<'regular' | 'contest'>('regular')
 
+  // Sort jobs by status priority: open > assigned/submitted > completed > cancelled
+  const sortJobsByStatus = (jobs: Job[]): Job[] => {
+    const statusOrder: Record<string, number> = {
+      'open': 1,
+      'assigned': 2,
+      'submitted': 3,
+      'completed': 4,
+      'disputed': 5,
+      'dispute_resolved': 6,
+      'cancelled': 7
+    }
+    
+    return [...jobs].sort((a, b) => {
+      const orderA = statusOrder[a.status] || 99
+      const orderB = statusOrder[b.status] || 99
+      if (orderA !== orderB) return orderA - orderB
+      // Within same status, sort by newest first
+      return new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+    })
+  }
+
   const refreshJobs = async () => {
     try {
       const allJobs = await getProjectJobs(projectId)
-      const openJobs = allJobs.filter(job => job.status === 'open')
-      setJobs(openJobs)
+      const sortedJobs = sortJobsByStatus(allJobs)
+      setJobs(sortedJobs)
     } catch (err) {
       console.error('Error refreshing jobs:', err)
     }
@@ -70,13 +102,12 @@ export function ProjectJobsWidget({ projectId, tokenSymbol, tokenMint }: Project
   useEffect(() => {
     async function loadJobs() {
       try {
-        // Fetch ALL jobs for this project (already ordered by newest first)
+        // Fetch ALL jobs for this project
         const allJobs = await getProjectJobs(projectId)
-        // Filter for open status only
-        const openJobs = allJobs.filter(job => job.status === 'open')
-        // Recent jobs on top (newest first - already sorted from query)
-        setJobs(openJobs)
-        console.log(`[ProjectJobsWidget] Found ${openJobs.length} open jobs out of ${allJobs.length} total`)
+        // Sort by status priority: open first, then in-progress, then completed, then cancelled
+        const sortedJobs = sortJobsByStatus(allJobs)
+        setJobs(sortedJobs)
+        console.log(`[ProjectJobsWidget] Loaded ${allJobs.length} jobs (sorted by status priority)`)
       } catch (err) {
         console.error('Error loading jobs:', err)
       } finally {
@@ -95,17 +126,36 @@ export function ProjectJobsWidget({ projectId, tokenSymbol, tokenMint }: Project
             <WorkOutlineIcon sx={{ color: 'var(--accent-primary)', fontSize: 24 }} />
             <CardTitle className="text-xl">Jobs</CardTitle>
             {jobs.length > 0 && (
-              <Chip
-                label={jobs.length}
-                size="small"
-                sx={{
-                  bgcolor: 'var(--accent-primary-soft)',
-                  color: 'var(--accent-primary)',
-                  fontWeight: 600,
-                  fontSize: '12px',
-                  height: 22,
-                }}
-              />
+              <>
+                {/* Show open jobs count with green badge */}
+                {jobs.filter(j => j.status === 'open').length > 0 && (
+                  <Chip
+                    label={`${jobs.filter(j => j.status === 'open').length} open`}
+                    size="small"
+                    sx={{
+                      bgcolor: 'var(--accent-success-soft)',
+                      color: 'var(--accent-success)',
+                      fontWeight: 600,
+                      fontSize: '11px',
+                      height: 22,
+                    }}
+                  />
+                )}
+                {/* Show total if there are non-open jobs */}
+                {jobs.filter(j => j.status !== 'open').length > 0 && (
+                  <Chip
+                    label={jobs.length}
+                    size="small"
+                    sx={{
+                      bgcolor: 'var(--subtle-background)',
+                      color: 'var(--text-secondary)',
+                      fontWeight: 500,
+                      fontSize: '11px',
+                      height: 22,
+                    }}
+                  />
+                )}
+              </>
             )}
           </div>
           <div className="flex items-center gap-2">
@@ -145,7 +195,7 @@ export function ProjectJobsWidget({ projectId, tokenSymbol, tokenMint }: Project
                 fontSize: 'var(--text-body-small)',
               }}
             >
-              No open jobs yet
+              No jobs yet
             </Typography>
             {publicKey ? (
               <Button
@@ -225,7 +275,7 @@ export function ProjectJobsWidget({ projectId, tokenSymbol, tokenMint }: Project
               >
                 {/* Status & Category Row */}
                 <Box sx={{ display: 'flex', gap: 1, mb: 1, alignItems: 'center', flexWrap: 'wrap' }}>
-                  {/* Pulsing Open Status */}
+                  {/* Dynamic Status Badge */}
                   <Box
                     sx={{
                       display: 'flex',
@@ -233,31 +283,33 @@ export function ProjectJobsWidget({ projectId, tokenSymbol, tokenMint }: Project
                       gap: 0.5,
                       px: 1,
                       py: 0.25,
-                      bgcolor: 'var(--accent-success-soft)',
+                      bgcolor: statusStyles[job.status]?.bg || '#F3F4F6',
                       borderRadius: 'var(--radius-control)',
                       height: 20,
                     }}
                   >
-                    <Box
-                      sx={{
-                        width: 6,
-                        height: 6,
-                        borderRadius: '50%',
-                        bgcolor: 'var(--accent-success)',
-                        animation: 'pulse-green 2s ease-in-out infinite',
-                      }}
-                    />
+                    {statusStyles[job.status]?.pulse && (
+                      <Box
+                        sx={{
+                          width: 6,
+                          height: 6,
+                          borderRadius: '50%',
+                          bgcolor: statusStyles[job.status]?.text,
+                          animation: 'pulse-green 2s ease-in-out infinite',
+                        }}
+                      />
+                    )}
                     <Typography
                       sx={{
                         fontFamily: 'var(--font-body)',
                         fontSize: '11px',
                         fontWeight: 600,
-                        color: 'var(--accent-success)',
+                        color: statusStyles[job.status]?.text || '#6B7280',
                         textTransform: 'uppercase',
                         letterSpacing: '0.5px',
                       }}
                     >
-                      Open
+                      {statusStyles[job.status]?.label || job.status}
                     </Typography>
                   </Box>
 

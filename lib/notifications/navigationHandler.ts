@@ -181,8 +181,14 @@ export function handleNotificationNavigation(
     // ==================== ADMIN NOTIFICATIONS ====================
     
     case 'admin_dispute_new':
-      // Navigate to job with disputes tab
-      if (reference_id) navigate(`/jobs/${reference_id}?tab=disputes`)
+      // Navigate to job page - job_id is in metadata
+      if (metadata?.job_id) {
+        // reference_id is the dispute_id, job_id is in metadata
+        navigate(`/jobs/${metadata.job_id}`)
+      } else if (reference_id) {
+        // Fallback: try reference_id as job_id
+        navigate(`/jobs/${reference_id}`)
+      }
       break
 
     case 'admin_job_new':
@@ -275,7 +281,8 @@ export function getNotificationPath(notification: EnrichedNotification): string 
       return '/profile'
 
     case 'admin_dispute_new':
-      return reference_id ? `/jobs/${reference_id}?tab=disputes` : null
+      // job_id is in metadata, reference_id is dispute_id
+      return metadata?.job_id ? `/jobs/${metadata.job_id}` : (reference_id ? `/jobs/${reference_id}` : null)
 
     case 'admin_job_new':
       return reference_id ? `/jobs/${reference_id}` : null

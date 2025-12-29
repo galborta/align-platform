@@ -106,37 +106,42 @@ export function RevisionDisputeContext({
         posterPct = 100 - splitPercentage
       }
 
-      // Update dispute with admin resolution
-      const { error } = await supabase
-        .from('job_disputes')
-        .update({
-          status: 'resolved',
-          outcome: selectedResolution === 'worker' ? 'release_to_worker' : 
-                   selectedResolution === 'poster' ? 'refund_to_poster' : 'split',
-          worker_percentage: workerPct,
-          poster_percentage: posterPct,
-          admin_decided_at: new Date().toISOString(),
-          admin_resolution_notes: `Admin resolved revision dispute: ${workerPct}% to worker, ${posterPct}% to poster.`,
-          resolved_at: new Date().toISOString()
+      // Get admin wallet from current user session (using admin wallet from local storage as set by admin panel)
+      const adminWallet = localStorage.getItem('adminWallet') || ''
+      
+      if (!adminWallet) {
+        toast.error('Admin wallet not found. Please re-authenticate.')
+        return
+      }
+
+      // Call API route to handle resolution (includes escrow distribution)
+      const response = await fetch('/api/disputes/resolve', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          disputeId,
+          adminWallet,
+          workerPercentage: workerPct,
+          posterPercentage: posterPct,
+          resolutionNotes: `Admin resolved revision dispute (${disputeType}): ${workerPct}% to worker, ${posterPct}% to poster.`
         })
-        .eq('id', disputeId)
+      })
 
-      if (error) throw error
+      const result = await response.json()
 
-      // Update job status
-      await supabase
-        .from('jobs')
-        .update({
-          status: selectedResolution === 'worker' ? 'completed' : 'cancelled',
-          updated_at: new Date().toISOString()
-        })
-        .eq('id', jobId)
+      if (!response.ok) {
+        console.error('Resolution error:', result)
+        throw new Error(result.error || 'Failed to resolve dispute')
+      }
 
-      toast.success('Dispute resolved successfully')
+      toast.success('Dispute resolved and payments distributed!', {
+        icon: '⚖️',
+        duration: 4000
+      })
       onResolutionComplete?.()
     } catch (error) {
       console.error('Error resolving dispute:', error)
-      toast.error('Failed to resolve dispute')
+      toast.error(error instanceof Error ? error.message : 'Failed to resolve dispute')
     } finally {
       setResolving(false)
     }

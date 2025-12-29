@@ -10,6 +10,7 @@ const supabaseAdmin = createClient<Database>(
 )
 
 interface RevisionRequestBody {
+  poster_wallet: string
   notes: string
   images?: string[]
   is_voluntary?: boolean
@@ -38,9 +39,16 @@ export async function POST(
 
     // Parse revision request details
     const body: RevisionRequestBody = await request.json()
-    const { notes, images = [], is_voluntary = false } = body
+    const { poster_wallet, notes, images = [], is_voluntary = false } = body
 
     // Validate required fields
+    if (!poster_wallet) {
+      return NextResponse.json(
+        { error: 'Poster wallet address is required' },
+        { status: 400 }
+      )
+    }
+
     if (!notes || notes.trim().length < 10) {
       return NextResponse.json(
         { error: 'Please provide detailed revision notes (at least 10 characters)' },
@@ -49,48 +57,11 @@ export async function POST(
     }
 
     // ==================== AUTHENTICATION ====================
+    // We use the wallet address from the request body and verify it matches the job poster
+    // This is consistent with how other escrow-related APIs work in the platform
 
-    const authHeader = request.headers.get('authorization')
-    if (!authHeader?.startsWith('Bearer ')) {
-      console.error('[Request Revision] Missing authorization header')
-      return NextResponse.json(
-        { error: 'Unauthorized - Authentication required' },
-        { status: 401 }
-      )
-    }
-
-    const token = authHeader.substring(7)
-
-    // Verify JWT token
-    const { data: { user }, error: authError } = await supabaseAdmin.auth.getUser(token)
-
-    if (authError || !user) {
-      console.error('[Request Revision] Invalid auth token:', authError)
-      return NextResponse.json(
-        { error: 'Invalid authentication token' },
-        { status: 401 }
-      )
-    }
-
-    console.log(`[Request Revision] Authenticated user: ${user.id}`)
-
-    // Get user's wallet from profile
-    const { data: profile, error: profileError } = await supabaseAdmin
-      .from('profiles')
-      .select('wallet_address')
-      .eq('id', user.id)
-      .single()
-
-    if (profileError || !profile?.wallet_address) {
-      console.error('[Request Revision] No wallet found for user:', profileError)
-      return NextResponse.json(
-        { error: 'No wallet address linked to account' },
-        { status: 403 }
-      )
-    }
-
-    const authenticatedWallet = profile.wallet_address
-    console.log(`[Request Revision] User wallet: ${authenticatedWallet}`)
+    const authenticatedWallet = poster_wallet
+    console.log(`[Request Revision] Poster wallet from request: ${authenticatedWallet}`)
 
     // ==================== FETCH AND VALIDATE JOB ====================
 

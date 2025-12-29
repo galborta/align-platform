@@ -72,8 +72,8 @@ const NOTIFICATION_ICONS: Record<NotificationType, LucideIcon> = {
   social_asset_pending: BadgeCheck,
   social_asset_approved: CheckCircle,
   social_asset_rejected: XCircle,
-  // Dispute admin notifications
-  job_dispute_admin: AlertTriangle,
+  // Dispute notifications
+  admin_dispute_new: AlertTriangle,
   job_dispute_resolved: CheckCircle,
 }
 
@@ -92,7 +92,7 @@ function getNotificationIconColor(type: NotificationType | string): string {
   if (type.startsWith('admin_')) return NOTIFICATION_COLORS.admin
   
   // Dispute notifications get distinct red/orange color
-  if (type === 'job_dispute_admin') return NOTIFICATION_COLORS.dispute
+  if (type === 'admin_dispute_new') return NOTIFICATION_COLORS.dispute
   
   const successTypes: NotificationType[] = [
     'job_completed', 'asset_verified', 'payment_released', 'karma_milestone', 'social_asset_approved'
@@ -156,7 +156,7 @@ export function NotificationItem({
   const isAdminNotification = notification.type.startsWith('admin_')
   
   // Check if this is a dispute admin notification (distinct styling)
-  const isDisputeAdminNotification = notification.type === ('job_dispute_admin' as any)
+  const isDisputeAdminNotification = notification.type === 'admin_dispute_new'
   
   // Check if this is a voluntary revision that needs action
   const isVoluntaryRevisionRequest = notification.type === 'voluntary_revision_requested'
@@ -230,7 +230,7 @@ export function NotificationItem({
     }
     
     // Special handling for dispute admin notifications - open sidebar with disputes section
-    if (notification.type === 'job_dispute_admin' as any) {
+    if (notification.type === 'admin_dispute_new') {
       const disputeId = notification.reference_id
       const jobId = (notification.metadata as any)?.job_id
       
@@ -243,9 +243,9 @@ export function NotificationItem({
       if (messaging) {
         // Open the messaging sidebar with the disputes section
         messaging.openMessages({
-          section: 'disputes' as any, // TODO: Add 'disputes' to MessagingSidebarSection type
+          section: 'disputes',
           disputeId: disputeId || undefined
-        } as any)
+        })
         onClick(notification)
         return
       } else {

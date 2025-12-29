@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '@/lib/supabase'
-import { formatDistanceToNow, differenceInDays } from 'date-fns'
+import { formatDistanceToNow, differenceInDays, format } from 'date-fns'
 import {
   Box,
   Typography,
@@ -16,7 +16,10 @@ import {
   Collapse,
   IconButton,
   Tooltip,
-  Avatar
+  Avatar,
+  Tabs,
+  Tab,
+  Divider
 } from '@mui/material'
 import WarningAmberIcon from '@mui/icons-material/WarningAmber'
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore'
@@ -25,6 +28,9 @@ import GavelIcon from '@mui/icons-material/Gavel'
 import PersonIcon from '@mui/icons-material/Person'
 import WorkIcon from '@mui/icons-material/Work'
 import AttachMoneyIcon from '@mui/icons-material/AttachMoney'
+import CheckCircleIcon from '@mui/icons-material/CheckCircle'
+import SyncIcon from '@mui/icons-material/Sync'
+import HistoryIcon from '@mui/icons-material/History'
 import { toast } from 'react-hot-toast'
 
 interface DisputeWithJob {
@@ -36,14 +42,22 @@ interface DisputeWithJob {
   created_at: string
   ends_at: string | null
   dispute_type?: string
-  revision_context?: any
+  admin_wallet?: string
+  worker_percentage?: number
+  poster_percentage?: number
+  admin_resolution_notes?: string
+  admin_decided_at?: string
+  escrow_distributed?: boolean
   jobs: {
     id: string
     title: string
     poster_wallet: string
     assigned_to: string
-    budget_amount: number
-    budget_token: string
+    payment_amount_tokens: number
+    payment_amount_usd: number
+    escrow_token_mint: string
+    escrow_amount_tokens?: number
+    status?: string
   }
 }
 
@@ -62,9 +76,12 @@ const PRESET_SPLITS = [
 ]
 
 export function DisputeFeed({ editorWallet, highlightDisputeId, isGlobalAdmin }: DisputeFeedProps) {
+  const [activeTab, setActiveTab] = useState<'pending' | 'resolved'>('pending')
   const [disputes, setDisputes] = useState<DisputeWithJob[]>([])
+  const [resolvedDisputes, setResolvedDisputes] = useState<DisputeWithJob[]>([])
   const [loading, setLoading] = useState(true)
   const [expandedDispute, setExpandedDispute] = useState<string | null>(highlightDisputeId || null)
+  const [distributingId, setDistributingId] = useState<string | null>(null)
   const [resolutionState, setResolutionState] = useState<Record<string, {
     workerPercentage: number
     posterPercentage: number
@@ -72,16 +89,18 @@ export function DisputeFeed({ editorWallet, highlightDisputeId, isGlobalAdmin }:
     resolving: boolean
   }>>({})
 
-  // Load pending disputes
+  // Load pending and resolved disputes
   const loadDisputes = useCallback(async () => {
     if (!isGlobalAdmin) {
       setDisputes([])
+      setResolvedDisputes([])
       setLoading(false)
       return
     }
 
     try {
-      const { data, error } = await supabase
+      // Load pending disputes (not resolved by admin yet)
+      const { data: pendingData, error: pendingError } = await supabase
         .from('job_disputes')
         .select(`
           id,
@@ -92,27 +111,69 @@ export function DisputeFeed({ editorWallet, highlightDisputeId, isGlobalAdmin }:
           created_at,
           ends_at,
           dispute_type,
-          revision_context,
           jobs (
             id,
             title,
             poster_wallet,
             assigned_to,
-            budget_amount,
-            budget_token
+            payment_amount_tokens,
+            payment_amount_usd,
+            escrow_token_mint,
+            escrow_amount_tokens,
+            status
           )
         `)
         .is('admin_wallet', null)
-        .in('status', ['open', 'pending'])
+        .neq('status', 'resolved')
         .order('created_at', { ascending: false })
 
-      if (error) {
-        console.error('Error loading disputes:', error)
+      if (pendingError) {
+        console.error('Error loading pending disputes:', pendingError)
         toast.error('Failed to load disputes')
         return
       }
 
-      setDisputes((data as any[]) || [])
+      setDisputes((pendingData as any[]) || [])
+
+      // Load resolved disputes (with admin resolution)
+      const { data: resolvedData, error: resolvedError } = await supabase
+        .from('job_disputes')
+        .select(`
+          id,
+          job_id,
+          status,
+          opened_by,
+          reason,
+          created_at,
+          ends_at,
+          dispute_type,
+          admin_wallet,
+          worker_percentage,
+          poster_percentage,
+          admin_resolution_notes,
+          admin_decided_at,
+          escrow_distributed,
+          jobs (
+            id,
+            title,
+            poster_wallet,
+            assigned_to,
+            payment_amount_tokens,
+            payment_amount_usd,
+            escrow_token_mint,
+            escrow_amount_tokens,
+            status
+          )
+        `)
+        .eq('status', 'resolved')
+        .order('admin_decided_at', { ascending: false })
+        .limit(50)
+
+      if (resolvedError) {
+        console.error('Error loading resolved disputes:', resolvedError)
+      } else {
+        setResolvedDisputes((resolvedData as any[]) || [])
+      }
     } catch (err) {
       console.error('Error in loadDisputes:', err)
     } finally {
@@ -248,11 +309,26 @@ export function DisputeFeed({ editorWallet, highlightDisputeId, isGlobalAdmin }:
         return
       }
 
-      toast.success('Dispute resolved successfully!', {
-        icon: '⚖️',
-        duration: 4000,
-        style: { background: '#FF6B35', color: '#fff' }
-      })
+      // Check if escrow was distributed
+      const escrowInfo = result.escrowDistribution
+      if (escrowInfo?.success) {
+        toast.success(`Dispute resolved! Worker received ${escrowInfo.workerReceived?.toFixed(2) || 0} tokens, Poster refunded ${escrowInfo.posterRefunded?.toFixed(2) || 0} tokens.`, {
+          icon: '⚖️',
+          duration: 5000,
+          style: { background: '#059669', color: '#fff' }
+        })
+      } else {
+        toast.success('Dispute resolved successfully!', {
+          icon: '⚖️',
+          duration: 4000,
+          style: { background: '#FF6B35', color: '#fff' }
+        })
+        
+        if (escrowInfo?.error) {
+          console.warn('Escrow distribution had an issue:', escrowInfo.error)
+          toast.error(`Note: Token distribution issue - ${escrowInfo.error}`, { duration: 6000 })
+        }
+      }
 
       // Refresh the list
       loadDisputes()
@@ -268,8 +344,56 @@ export function DisputeFeed({ editorWallet, highlightDisputeId, isGlobalAdmin }:
     }
   }
 
+  // Handle manual escrow distribution for old disputes
+  const handleDistributeEscrow = async (dispute: DisputeWithJob) => {
+    if (!dispute.worker_percentage && dispute.worker_percentage !== 0) {
+      toast.error('Missing worker percentage for this dispute')
+      return
+    }
+
+    setDistributingId(dispute.id)
+    
+    try {
+      const response = await fetch('/api/disputes/distribute-escrow', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          disputeId: dispute.id,
+          adminWallet: editorWallet
+        })
+      })
+
+      const result = await response.json()
+
+      if (!response.ok) {
+        console.error('Distribution error:', result)
+        toast.error(result.error || 'Failed to distribute escrow')
+        return
+      }
+
+      if (result.escrowDistribution?.success) {
+        toast.success(`Tokens distributed! Worker: ${result.escrowDistribution.workerReceived?.toFixed(2) || 0}, Poster: ${result.escrowDistribution.posterRefunded?.toFixed(2) || 0}`, {
+          icon: '💰',
+          duration: 5000,
+          style: { background: '#059669', color: '#fff' }
+        })
+      } else {
+        toast.success('Distribution processed', { icon: '✅' })
+      }
+
+      // Refresh the list
+      loadDisputes()
+    } catch (err) {
+      console.error('Error distributing escrow:', err)
+      toast.error('Failed to distribute escrow')
+    } finally {
+      setDistributingId(null)
+    }
+  }
+
   // Format wallet address
   const formatAddress = (address: string) => {
+    if (!address) return 'N/A'
     return `${address.slice(0, 6)}...${address.slice(-4)}`
   }
 
@@ -289,23 +413,23 @@ export function DisputeFeed({ editorWallet, highlightDisputeId, isGlobalAdmin }:
     )
   }
 
-  if (disputes.length === 0) {
-    return (
-      <Box sx={{ textAlign: 'center', py: 4, px: 2 }}>
-        <WarningAmberIcon sx={{ fontSize: 48, color: '#9CA3AF', mb: 2 }} />
-        <Typography variant="h6" color="text.secondary" gutterBottom>
-          No Pending Disputes
-        </Typography>
-        <Typography variant="body2" color="text.secondary">
-          All disputes have been resolved. Check back later.
-        </Typography>
-      </Box>
-    )
-  }
+  // Render pending disputes list
+  const renderPendingDisputes = () => {
+    if (disputes.length === 0) {
+      return (
+        <Box sx={{ textAlign: 'center', py: 4, px: 2 }}>
+          <CheckCircleIcon sx={{ fontSize: 48, color: '#36C170', mb: 2 }} />
+          <Typography variant="h6" color="text.secondary" gutterBottom>
+            No Pending Disputes
+          </Typography>
+          <Typography variant="body2" color="text.secondary">
+            All disputes have been resolved. Check back later.
+          </Typography>
+        </Box>
+      )
+    }
 
-  return (
-    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-      {disputes.map((dispute) => {
+    return disputes.map((dispute) => {
         const daysOpen = differenceInDays(new Date(), new Date(dispute.created_at))
         const state = resolutionState[dispute.id]
         const isExpanded = expandedDispute === dispute.id
@@ -408,7 +532,7 @@ export function DisputeFeed({ editorWallet, highlightDisputeId, isGlobalAdmin }:
                   <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                     <AttachMoneyIcon sx={{ fontSize: 16, color: '#6B7280' }} />
                     <Typography variant="caption" color="text.secondary">
-                      Budget: {dispute.jobs?.budget_amount} {dispute.jobs?.budget_token}
+                      Budget: {dispute.jobs?.payment_amount_tokens?.toLocaleString()} tokens (${dispute.jobs?.payment_amount_usd?.toLocaleString()})
                     </Typography>
                   </Box>
                   <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
@@ -521,7 +645,275 @@ export function DisputeFeed({ editorWallet, highlightDisputeId, isGlobalAdmin }:
             </Collapse>
           </Paper>
         )
-      })}
+      })
+  }
+
+  // Render resolved disputes list
+  const renderResolvedDisputes = () => {
+    if (resolvedDisputes.length === 0) {
+      return (
+        <Box sx={{ textAlign: 'center', py: 4, px: 2 }}>
+          <HistoryIcon sx={{ fontSize: 48, color: '#9CA3AF', mb: 2 }} />
+          <Typography variant="h6" color="text.secondary" gutterBottom>
+            No Resolution History
+          </Typography>
+          <Typography variant="body2" color="text.secondary">
+            Resolved disputes will appear here.
+          </Typography>
+        </Box>
+      )
+    }
+
+    return resolvedDisputes.map((dispute) => {
+      const needsDistribution = !dispute.escrow_distributed && dispute.jobs?.escrow_amount_tokens
+      const isDistributing = distributingId === dispute.id
+
+      return (
+        <Paper
+          key={dispute.id}
+          elevation={1}
+          sx={{
+            overflow: 'hidden',
+            border: needsDistribution ? '2px solid #F59E0B' : '1px solid',
+            borderColor: needsDistribution ? '#F59E0B' : 'divider',
+            borderRadius: '12px',
+            mb: 2
+          }}
+        >
+          {/* Resolved Dispute Header */}
+          <Box sx={{ p: 2, bgcolor: 'rgba(54, 193, 112, 0.05)' }}>
+            <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 2 }}>
+              {/* Icon */}
+              <Box
+                sx={{
+                  width: 40,
+                  height: 40,
+                  borderRadius: '50%',
+                  bgcolor: 'rgba(54, 193, 112, 0.1)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  flexShrink: 0
+                }}
+              >
+                <CheckCircleIcon sx={{ fontSize: 20, color: '#36C170' }} />
+              </Box>
+
+              {/* Content */}
+              <Box sx={{ flex: 1, minWidth: 0 }}>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap', mb: 0.5 }}>
+                  <Typography variant="subtitle2" sx={{ fontWeight: 600, color: '#1A1A1E' }}>
+                    {dispute.jobs?.title || 'Unknown Job'}
+                  </Typography>
+                  <Chip
+                    label="Resolved"
+                    size="small"
+                    sx={{
+                      height: 20,
+                      fontSize: '10px',
+                      fontWeight: 600,
+                      bgcolor: '#ECFDF5',
+                      color: '#065F46'
+                    }}
+                  />
+                  {needsDistribution && (
+                    <Chip
+                      label="⚠️ Tokens Not Distributed"
+                      size="small"
+                      sx={{
+                        height: 20,
+                        fontSize: '10px',
+                        fontWeight: 600,
+                        bgcolor: '#FEF3C7',
+                        color: '#92400E'
+                      }}
+                    />
+                  )}
+                </Box>
+                
+                <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
+                  Resolved {dispute.admin_decided_at ? format(new Date(dispute.admin_decided_at), 'MMM d, yyyy \'at\' h:mm a') : 'Unknown date'}
+                </Typography>
+
+                {/* Resolution Details */}
+                <Box sx={{ 
+                  mt: 2, 
+                  p: 2, 
+                  bgcolor: '#F9FAFB', 
+                  borderRadius: '8px',
+                  border: '1px solid #E5E7EB'
+                }}>
+                  <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
+                    <Typography variant="caption" sx={{ fontWeight: 600, color: '#6B7280' }}>
+                      Resolution Split
+                    </Typography>
+                    <Typography variant="caption" sx={{ color: '#6B7280' }}>
+                      By: {formatAddress(dispute.admin_wallet || '')}
+                    </Typography>
+                  </Box>
+                  
+                  {/* Split Bar */}
+                  <Box sx={{ display: 'flex', height: 24, borderRadius: '6px', overflow: 'hidden', mb: 1 }}>
+                    <Box 
+                      sx={{ 
+                        width: `${dispute.worker_percentage || 0}%`, 
+                        bgcolor: '#36C170',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        transition: 'width 0.3s'
+                      }}
+                    >
+                      {(dispute.worker_percentage || 0) >= 20 && (
+                        <Typography variant="caption" sx={{ color: '#fff', fontWeight: 600, fontSize: '10px' }}>
+                          Worker {dispute.worker_percentage}%
+                        </Typography>
+                      )}
+                    </Box>
+                    <Box 
+                      sx={{ 
+                        width: `${dispute.poster_percentage || 0}%`, 
+                        bgcolor: '#3B82F6',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        transition: 'width 0.3s'
+                      }}
+                    >
+                      {(dispute.poster_percentage || 0) >= 20 && (
+                        <Typography variant="caption" sx={{ color: '#fff', fontWeight: 600, fontSize: '10px' }}>
+                          Poster {dispute.poster_percentage}%
+                        </Typography>
+                      )}
+                    </Box>
+                  </Box>
+
+                  {/* Amount Info */}
+                  <Box sx={{ display: 'flex', gap: 2, mb: 1 }}>
+                    <Typography variant="caption" color="text.secondary">
+                      💰 Escrow: {dispute.jobs?.escrow_amount_tokens?.toLocaleString() || dispute.jobs?.payment_amount_tokens?.toLocaleString() || 'N/A'} tokens
+                    </Typography>
+                    <Typography variant="caption" color="text.secondary">
+                      Job Status: {dispute.jobs?.status || 'Unknown'}
+                    </Typography>
+                  </Box>
+
+                  {/* Resolution Notes */}
+                  {dispute.admin_resolution_notes && (
+                    <Box sx={{ mt: 1, pt: 1, borderTop: '1px solid #E5E7EB' }}>
+                      <Typography variant="caption" sx={{ fontWeight: 600, color: '#6B7280', display: 'block', mb: 0.5 }}>
+                        Admin Notes:
+                      </Typography>
+                      <Typography variant="body2" color="text.secondary" sx={{ whiteSpace: 'pre-wrap' }}>
+                        {dispute.admin_resolution_notes}
+                      </Typography>
+                    </Box>
+                  )}
+                </Box>
+
+                {/* Manual Distribution Button */}
+                {needsDistribution && (
+                  <Box sx={{ mt: 2 }}>
+                    <Alert severity="warning" sx={{ mb: 2, py: 0.5 }}>
+                      <Typography variant="caption">
+                        This dispute was resolved before token distribution was implemented. Click below to distribute tokens now.
+                      </Typography>
+                    </Alert>
+                    <Button
+                      fullWidth
+                      variant="contained"
+                      onClick={() => handleDistributeEscrow(dispute)}
+                      disabled={isDistributing}
+                      startIcon={isDistributing ? <CircularProgress size={18} color="inherit" /> : <SyncIcon />}
+                      sx={{
+                        bgcolor: '#F59E0B',
+                        color: '#fff',
+                        textTransform: 'none',
+                        fontWeight: 600,
+                        py: 1,
+                        '&:hover': { bgcolor: '#D97706' },
+                        '&:disabled': { bgcolor: '#E5E7F0', color: '#9CA3AF' }
+                      }}
+                    >
+                      {isDistributing ? 'Distributing...' : `Distribute Tokens (${dispute.worker_percentage}% / ${dispute.poster_percentage}%)`}
+                    </Button>
+                  </Box>
+                )}
+              </Box>
+            </Box>
+          </Box>
+        </Paper>
+      )
+    })
+  }
+
+  return (
+    <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+      {/* Tabs */}
+      <Tabs
+        value={activeTab}
+        onChange={(_, newValue) => setActiveTab(newValue)}
+        sx={{
+          borderBottom: '1px solid',
+          borderColor: 'divider',
+          mb: 2,
+          '& .MuiTab-root': {
+            textTransform: 'none',
+            fontWeight: 600,
+            minHeight: 48,
+            '&.Mui-selected': { color: '#FF6B35' }
+          },
+          '& .MuiTabs-indicator': { backgroundColor: '#FF6B35' }
+        }}
+      >
+        <Tab 
+          value="pending" 
+          label={
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+              <WarningAmberIcon sx={{ fontSize: 18 }} />
+              Pending
+              {disputes.length > 0 && (
+                <Chip 
+                  label={disputes.length} 
+                  size="small" 
+                  sx={{ 
+                    height: 20, 
+                    fontSize: '10px', 
+                    bgcolor: '#FEE2E2', 
+                    color: '#991B1B' 
+                  }} 
+                />
+              )}
+            </Box>
+          } 
+        />
+        <Tab 
+          value="resolved" 
+          label={
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+              <HistoryIcon sx={{ fontSize: 18 }} />
+              History
+              {resolvedDisputes.filter(d => !d.escrow_distributed && d.jobs?.escrow_amount_tokens).length > 0 && (
+                <Chip 
+                  label={`${resolvedDisputes.filter(d => !d.escrow_distributed && d.jobs?.escrow_amount_tokens).length} need distribution`} 
+                  size="small" 
+                  sx={{ 
+                    height: 20, 
+                    fontSize: '10px', 
+                    bgcolor: '#FEF3C7', 
+                    color: '#92400E' 
+                  }} 
+                />
+              )}
+            </Box>
+          } 
+        />
+      </Tabs>
+
+      {/* Content */}
+      <Box sx={{ flex: 1, overflow: 'auto', px: 0.5 }}>
+        {activeTab === 'pending' ? renderPendingDisputes() : renderResolvedDisputes()}
+      </Box>
     </Box>
   )
 }

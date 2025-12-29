@@ -254,7 +254,7 @@ export function OpenRevisionDisputeModal({
         console.error('[OpenRevisionDisputeModal] Failed to create notifications:', notificationError)
       }
 
-      toast.success('Revision dispute opened. Community voting begins now. ⚖️', {
+      toast.success('Revision dispute opened. The Orggly team will review and resolve this fairly. ⚖️', {
         duration: 5000,
         icon: '⚖️'
       })
@@ -510,6 +510,20 @@ export function OpenRevisionDisputeModal({
           </Box>
         )}
 
+        {/* How it Works */}
+        <Alert 
+          severity="info"
+          icon={<GavelIcon />}
+          sx={{ backgroundColor: '#EEF2FF', mb: 2 }}
+        >
+          <AlertTitle sx={{ fontWeight: 600 }}>How Disputes Work</AlertTitle>
+          <ul className="text-sm space-y-1 mt-1">
+            <li>• The Orggly team will review your dispute</li>
+            <li>• Resolution typically within <strong>24-72 hours</strong></li>
+            <li>• The revision history will be included as evidence</li>
+          </ul>
+        </Alert>
+
         {/* Warning */}
         <Alert 
           severity="warning"
@@ -518,8 +532,8 @@ export function OpenRevisionDisputeModal({
         >
           <AlertTitle sx={{ fontWeight: 600 }}>Important</AlertTitle>
           <ul className="text-sm space-y-1 mt-1">
-            <li>• Disputes are <strong>public</strong> - the community will see all details</li>
-            <li>• The revision history will be included as evidence</li>
+            <li>• Disputes are reviewed by the Orggly team</li>
+            <li>• All evidence and communications will be reviewed</li>
             <li>• False disputes may damage your reputation</li>
           </ul>
         </Alert>

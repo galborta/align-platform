@@ -348,38 +348,86 @@ export function JobApplicationModal({
       // TODO: Award karma via job-karma helper
       // await awardApplyToJobKarma(walletAddress, projectId, tokenMint)
 
-      // AUTO-ASSIGNMENT FOR FIRST_COME MODE
+      // AUTO-ASSIGNMENT FOR FIRST_COME MODE (with retry logic)
       if (assignmentMode === 'first_come' && jobStatus === 'open') {
-        try {
-          const autoAssignResponse = await fetch(`/api/jobs/${jobId}/auto-assign`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              applicationId: applicationData.id,
-              applicantWallet: walletAddress
-            })
-          })
-
-          const autoAssignResult = await autoAssignResponse.json()
-
-          if (autoAssignResult.success) {
-            toast.success('🎉 Job automatically assigned to you! Start working 💪', {
-              duration: 5000,
-              style: {
-                background: '#7C4DFF',
-                color: '#fff',
-              }
-            })
+        const maxRetries = 3
+        let autoAssignSuccess = false
+        let lastError: string | null = null
+        
+        for (let attempt = 1; attempt <= maxRetries; attempt++) {
+          try {
+            console.log(`[Auto-assign] Attempt ${attempt}/${maxRetries}...`)
             
-            onClose()
-            if (onApplicationSubmitted) {
-              onApplicationSubmitted()
+            const autoAssignResponse = await fetch(`/api/jobs/${jobId}/auto-assign`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                applicationId: applicationData.id,
+                applicantWallet: walletAddress
+              })
+            })
+
+            const autoAssignResult = await autoAssignResponse.json()
+
+            if (autoAssignResult.success) {
+              autoAssignSuccess = true
+              toast.success('🎉 Job automatically assigned to you! Start working 💪', {
+                duration: 5000,
+                style: {
+                  background: '#7C4DFF',
+                  color: '#fff',
+                }
+              })
+              
+              onClose()
+              if (onApplicationSubmitted) {
+                onApplicationSubmitted()
+              }
+              return
+            } else {
+              // API returned but with error
+              lastError = autoAssignResult.error || 'Unknown error'
+              console.warn(`[Auto-assign] Attempt ${attempt} failed:`, lastError)
+              
+              // If job is no longer open, don't retry
+              if (lastError.includes('no longer open') || lastError.includes('already assigned')) {
+                toast.error('This job was just taken by another applicant. Better luck next time!', {
+                  duration: 5000,
+                  icon: '😔'
+                })
+                onClose()
+                if (onApplicationSubmitted) {
+                  onApplicationSubmitted()
+                }
+                return
+              }
             }
-            return
+          } catch (autoAssignError) {
+            console.error(`[Auto-assign] Attempt ${attempt} error:`, autoAssignError)
+            lastError = autoAssignError instanceof Error ? autoAssignError.message : 'Network error'
           }
-        } catch (autoAssignError) {
-          console.error('Auto-assign failed:', autoAssignError)
-          // Continue with normal flow if auto-assign fails
+          
+          // Wait before retry (exponential backoff)
+          if (attempt < maxRetries) {
+            await new Promise(resolve => setTimeout(resolve, 1000 * attempt))
+          }
+        }
+        
+        // All retries failed - show error but application was still submitted
+        if (!autoAssignSuccess) {
+          console.error('[Auto-assign] All retries failed:', lastError)
+          toast.error(
+            '⚠️ Application submitted, but auto-assignment failed. Please refresh the page - you may still have the job!',
+            {
+              duration: 8000,
+              icon: '⚠️'
+            }
+          )
+          onClose()
+          if (onApplicationSubmitted) {
+            onApplicationSubmitted()
+          }
+          return
         }
       }
 

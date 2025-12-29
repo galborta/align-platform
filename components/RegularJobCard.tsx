@@ -41,6 +41,7 @@ export default function RegularJobCard({
     submitted: { bg: '#EEE7FF', text: '#7C4DFF', icon: '🔵' },
     completed: { bg: '#F3F4F6', text: '#6B7280', icon: '✅' },
     disputed: { bg: '#FEE2E2', text: '#EF4444', icon: '🔴' },
+    dispute_resolved: { bg: '#F0FDF4', text: '#059669', icon: '⚖️' },
     cancelled: { bg: '#F3F4F6', text: '#9CA3AF', icon: '❌' }
   }
 
