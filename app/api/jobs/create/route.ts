@@ -42,10 +42,14 @@ async function retryWithBackoff<T>(
 /**
  * POST /api/jobs/create
  * 
- * Create a new job with escrow locking
+ * Create a new job or contest with escrow locking
  * 
  * Required: Escrow transaction must be completed before calling this endpoint
  * Server validates the transaction on-chain before creating the job
+ * 
+ * Supports both regular jobs and contests:
+ * - Regular jobs: payment_amount_tokens must be > 0
+ * - Contests: is_contest=true, contest fields required, payment_amount_tokens can be 0
  */
 export async function POST(request: Request) {
   try {
@@ -67,7 +71,14 @@ export async function POST(request: Request) {
       escrow_token_mint,
       poster_desired_completion,
       fee_percentage_at_creation,
-      token_symbol
+      token_symbol,
+      // Contest fields
+      is_contest,
+      contest_max_winners,
+      contest_winner_prizes,
+      contest_submission_deadline,
+      contest_winner_selection_deadline,
+      contest_submissions_visible
     } = body
 
     // Validate required fields
@@ -87,11 +98,34 @@ export async function POST(request: Request) {
       )
     }
 
-    if (!payment_amount_tokens || payment_amount_tokens <= 0) {
+    // Validate payment amount (contests can have 0 for payment_amount_tokens since total is in escrow)
+    if (!is_contest && (!payment_amount_tokens || payment_amount_tokens <= 0)) {
       return NextResponse.json(
         { error: 'Invalid payment amount' },
         { status: 400 }
       )
+    }
+
+    // Validate contest-specific fields
+    if (is_contest) {
+      if (!contest_max_winners || contest_max_winners < 1) {
+        return NextResponse.json(
+          { error: 'Contest must have at least 1 winner' },
+          { status: 400 }
+        )
+      }
+      if (!contest_winner_prizes || !Array.isArray(contest_winner_prizes) || contest_winner_prizes.length === 0) {
+        return NextResponse.json(
+          { error: 'Contest must have prize configuration' },
+          { status: 400 }
+        )
+      }
+      if (!contest_submission_deadline) {
+        return NextResponse.json(
+          { error: 'Contest must have a submission deadline' },
+          { status: 400 }
+        )
+      }
     }
 
     // Validate escrow fields
@@ -109,12 +143,14 @@ export async function POST(request: Request) {
       )
     }
 
-    console.log('Creating job with escrow:', {
+    console.log(`Creating ${is_contest ? 'contest' : 'job'} with escrow:`, {
       project_id,
       poster_wallet,
       title,
       escrow_tx_signature,
-      escrow_amount_tokens
+      escrow_amount_tokens,
+      is_contest,
+      contest_max_winners
     })
 
     // Verify transaction on-chain (recommended for security)
@@ -173,16 +209,17 @@ export async function POST(request: Request) {
     // Create job in database with retry logic
     console.log('[Job Create] Inserting job into database...')
     
-    const jobInsertData = {
+    // Base job data
+    const jobInsertData: Record<string, any> = {
       project_id,
       poster_wallet,
       title,
       description,
       kpis,
       category,
-      payment_amount_tokens,
-      payment_amount_usd: payment_amount_usd || 0,
-      assignment_mode: assignment_mode || 'review',
+      payment_amount_tokens: is_contest ? 0 : payment_amount_tokens, // Contests use escrow_amount_tokens for total
+      payment_amount_usd: is_contest ? 0 : (payment_amount_usd || 0),
+      assignment_mode: is_contest ? 'review' : (assignment_mode || 'review'), // Contests always use review mode
       status: 'open',
       escrow_tx_signature,
       escrow_locked,
@@ -191,7 +228,14 @@ export async function POST(request: Request) {
       poster_desired_completion: poster_desired_completion || null,
       fee_percentage_at_creation: fee_percentage_at_creation || 5.0,
       created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString()
+      updated_at: new Date().toISOString(),
+      // Contest fields (defaults for regular jobs)
+      is_contest: is_contest || false,
+      contest_max_winners: is_contest ? contest_max_winners : null,
+      contest_winner_prizes: is_contest ? contest_winner_prizes : null,
+      contest_submission_deadline: is_contest ? contest_submission_deadline : null,
+      contest_winner_selection_deadline: is_contest ? contest_winner_selection_deadline : null,
+      contest_submissions_visible: is_contest ? (contest_submissions_visible ?? true) : true
     }
     
     let job
@@ -241,7 +285,7 @@ export async function POST(request: Request) {
       )
     }
 
-    console.log('Job created successfully:', job.id)
+    console.log(`${is_contest ? 'Contest' : 'Job'} created successfully:`, job.id)
 
     // Get escrow wallet address from platform settings
     const { data: escrowWalletSetting } = await supabaseAdmin
@@ -278,14 +322,14 @@ export async function POST(request: Request) {
       console.log('Escrow transaction record created')
     }
 
-    // Award karma to poster for creating job
+    // Award karma to poster for creating job/contest
     try {
       const { error: karmaError } = await supabaseAdmin
         .rpc('award_karma', {
           p_wallet_address: poster_wallet,
           p_project_id: project_id,
-          p_amount: 50,
-          p_reason: 'job_posted'
+          p_amount: is_contest ? 75 : 50, // More karma for contests
+          p_reason: is_contest ? 'contest_posted' : 'job_posted'
         })
       
       if (karmaError) {
@@ -299,7 +343,7 @@ export async function POST(request: Request) {
       // Non-critical
     }
 
-    console.log('Job creation complete:', job.id)
+    console.log(`${is_contest ? 'Contest' : 'Job'} creation complete:`, job.id)
 
     return NextResponse.json({ 
       success: true, 

@@ -35,7 +35,6 @@ import ArrowBackIcon from '@mui/icons-material/ArrowBack'
 import CheckCircleIcon from '@mui/icons-material/CheckCircle'
 import AddIcon from '@mui/icons-material/Add'
 import RemoveIcon from '@mui/icons-material/Remove'
-import { createJob } from '@/lib/jobs'
 import { supabase } from '@/lib/supabase'
 import { getTokenPriceUsd, validateMinimumUsdValue } from '@/lib/helius'
 import { getFeePercentage } from '@/lib/platform-settings'
@@ -129,13 +128,16 @@ export function CreateJobModal({
   const [desiredCompletionDays, setDesiredCompletionDays] = useState<string>('')
   
   // Contest-specific state
+  const [contestStep, setContestStep] = useState<1 | 2>(1) // Step 1: Info, Step 2: Settings
+  const [contestTotalPrizePool, setContestTotalPrizePool] = useState<string>('') // Total prize pool input
   const [contestMaxWinners, setContestMaxWinners] = useState<number>(1)
   const [contestPrizes, setContestPrizes] = useState<Array<{
     position: number
     amount_tokens: number
     amount_usd: number
+    isManuallyEdited?: boolean // Track if user manually edited this prize
   }>>([
-    { position: 1, amount_tokens: 0, amount_usd: 0 }
+    { position: 1, amount_tokens: 0, amount_usd: 0, isManuallyEdited: false }
   ])
   const [contestSubmissionDeadline, setContestSubmissionDeadline] = useState<Date | null>(null)
   const [contestSubmissionsVisible, setContestSubmissionsVisible] = useState<boolean>(true)
@@ -265,8 +267,10 @@ export function CreateJobModal({
     setAssignmentMode('review')
     setDesiredCompletionDays('')
     // Reset contest-specific state
+    setContestStep(1)
+    setContestTotalPrizePool('')
     setContestMaxWinners(1)
-    setContestPrizes([{ position: 1, amount_tokens: 0, amount_usd: 0 }])
+    setContestPrizes([{ position: 1, amount_tokens: 0, amount_usd: 0, isManuallyEdited: false }])
     setContestSubmissionDeadline(null)
     setContestSubmissionsVisible(true)
     setPrizeInputErrors({})
@@ -309,7 +313,7 @@ export function CreateJobModal({
     }
   }
 
-  // Calculate total prize pool for contests
+  // Calculate total prize pool for contests (from actual prizes array)
   const calculateTotalPrizePool = () => {
     return contestPrizes.reduce((sum, prize) => sum + prize.amount_tokens, 0)
   }
@@ -318,6 +322,101 @@ export function CreateJobModal({
   const calculateTotalWithFee = () => {
     const total = calculateTotalPrizePool()
     return total * (1 + feePercentage / 100)
+  }
+
+  // Get decreasing tier percentages based on number of winners
+  const getDecreasingTierPercentages = (numWinners: number): number[] => {
+    switch (numWinners) {
+      case 1:
+        return [100]
+      case 2:
+        return [60, 40]
+      case 3:
+        return [50, 30, 20]
+      case 4:
+        return [40, 30, 20, 10]
+      case 5:
+        return [35, 25, 20, 12, 8]
+      case 6:
+        return [30, 22, 18, 14, 10, 6]
+      case 7:
+        return [28, 20, 16, 13, 10, 8, 5]
+      case 8:
+        return [26, 18, 15, 12, 10, 8, 6, 5]
+      case 9:
+        return [24, 17, 14, 12, 10, 8, 7, 5, 3]
+      case 10:
+        return [22, 16, 13, 11, 10, 8, 7, 6, 4, 3]
+      default:
+        // Fallback for any edge case
+        const equalShare = 100 / numWinners
+        return Array(numWinners).fill(equalShare)
+    }
+  }
+
+  // Auto-distribute prizes based on total and number of winners
+  const distributeContestPrizes = (total: number, numWinners: number) => {
+    const percentages = getDecreasingTierPercentages(numWinners)
+    const newPrizes = percentages.map((percentage, index) => ({
+      position: index + 1,
+      amount_tokens: (total * percentage) / 100,
+      amount_usd: ((total * percentage) / 100) * (tokenPrice || 0),
+      isManuallyEdited: false
+    }))
+    setContestPrizes(newPrizes)
+  }
+
+  // Handle total prize pool input change
+  const handleTotalPrizePoolChange = (value: string) => {
+    // Only allow numbers and decimal point
+    if (value === '' || /^\d*\.?\d*$/.test(value)) {
+      setContestTotalPrizePool(value)
+      const numValue = parseFloat(value)
+      if (!isNaN(numValue) && numValue > 0) {
+        distributeContestPrizes(numValue, contestMaxWinners)
+      }
+    }
+  }
+
+  // Handle number of winners change (recalculate distribution)
+  const handleWinnersChange = (newCount: number) => {
+    setContestMaxWinners(newCount)
+    const totalValue = parseFloat(contestTotalPrizePool)
+    if (!isNaN(totalValue) && totalValue > 0) {
+      distributeContestPrizes(totalValue, newCount)
+    } else {
+      // Just update the prizes array structure with 0 values
+      const percentages = getDecreasingTierPercentages(newCount)
+      const newPrizes = percentages.map((_, index) => ({
+        position: index + 1,
+        amount_tokens: 0,
+        amount_usd: 0,
+        isManuallyEdited: false
+      }))
+      setContestPrizes(newPrizes)
+    }
+  }
+
+  // Handle individual prize edit (manual override)
+  const handlePrizeManualEdit = (position: number, amount: number) => {
+    setContestPrizes(prev => prev.map(prize => 
+      prize.position === position 
+        ? { 
+            ...prize, 
+            amount_tokens: amount, 
+            amount_usd: amount * (tokenPrice || 0),
+            isManuallyEdited: true 
+          }
+        : prize
+    ))
+  }
+
+  // Check if manual edits have caused prizes to differ from entered total
+  const getActualVsEnteredTotal = () => {
+    const enteredTotal = parseFloat(contestTotalPrizePool) || 0
+    const actualTotal = calculateTotalPrizePool()
+    const difference = actualTotal - enteredTotal
+    return { enteredTotal, actualTotal, difference, hasDifference: Math.abs(difference) > 0.01 }
   }
 
   const checkUsdValue = async (amount: number) => {
@@ -388,7 +487,37 @@ export function CreateJobModal({
     return Object.keys(newErrors).length === 0
   }
 
-  // Contest-specific validation
+  // Contest Step 1 validation (info fields only)
+  const validateContestStep1 = (): boolean => {
+    const newErrors: Record<string, string> = {}
+    
+    if (!title.trim()) {
+      newErrors.title = 'Title is required'
+    } else if (title.length > 200) {
+      newErrors.title = 'Title must be 200 characters or less'
+    }
+    
+    if (!category) {
+      newErrors.category = 'Category is required'
+    }
+    
+    if (!description.trim()) {
+      newErrors.description = 'Description is required'
+    } else if (description.length > 5000) {
+      newErrors.description = 'Description must be 5000 characters or less'
+    }
+    
+    if (!kpis.trim()) {
+      newErrors.kpis = 'Deliverables are required'
+    } else if (kpis.length > 3000) {
+      newErrors.kpis = 'Deliverables must be 3000 characters or less'
+    }
+    
+    setErrors(newErrors)
+    return Object.keys(newErrors).length === 0
+  }
+
+  // Contest-specific validation (Step 2 - settings)
   const validateContestFields = (): { isValid: boolean; errors: string[] } => {
     const errors: string[] = []
 
@@ -437,6 +566,24 @@ export function CreateJobModal({
     }
   }
 
+  // Handle going to next step in contest flow
+  const handleContestNextStep = () => {
+    if (contestStep === 1) {
+      if (validateContestStep1()) {
+        setContestStep(2)
+      } else {
+        toast.error('Please fill in all required fields')
+      }
+    }
+  }
+
+  // Handle going back in contest flow
+  const handleContestPrevStep = () => {
+    if (contestStep === 2) {
+      setContestStep(1)
+    }
+  }
+
   const handleReviewAndLock = async () => {
     // Validate common form fields (skip payment validation for contests)
     if (jobType === 'regular') {
@@ -445,25 +592,16 @@ export function CreateJobModal({
         return
       }
     } else {
-      // For contests, validate common fields without payment amount
-      const newErrors: Record<string, string> = {}
-      if (!title.trim()) newErrors.title = 'Title is required'
-      if (!category) newErrors.category = 'Category is required'
-      if (!description.trim()) newErrors.description = 'Description is required'
-      if (!kpis.trim()) newErrors.kpis = 'Success criteria are required'
-      setErrors(newErrors)
-      if (Object.keys(newErrors).length > 0) {
-        toast.error('Please fix the errors before continuing')
+      // For contests, validate both Step 1 (info) and Step 2 (settings)
+      if (!validateContestStep1()) {
+        toast.error('Please fix the contest information errors')
+        setContestStep(1) // Go back to step 1 if info is invalid
         return
       }
-    }
-
-    // Contest-specific validation
-    if (jobType === 'contest') {
+      
       const contestValidation = validateContestFields()
       if (!contestValidation.isValid) {
         toast.error(contestValidation.errors[0]) // Show first error
-        // Show all errors in console for debugging
         console.log('Contest validation errors:', contestValidation.errors)
         return
       }
@@ -770,7 +908,25 @@ export function CreateJobModal({
 
         if (!transferResult.success) {
           toast.dismiss('escrow-lock')
-          setLockError(transferResult.error || 'Failed to lock tokens in escrow')
+          
+          // Check if transaction may have been sent despite the error
+          if (transferResult.mayHaveBeenSent) {
+            setLockError(
+              '⚠️ Transaction status uncertain! Your tokens may have been sent. ' +
+              'Please check your wallet history. If tokens were transferred, use the Recovery page to create your job.'
+            )
+            setRecoveryInfo({
+              isRecoverable: true,
+              txSignature: undefined // User needs to find it in their wallet
+            })
+            toast.error('Please check your wallet - transaction may have been sent!', {
+              duration: 10000,
+              icon: '⚠️'
+            })
+          } else {
+            setLockError(transferResult.error || 'Failed to lock tokens in escrow')
+          }
+          
           setIsLocking(false)
           return
         }
@@ -805,62 +961,75 @@ export function CreateJobModal({
             amount_usd: prize.amount_tokens * (tokenPrice || 0)
           }))
           
-          jobData = await createJob({
-            ...baseJobData,
-            // Contest fields
-            is_contest: true,
-            contest_max_winners: contestMaxWinners,
-            contest_winner_prizes: prizesWithUsd,
-            contest_submission_deadline: contestSubmissionDeadline!.toISOString(),
-            contest_winner_selection_deadline: new Date(
-              contestSubmissionDeadline!.getTime() + 3 * 24 * 60 * 60 * 1000
-            ).toISOString(),
-            contest_submissions_visible: contestSubmissionsVisible,
-            // Regular job fields - set defaults for contests
-            payment_amount_tokens: 0, // Total is in escrow_amount_tokens
-            payment_amount_usd: 0,
-            assignment_mode: 'review' as const, // Contests always use review mode
-            poster_desired_completion: contestSubmissionDeadline!.toISOString(),
+          // Use API route for contest creation (bypasses RLS with service role)
+          const contestResponse = await fetch('/api/jobs/create', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              ...baseJobData,
+              // Contest fields
+              is_contest: true,
+              contest_max_winners: contestMaxWinners,
+              contest_winner_prizes: prizesWithUsd,
+              contest_submission_deadline: contestSubmissionDeadline!.toISOString(),
+              contest_winner_selection_deadline: new Date(
+                contestSubmissionDeadline!.getTime() + 3 * 24 * 60 * 60 * 1000
+              ).toISOString(),
+              contest_submissions_visible: contestSubmissionsVisible,
+              // Regular job fields - set defaults for contests
+              payment_amount_tokens: 0, // Total is in escrow_amount_tokens
+              payment_amount_usd: 0,
+              assignment_mode: 'review',
+              poster_desired_completion: contestSubmissionDeadline!.toISOString(),
+              token_symbol: tokenSymbol,
+            })
           })
+          
+          if (!contestResponse.ok) {
+            const errorData = await contestResponse.json()
+            console.error('[CreateJobModal] Contest API error:', errorData)
+            throw new Error(errorData.error || 'Failed to create contest')
+          }
+          
+          const contestResult = await contestResponse.json()
+          jobData = contestResult.job
         } else {
           // Regular job data (existing logic)
           const validation = await validateMinimumUsdValue(tokenMint, amount, 5)
           
-          jobData = await createJob({
-            ...baseJobData,
-            // Regular job fields
-            payment_amount_tokens: amount,
-            payment_amount_usd: validation.usdValue || 0,
-            assignment_mode: assignmentMode,
-            poster_desired_completion: getDesiredCompletionDate(),
-            // Contest fields set to defaults
-            is_contest: false,
-            contest_max_winners: null,
-            contest_winner_prizes: null,
-            contest_submission_deadline: null,
-            contest_winner_selection_deadline: null,
-            contest_submissions_visible: true,
+          // Use API route for job creation (bypasses RLS with service role)
+          const jobResponse = await fetch('/api/jobs/create', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              ...baseJobData,
+              // Regular job fields
+              payment_amount_tokens: amount,
+              payment_amount_usd: validation.usdValue || 0,
+              assignment_mode: assignmentMode,
+              poster_desired_completion: getDesiredCompletionDate(),
+              // Contest fields set to defaults
+              is_contest: false,
+              contest_max_winners: null,
+              contest_winner_prizes: null,
+              contest_submission_deadline: null,
+              contest_winner_selection_deadline: null,
+              contest_submissions_visible: true,
+              token_symbol: tokenSymbol,
+            })
           })
+          
+          if (!jobResponse.ok) {
+            const errorData = await jobResponse.json()
+            console.error('[CreateJobModal] Job API error:', errorData)
+            throw new Error(errorData.error || 'Failed to create job')
+          }
+          
+          const jobResult = await jobResponse.json()
+          jobData = jobResult.job
         }
 
-        // Step 3: Log transaction to escrow transactions table
-        try {
-          await supabase.from('job_escrow_transactions').insert({
-            job_id: jobData.id,
-            transaction_type: 'lock',
-            from_wallet: walletAddress,
-            to_wallet: transferResult.escrowWallet,
-            amount_tokens: totalEscrowAmount,
-            token_mint: tokenMint,
-            token_symbol: tokenSymbol,
-            tx_signature: transferResult.signature,
-            status: 'confirmed',
-            confirmed_at: new Date().toISOString()
-          })
-        } catch (logError) {
-          // Log error but don't fail the job creation
-          console.error('Failed to log escrow transaction:', logError)
-        }
+        // Note: Escrow transaction logging is handled by the API route
 
         toast.dismiss('escrow-lock')
         toast.success(
@@ -1236,8 +1405,12 @@ export function CreateJobModal({
                     size="small"
                     variant="outlined"
                     onClick={() => {
-                      // Navigate to jobs page where recovery banner will show
-                      window.location.href = `/project/${projectId}/jobs?recover=true`
+                      // Navigate to recovery page
+                      // If we have a tx signature, pass it as query param
+                      const recoveryUrl = recoveryInfo?.txSignature
+                        ? `/project/${projectId}/jobs?recover=true&tx=${recoveryInfo.txSignature}`
+                        : `/project/${projectId}/recover-escrow`
+                      window.location.href = recoveryUrl
                     }}
                     sx={{ 
                       whiteSpace: 'nowrap',
@@ -1249,7 +1422,7 @@ export function CreateJobModal({
                       }
                     }}
                   >
-                    🔧 Recover Job
+                    🔧 {recoveryInfo?.txSignature ? 'Recover Job' : 'Go to Recovery'}
                   </Button>
                 )
               }
@@ -1349,102 +1522,251 @@ export function CreateJobModal({
         {mode === 'edit' 
           ? 'Edit Job' 
           : jobType === 'contest' 
-            ? '🏆 Create Contest Job' 
+            ? `🏆 Create Contest Job${contestStep === 1 ? ' - Contest Info' : ' - Settings'}`
             : 'Post a Job'}
       </DialogTitle>
+
+      {/* Contest Step Indicator */}
+      {jobType === 'contest' && mode === 'create' && (
+        <Box sx={{ px: 3, pb: 2 }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+            {/* Step 1 */}
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flex: 1 }}>
+              <Box sx={{
+                width: 32,
+                height: 32,
+                borderRadius: '50%',
+                bgcolor: contestStep >= 1 ? '#7C4DFF' : '#E5E7F0',
+                color: contestStep >= 1 ? 'white' : '#6F7280',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                fontSize: '14px',
+                fontWeight: 600
+              }}>
+                1
+              </Box>
+              <Typography sx={{ 
+                fontSize: '14px', 
+                fontWeight: contestStep === 1 ? 600 : 400,
+                color: contestStep === 1 ? '#1A1A1E' : '#6F7280'
+              }}>
+                Contest Info
+              </Typography>
+            </Box>
+
+            {/* Connector */}
+            <Box sx={{ 
+              flex: 0.5, 
+              height: 2, 
+              bgcolor: contestStep >= 2 ? '#7C4DFF' : '#E5E7F0',
+              borderRadius: 1
+            }} />
+
+            {/* Step 2 */}
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flex: 1 }}>
+              <Box sx={{
+                width: 32,
+                height: 32,
+                borderRadius: '50%',
+                bgcolor: contestStep >= 2 ? '#7C4DFF' : '#E5E7F0',
+                color: contestStep >= 2 ? 'white' : '#6F7280',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                fontSize: '14px',
+                fontWeight: 600
+              }}>
+                2
+              </Box>
+              <Typography sx={{ 
+                fontSize: '14px', 
+                fontWeight: contestStep === 2 ? 600 : 400,
+                color: contestStep === 2 ? '#1A1A1E' : '#6F7280'
+              }}>
+                Prize Settings
+              </Typography>
+            </Box>
+          </Box>
+        </Box>
+      )}
 
       <DialogContent 
         sx={{ pt: 3 }}
         onScroll={handleScroll}
       >
-        {/* Job Type Toggle */}
-        <Box sx={{ mb: 3, display: 'flex', gap: 2, justifyContent: 'center', flexWrap: 'wrap' }}>
-          <Button
-            variant={jobType === 'regular' ? 'contained' : 'outlined'}
-            onClick={() => setJobType('regular')}
-            sx={{
-              bgcolor: jobType === 'regular' ? '#7C4DFF' : 'transparent',
-              color: jobType === 'regular' ? 'white' : '#7C4DFF',
-              borderColor: '#7C4DFF',
-              textTransform: 'none',
-              fontWeight: 600,
-              px: 3,
-              '&:hover': {
-                bgcolor: jobType === 'regular' ? '#6A3FDB' : 'rgba(124, 77, 255, 0.08)'
-              }
-            }}
-          >
-            💼 Regular Job
-          </Button>
-          <Button
-            variant={jobType === 'contest' ? 'contained' : 'outlined'}
-            onClick={() => setJobType('contest')}
-            sx={{
-              bgcolor: jobType === 'contest' ? '#7C4DFF' : 'transparent',
-              color: jobType === 'contest' ? 'white' : '#7C4DFF',
-              borderColor: '#7C4DFF',
-              textTransform: 'none',
-              fontWeight: 600,
-              px: 3,
-              '&:hover': {
-                bgcolor: jobType === 'contest' ? '#6A3FDB' : 'rgba(124, 77, 255, 0.08)'
-              }
-            }}
-          >
-            🏆 Contest Job
-          </Button>
-          {onSwitchToSocialMedia && (
+        {/* Job Type Toggle - Hide on contest Step 2 */}
+        {!(jobType === 'contest' && contestStep === 2) && (
+          <Box sx={{ mb: 3, display: 'flex', gap: 2, justifyContent: 'center', flexWrap: 'wrap' }}>
             <Button
-              variant="outlined"
+              variant={jobType === 'regular' ? 'contained' : 'outlined'}
               onClick={() => {
-                onClose()
-                onSwitchToSocialMedia()
+                setJobType('regular')
+                setContestStep(1) // Reset contest step when switching
               }}
               sx={{
-                bgcolor: 'transparent',
-                color: '#7C4DFF',
+                bgcolor: jobType === 'regular' ? '#7C4DFF' : 'transparent',
+                color: jobType === 'regular' ? 'white' : '#7C4DFF',
                 borderColor: '#7C4DFF',
                 textTransform: 'none',
                 fontWeight: 600,
                 px: 3,
-                position: 'relative',
                 '&:hover': {
-                  bgcolor: 'rgba(124, 77, 255, 0.08)'
+                  bgcolor: jobType === 'regular' ? '#6A3FDB' : 'rgba(124, 77, 255, 0.08)'
                 }
               }}
             >
-              📣 Social Campaign
-              <Box
-                component="span"
+              💼 Regular Job
+            </Button>
+            <Button
+              variant={jobType === 'contest' ? 'contained' : 'outlined'}
+              onClick={() => {
+                setJobType('contest')
+                setContestStep(1) // Always start at step 1 for contests
+              }}
+              sx={{
+                bgcolor: jobType === 'contest' ? '#7C4DFF' : 'transparent',
+                color: jobType === 'contest' ? 'white' : '#7C4DFF',
+                borderColor: '#7C4DFF',
+                textTransform: 'none',
+                fontWeight: 600,
+                px: 3,
+                '&:hover': {
+                  bgcolor: jobType === 'contest' ? '#6A3FDB' : 'rgba(124, 77, 255, 0.08)'
+                }
+              }}
+            >
+              🏆 Contest Job
+            </Button>
+            {onSwitchToSocialMedia && (
+              <Button
+                variant="outlined"
+                onClick={() => {
+                  onClose()
+                  onSwitchToSocialMedia()
+                }}
                 sx={{
-                  position: 'absolute',
-                  top: -8,
-                  right: -8,
-                  bgcolor: '#E3F06F',
-                  color: '#1A1A1E',
-                  fontSize: '9px',
-                  fontWeight: 700,
-                  px: 0.75,
-                  py: 0.25,
-                  borderRadius: '4px',
-                  textTransform: 'uppercase'
+                  bgcolor: 'transparent',
+                  color: '#7C4DFF',
+                  borderColor: '#7C4DFF',
+                  textTransform: 'none',
+                  fontWeight: 600,
+                  px: 3,
+                  position: 'relative',
+                  '&:hover': {
+                    bgcolor: 'rgba(124, 77, 255, 0.08)'
+                  }
                 }}
               >
-                New
-              </Box>
-            </Button>
-          )}
-        </Box>
-
-        {/* Contest Info Alert */}
-        {jobType === 'contest' && (
-          <Alert severity="info" sx={{ mb: 3 }}>
-            <strong>Contest Mode:</strong> Multiple workers can submit entries. You'll manually select winner(s) after the submission deadline.
-          </Alert>
+                📣 Social Campaign
+                <Box
+                  component="span"
+                  sx={{
+                    position: 'absolute',
+                    top: -8,
+                    right: -8,
+                    bgcolor: '#E3F06F',
+                    color: '#1A1A1E',
+                    fontSize: '9px',
+                    fontWeight: 700,
+                    px: 0.75,
+                    py: 0.25,
+                    borderRadius: '4px',
+                    textTransform: 'uppercase'
+                  }}
+                >
+                  New
+                </Box>
+              </Button>
+            )}
+          </Box>
         )}
 
-        {/* Contest Settings */}
-        {jobType === 'contest' && (
+        {/* Contest Step 1: Contest Info */}
+        {jobType === 'contest' && contestStep === 1 && (
+          <>
+            <Alert severity="info" sx={{ mb: 3 }}>
+              <strong>Contest Mode:</strong> Multiple workers can submit entries. You'll manually select winner(s) after the submission deadline.
+            </Alert>
+
+            {/* Title */}
+            <TextField
+              label="Contest Title"
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              placeholder={`Design new logo for ${tokenSymbol}`}
+              fullWidth
+              required
+              error={!!errors.title}
+              helperText={errors.title || `${title.length}/200 characters`}
+              inputProps={{ maxLength: 200 }}
+              sx={{ mb: 3 }}
+            />
+
+            {/* Category */}
+            <FormControl fullWidth required error={!!errors.category} sx={{ mb: 3 }}>
+              <InputLabel>Category</InputLabel>
+              <Select
+                value={category}
+                label="Category"
+                onChange={(e) => setCategory(e.target.value)}
+              >
+                {CATEGORIES.map((cat) => (
+                  <MenuItem key={cat.value} value={cat.value}>
+                    {cat.label}
+                  </MenuItem>
+                ))}
+              </Select>
+              {errors.category && (
+                <Alert severity="error" sx={{ mt: 1 }}>{errors.category}</Alert>
+              )}
+            </FormControl>
+
+            {/* Description */}
+            <TextField
+              label="Contest Description"
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              placeholder="Describe what you're looking for in detail. What's the context? What style or approach do you prefer? Any specific requirements?"
+              fullWidth
+              required
+              multiline
+              rows={6}
+              error={!!errors.description}
+              helperText={errors.description || `${description.length}/5000 characters`}
+              inputProps={{ maxLength: 5000 }}
+              sx={{ mb: 3 }}
+            />
+
+            {/* Deliverables / Success Criteria - Larger text box for contests */}
+            <TextField
+              label="Deliverables & Success Criteria"
+              value={kpis}
+              onChange={(e) => setKpis(e.target.value)}
+              placeholder={`What do participants need to deliver? How will you judge the entries?\n\nExample:\n• Final design in PNG, SVG, and AI formats\n• 3 color variations\n• Include brand colors (#7C4DFF, #E3F06F)\n• Must work at both small and large sizes\n• Original work only (no AI-generated content)\n• Include mockup of design in use`}
+              fullWidth
+              required
+              multiline
+              minRows={8}
+              maxRows={16}
+              error={!!errors.kpis}
+              helperText={errors.kpis || `${kpis.length}/3000 characters - Be detailed so participants know exactly what to submit`}
+              inputProps={{ maxLength: 3000 }}
+              sx={{ 
+                mb: 3,
+                '& .MuiInputBase-root': {
+                  alignItems: 'flex-start'
+                },
+                '& .MuiInputBase-input': {
+                  lineHeight: 1.6
+                }
+              }}
+            />
+          </>
+        )}
+
+        {/* Contest Step 2: Settings */}
+        {jobType === 'contest' && contestStep === 2 && (
           <Box sx={{ 
             border: '1px solid #7C4DFF', 
             borderRadius: 2, 
@@ -1452,9 +1774,40 @@ export function CreateJobModal({
             mb: 3,
             bgcolor: 'rgba(124, 77, 255, 0.05)'
           }}>
-            <Typography variant="h6" sx={{ mb: 2, color: '#7C4DFF' }}>
-              Contest Settings
+            <Typography variant="h6" sx={{ mb: 3, color: '#7C4DFF' }}>
+              Prize Settings
             </Typography>
+
+            {/* Total Prize Pool Input */}
+            <Box sx={{ mb: 3 }}>
+              <Typography variant="body2" sx={{ mb: 1, fontWeight: 600 }}>
+                Total Prize Pool *
+              </Typography>
+              <TextField
+                fullWidth
+                placeholder="Enter total amount to distribute"
+                value={contestTotalPrizePool}
+                onChange={(e) => handleTotalPrizePoolChange(e.target.value)}
+                InputProps={{
+                  endAdornment: (
+                    <InputAdornment position="end">
+                      <span style={{ fontWeight: 600, color: '#7C4DFF' }}>
+                        {tokenSymbol}
+                      </span>
+                    </InputAdornment>
+                  )
+                }}
+                sx={{ mb: 1 }}
+              />
+              {contestTotalPrizePool && parseFloat(contestTotalPrizePool) > 0 && tokenPrice && (
+                <Typography variant="body2" sx={{ color: '#36C170', fontWeight: 500 }}>
+                  ≈ ${(parseFloat(contestTotalPrizePool) * tokenPrice).toFixed(2)} USD
+                </Typography>
+              )}
+              <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block', mt: 0.5 }}>
+                This is the total amount that will be distributed among all winners
+              </Typography>
+            </Box>
 
             {/* Number of Winners */}
             <Box sx={{ mb: 3 }}>
@@ -1463,14 +1816,7 @@ export function CreateJobModal({
               </Typography>
               <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
                 <IconButton 
-                  onClick={() => {
-                    const newCount = Math.max(1, contestMaxWinners - 1)
-                    setContestMaxWinners(newCount)
-                    // Remove last prize if reducing
-                    if (newCount < contestPrizes.length) {
-                      setContestPrizes(contestPrizes.slice(0, newCount))
-                    }
-                  }}
+                  onClick={() => handleWinnersChange(Math.max(1, contestMaxWinners - 1))}
                   disabled={contestMaxWinners <= 1}
                   sx={{ border: '1px solid #E5E7F0' }}
                 >
@@ -1480,17 +1826,7 @@ export function CreateJobModal({
                   {contestMaxWinners}
                 </Typography>
                 <IconButton 
-                  onClick={() => {
-                    const newCount = Math.min(10, contestMaxWinners + 1)
-                    setContestMaxWinners(newCount)
-                    // Add new prize slot
-                    if (newCount > contestPrizes.length) {
-                      setContestPrizes([
-                        ...contestPrizes,
-                        { position: newCount, amount_tokens: 0, amount_usd: 0 }
-                      ])
-                    }
-                  }}
+                  onClick={() => handleWinnersChange(Math.min(10, contestMaxWinners + 1))}
                   disabled={contestMaxWinners >= 10}
                   sx={{ border: '1px solid #E5E7F0' }}
                 >
@@ -1498,71 +1834,103 @@ export function CreateJobModal({
                 </IconButton>
               </Box>
               <Typography variant="caption" sx={{ color: 'text.secondary' }}>
-                Minimum: 1, Maximum: 10
+                Prizes are automatically distributed in decreasing tiers
               </Typography>
             </Box>
 
-            {/* Prize Distribution */}
-            <Typography variant="body2" sx={{ mb: 2, fontWeight: 600 }}>
-              Prize Distribution *
-            </Typography>
-            {contestPrizes.map((prize, index) => (
-              <Box key={prize.position} sx={{ mb: 2 }}>
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 1 }}>
-                  <Typography variant="body2" sx={{ minWidth: 80 }}>
-                    {prize.position === 1 ? '🥇 1st Place' :
-                     prize.position === 2 ? '🥈 2nd Place' :
-                     prize.position === 3 ? '🥉 3rd Place' :
-                     `#${prize.position}`}
+            {/* Prize Distribution - Auto-calculated, Editable */}
+            {contestPrizes.length > 0 && parseFloat(contestTotalPrizePool) > 0 && (
+              <Box sx={{ mb: 3 }}>
+                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+                  <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                    Prize Distribution
                   </Typography>
-                  <TextField
-                    type="number"
-                    size="small"
-                    placeholder="Prize amount"
-                    value={prize.amount_tokens || ''}
-                    onChange={(e) => {
-                      const amount = parseFloat(e.target.value) || 0
-                      
-                      // Update prizes
-                      const newPrizes = [...contestPrizes]
-                      newPrizes[index] = {
-                        ...newPrizes[index],
-                        amount_tokens: amount,
-                        amount_usd: amount * (tokenPrice || 0)
-                      }
-                      setContestPrizes(newPrizes)
-                      
-                      // Validate this prize in real-time
-                      const newErrors = { ...prizeInputErrors }
-                      if (amount <= 0) {
-                        newErrors[prize.position] = 'Prize must be greater than 0'
-                      } else {
-                        delete newErrors[prize.position]
-                      }
-                      setPrizeInputErrors(newErrors)
-                    }}
-                    error={!!prizeInputErrors[prize.position]}
-                    helperText={prizeInputErrors[prize.position]}
-                    InputProps={{
-                      endAdornment: (
-                        <InputAdornment position="end">
-                          <span style={{ fontWeight: 600, color: '#7C4DFF' }}>
-                            {tokenSymbol}
-                          </span>
-                        </InputAdornment>
-                      )
-                    }}
-                    sx={{ flex: 1 }}
-                  />
-                  <Typography variant="body2" sx={{ color: 'text.secondary', minWidth: 100 }}>
-                    ≈ ${prize.amount_usd.toFixed(2)}
+                  <Typography variant="caption" sx={{ color: 'text.secondary' }}>
+                    Click any amount to customize
                   </Typography>
                 </Box>
+                
+                {contestPrizes.map((prize) => {
+                  const percentage = parseFloat(contestTotalPrizePool) > 0 
+                    ? ((prize.amount_tokens / parseFloat(contestTotalPrizePool)) * 100).toFixed(0)
+                    : '0'
+                  
+                  return (
+                    <Box key={prize.position} sx={{ mb: 2 }}>
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                        <Box sx={{ minWidth: 90, display: 'flex', alignItems: 'center', gap: 1 }}>
+                          <Typography variant="body2" sx={{ fontWeight: 500 }}>
+                            {prize.position === 1 ? '🥇' :
+                             prize.position === 2 ? '🥈' :
+                             prize.position === 3 ? '🥉' :
+                             `#${prize.position}`}
+                          </Typography>
+                          <Chip 
+                            label={`${percentage}%`} 
+                            size="small" 
+                            sx={{ 
+                              fontSize: '11px',
+                              height: 20,
+                              bgcolor: prize.isManuallyEdited ? '#FFF4E6' : '#E5E7F0',
+                              color: prize.isManuallyEdited ? '#FB923C' : '#6F7280'
+                            }}
+                          />
+                        </Box>
+                        <TextField
+                          type="number"
+                          size="small"
+                          value={prize.amount_tokens || ''}
+                          onChange={(e) => {
+                            const amount = parseFloat(e.target.value) || 0
+                            handlePrizeManualEdit(prize.position, amount)
+                          }}
+                          InputProps={{
+                            endAdornment: (
+                              <InputAdornment position="end">
+                                <span style={{ fontWeight: 600, color: '#7C4DFF', fontSize: '13px' }}>
+                                  {tokenSymbol}
+                                </span>
+                              </InputAdornment>
+                            )
+                          }}
+                          sx={{ 
+                            flex: 1,
+                            '& .MuiInputBase-input': { 
+                              py: 1,
+                              fontSize: '14px'
+                            }
+                          }}
+                        />
+                        <Typography variant="body2" sx={{ color: 'text.secondary', minWidth: 80, textAlign: 'right' }}>
+                          ≈ ${prize.amount_usd.toFixed(2)}
+                        </Typography>
+                      </Box>
+                    </Box>
+                  )
+                })}
+
+                {/* Warning if manual edits caused difference */}
+                {getActualVsEnteredTotal().hasDifference && (
+                  <Alert 
+                    severity="warning" 
+                    sx={{ mt: 2 }}
+                    icon={<WarningIcon fontSize="small" />}
+                  >
+                    <Typography variant="body2" sx={{ fontWeight: 500 }}>
+                      Prize total ({calculateTotalPrizePool().toFixed(2)} {tokenSymbol}) differs from entered amount ({parseFloat(contestTotalPrizePool).toFixed(2)} {tokenSymbol})
+                    </Typography>
+                    <Typography variant="caption">
+                      The actual total from individual prizes will be used for escrow.
+                    </Typography>
+                  </Alert>
+                )}
               </Box>
-            ))}
+            )}
+
+            <Divider sx={{ my: 3 }} />
 
             {/* Submission Deadline */}
-            <Box sx={{ mb: 3, mt: 3 }}>
+            <Box sx={{ mb: 3 }}>
               <Typography variant="body2" sx={{ mb: 1, fontWeight: 600 }}>
                 Submission Deadline *
               </Typography>
@@ -1609,7 +1977,7 @@ export function CreateJobModal({
             </Box>
 
             {/* Submission Visibility */}
-            <Box sx={{ mb: 2 }}>
+            <Box sx={{ mb: 3 }}>
               <Typography variant="body2" sx={{ mb: 1, fontWeight: 600 }}>
                 Submission Visibility
               </Typography>
@@ -1641,110 +2009,132 @@ export function CreateJobModal({
               </Typography>
             </Box>
 
-            {/* Total Prize Pool Summary */}
+            {/* Total Summary */}
             <Box sx={{ 
               mt: 3, 
               p: 2, 
               bgcolor: 'background.paper', 
               borderRadius: 1,
-              border: '1px solid',
-              borderColor: 'divider'
+              border: '2px solid #7C4DFF'
             }}>
               <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
                 <Typography variant="body2">Total Prize Pool:</Typography>
-                <Typography variant="body2" sx={{ fontWeight: 600 }}>
-                  {calculateTotalPrizePool().toFixed(2)} {tokenSymbol}
-                </Typography>
+                <Box sx={{ textAlign: 'right' }}>
+                  <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                    {calculateTotalPrizePool().toFixed(2)} {tokenSymbol}
+                  </Typography>
+                  {tokenPrice && (
+                    <Typography variant="caption" sx={{ color: 'text.secondary' }}>
+                      ≈ ${(calculateTotalPrizePool() * tokenPrice).toFixed(2)} USD
+                    </Typography>
+                  )}
+                </Box>
               </Box>
               <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
                 <Typography variant="body2">Platform Fee ({feePercentage}%):</Typography>
-                <Typography variant="body2">
-                  {(calculateTotalPrizePool() * (feePercentage / 100)).toFixed(2)} {tokenSymbol}
-                </Typography>
+                <Box sx={{ textAlign: 'right' }}>
+                  <Typography variant="body2">
+                    {(calculateTotalPrizePool() * (feePercentage / 100)).toFixed(2)} {tokenSymbol}
+                  </Typography>
+                  {tokenPrice && (
+                    <Typography variant="caption" sx={{ color: 'text.secondary' }}>
+                      ≈ ${(calculateTotalPrizePool() * (feePercentage / 100) * tokenPrice).toFixed(2)} USD
+                    </Typography>
+                  )}
+                </Box>
               </Box>
-              <Divider sx={{ my: 1 }} />
+              <Divider sx={{ my: 1.5 }} />
               <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
                 <Typography variant="body2" sx={{ fontWeight: 600 }}>
                   Total to Lock:
                 </Typography>
-                <Typography variant="body2" sx={{ fontWeight: 600, color: '#7C4DFF' }}>
-                  {calculateTotalWithFee().toFixed(2)} {tokenSymbol}
-                </Typography>
+                <Box sx={{ textAlign: 'right' }}>
+                  <Typography variant="body1" sx={{ fontWeight: 700, color: '#7C4DFF' }}>
+                    {calculateTotalWithFee().toFixed(2)} {tokenSymbol}
+                  </Typography>
+                  {tokenPrice && (
+                    <Typography variant="caption" sx={{ color: 'text.secondary' }}>
+                      ≈ ${(calculateTotalWithFee() * tokenPrice).toFixed(2)} USD
+                    </Typography>
+                  )}
+                </Box>
               </Box>
             </Box>
           </Box>
         )}
 
-        {/* Field Counter and Scroll Hint */}
-        <Box 
-          sx={{ 
-            mb: 3, 
-            p: 2, 
-            bgcolor: '#F8F5FF',
-            borderRadius: '8px',
-            border: '1px solid #E5DEFF',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between'
-          }}
-        >
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-            <InfoIcon sx={{ fontSize: 20, color: '#7C4DFF' }} />
-            <Typography variant="body2" sx={{ fontWeight: 500, color: '#1A1A1E' }}>
-              Complete all required fields to post
-            </Typography>
+        {/* Field Counter and Scroll Hint - Only for regular jobs */}
+        {jobType === 'regular' && (
+          <Box 
+            sx={{ 
+              mb: 3, 
+              p: 2, 
+              bgcolor: '#F8F5FF',
+              borderRadius: '8px',
+              border: '1px solid #E5DEFF',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between'
+            }}
+          >
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+              <InfoIcon sx={{ fontSize: 20, color: '#7C4DFF' }} />
+              <Typography variant="body2" sx={{ fontWeight: 500, color: '#1A1A1E' }}>
+                Complete all required fields to post
+              </Typography>
+            </Box>
+            <Box sx={{ display: 'flex', gap: 1 }}>
+              <Chip 
+                label="Title" 
+                size="small" 
+                sx={{ 
+                  bgcolor: title ? '#E3F8ED' : '#E5E7F0',
+                  color: title ? '#36C170' : '#6F7280',
+                  fontSize: '11px'
+                }}
+              />
+              <Chip 
+                label="Category" 
+                size="small" 
+                sx={{ 
+                  bgcolor: category ? '#E3F8ED' : '#E5E7F0',
+                  color: category ? '#36C170' : '#6F7280',
+                  fontSize: '11px'
+                }}
+              />
+              <Chip 
+                label="Description" 
+                size="small" 
+                sx={{ 
+                  bgcolor: description ? '#E3F8ED' : '#E5E7F0',
+                  color: description ? '#36C170' : '#6F7280',
+                  fontSize: '11px'
+                }}
+              />
+              <Chip 
+                label="KPIs" 
+                size="small" 
+                sx={{ 
+                  bgcolor: kpis ? '#E3F8ED' : '#E5E7F0',
+                  color: kpis ? '#36C170' : '#6F7280',
+                  fontSize: '11px'
+                }}
+              />
+              <Chip 
+                label="Payment" 
+                size="small" 
+                sx={{ 
+                  bgcolor: paymentAmount && !belowMinimum ? '#E3F8ED' : '#E5E7F0',
+                  color: paymentAmount && !belowMinimum ? '#36C170' : '#6F7280',
+                  fontSize: '11px'
+                }}
+              />
+            </Box>
           </Box>
-          <Box sx={{ display: 'flex', gap: 1 }}>
-            <Chip 
-              label="Title" 
-              size="small" 
-              sx={{ 
-                bgcolor: title ? '#E3F8ED' : '#E5E7F0',
-                color: title ? '#36C170' : '#6F7280',
-                fontSize: '11px'
-              }}
-            />
-            <Chip 
-              label="Category" 
-              size="small" 
-              sx={{ 
-                bgcolor: category ? '#E3F8ED' : '#E5E7F0',
-                color: category ? '#36C170' : '#6F7280',
-                fontSize: '11px'
-              }}
-            />
-            <Chip 
-              label="Description" 
-              size="small" 
-              sx={{ 
-                bgcolor: description ? '#E3F8ED' : '#E5E7F0',
-                color: description ? '#36C170' : '#6F7280',
-                fontSize: '11px'
-              }}
-            />
-            <Chip 
-              label="KPIs" 
-              size="small" 
-              sx={{ 
-                bgcolor: kpis ? '#E3F8ED' : '#E5E7F0',
-                color: kpis ? '#36C170' : '#6F7280',
-                fontSize: '11px'
-              }}
-            />
-            <Chip 
-              label="Payment" 
-              size="small" 
-              sx={{ 
-                bgcolor: paymentAmount && !belowMinimum ? '#E3F8ED' : '#E5E7F0',
-                color: paymentAmount && !belowMinimum ? '#36C170' : '#6F7280',
-                fontSize: '11px'
-              }}
-            />
-          </Box>
-        </Box>
+        )}
         
-        {/* Scroll Hint - Only show when not scrolled */}
-        {!hasScrolled && (
+        {/* Scroll Hint - Only show for regular jobs when not scrolled */}
+        {jobType === 'regular' && !hasScrolled && (
           <Box
             sx={{
               position: 'absolute',
@@ -1798,70 +2188,76 @@ export function CreateJobModal({
             <strong>{applicationCount} application{applicationCount > 1 ? 's' : ''} will need to reapply.</strong>
           </Alert>
         )}
-        {/* Title */}
-        <TextField
-          label="Job Title"
-          value={title}
-          onChange={(e) => setTitle(e.target.value)}
-          placeholder={`Design new logo for ${tokenSymbol}`}
-          fullWidth
-          required
-          error={!!errors.title}
-          helperText={errors.title || `${title.length}/200 characters`}
-          inputProps={{ maxLength: 200 }}
-          sx={{ mb: 3 }}
-        />
 
-        {/* Category */}
-        <FormControl fullWidth required error={!!errors.category} sx={{ mb: 3 }}>
-          <InputLabel>Category</InputLabel>
-          <Select
-            value={category}
-            label="Category"
-            onChange={(e) => setCategory(e.target.value)}
-          >
-            {CATEGORIES.map((cat) => (
-              <MenuItem key={cat.value} value={cat.value}>
-                {cat.label}
-              </MenuItem>
-            ))}
-          </Select>
-          {errors.category && (
-            <Alert severity="error" sx={{ mt: 1 }}>{errors.category}</Alert>
-          )}
-        </FormControl>
+        {/* Regular Job Form Fields */}
+        {jobType === 'regular' && (
+          <>
+            {/* Title */}
+            <TextField
+              label="Job Title"
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              placeholder={`Design new logo for ${tokenSymbol}`}
+              fullWidth
+              required
+              error={!!errors.title}
+              helperText={errors.title || `${title.length}/200 characters`}
+              inputProps={{ maxLength: 200 }}
+              sx={{ mb: 3 }}
+            />
 
-        {/* Description */}
-        <TextField
-          label="Description"
-          value={description}
-          onChange={(e) => setDescription(e.target.value)}
-          placeholder="Describe what you need in detail..."
-          fullWidth
-          required
-          multiline
-          rows={8}
-          error={!!errors.description}
-          helperText={errors.description || `${description.length}/5000 characters`}
-          inputProps={{ maxLength: 5000 }}
-          sx={{ mb: 3 }}
-        />
+            {/* Category */}
+            <FormControl fullWidth required error={!!errors.category} sx={{ mb: 3 }}>
+              <InputLabel>Category</InputLabel>
+              <Select
+                value={category}
+                label="Category"
+                onChange={(e) => setCategory(e.target.value)}
+              >
+                {CATEGORIES.map((cat) => (
+                  <MenuItem key={cat.value} value={cat.value}>
+                    {cat.label}
+                  </MenuItem>
+                ))}
+              </Select>
+              {errors.category && (
+                <Alert severity="error" sx={{ mt: 1 }}>{errors.category}</Alert>
+              )}
+            </FormControl>
 
-        {/* KPIs / Success Criteria */}
-        <TextField
-          label="Success Criteria / KPIs"
-          value={kpis}
-          onChange={(e) => setKpis(e.target.value)}
-          placeholder={`How will you judge if the work is complete?\nExample:\n- Must include brand colors\n- Delivered in SVG format\n- 3 variations`}
-          fullWidth
-          required
-          multiline
-          rows={4}
-          error={!!errors.kpis}
-          helperText={errors.kpis || `${kpis.length}/2000 characters`}
-          inputProps={{ maxLength: 2000 }}
-          sx={{ mb: 3 }}
-        />
+            {/* Description */}
+            <TextField
+              label="Description"
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              placeholder="Describe what you need in detail..."
+              fullWidth
+              required
+              multiline
+              rows={8}
+              error={!!errors.description}
+              helperText={errors.description || `${description.length}/5000 characters`}
+              inputProps={{ maxLength: 5000 }}
+              sx={{ mb: 3 }}
+            />
+
+            {/* KPIs / Success Criteria */}
+            <TextField
+              label="Success Criteria / KPIs"
+              value={kpis}
+              onChange={(e) => setKpis(e.target.value)}
+              placeholder={`How will you judge if the work is complete?\nExample:\n- Must include brand colors\n- Delivered in SVG format\n- 3 variations`}
+              fullWidth
+              required
+              multiline
+              rows={4}
+              error={!!errors.kpis}
+              helperText={errors.kpis || `${kpis.length}/2000 characters`}
+              inputProps={{ maxLength: 2000 }}
+              sx={{ mb: 3 }}
+            />
+          </>
+        )}
 
         {/* Payment Amount - Only for regular jobs */}
         {jobType === 'regular' && (
@@ -2036,30 +2432,23 @@ export function CreateJobModal({
           />
         )}
 
-        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', width: '100%' }}>
-          <Button 
-            onClick={onClose}
-            disabled={loading}
-            sx={{ 
-              color: '#6F7280',
-              textTransform: 'none',
-              fontSize: '16px'
-            }}
-          >
-            Cancel
-          </Button>
-          <ProtectedAction
-            onAuthorized={mode === 'edit' ? handleConfirmAndLock : handleReviewAndLock}
-            actionName="create a job"
-          >
+        {/* Contest Step 1 Actions */}
+        {jobType === 'contest' && contestStep === 1 && mode === 'create' && (
+          <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', width: '100%' }}>
+            <Button 
+              onClick={onClose}
+              disabled={loading}
+              sx={{ 
+                color: '#6F7280',
+                textTransform: 'none',
+                fontSize: '16px'
+              }}
+            >
+              Cancel
+            </Button>
             <Button
-              disabled={
-                loading || 
-                (mode === 'create' && jobType === 'regular' && (checkingPrice || belowMinimum || priceError)) ||
-                (mode === 'edit' && applicationCount > 0 && !understoodInvalidation)
-              }
+              onClick={handleContestNextStep}
               variant="contained"
-              startIcon={mode === 'create' ? <LockIcon /> : undefined}
               sx={{
                 backgroundColor: '#7C4DFF',
                 color: '#fff',
@@ -2069,28 +2458,122 @@ export function CreateJobModal({
                 fontWeight: 600,
                 '&:hover': {
                   backgroundColor: '#6B3FEE'
-                },
-                '&:disabled': {
-                  backgroundColor: '#E5E7F0',
-                  color: '#A3A7B5'
                 }
               }}
             >
-              {loading ? (
-                <>
-                  <CircularProgress size={20} sx={{ mr: 1, color: '#fff' }} />
-                  {mode === 'edit' ? 'Updating...' : 'Processing...'}
-                </>
-              ) : mode === 'edit' ? (
-                'Update Job'
-              ) : jobType === 'contest' ? (
-                `🏆 Review & Lock ${calculateTotalWithFee().toFixed(2)} ${tokenSymbol}`
-              ) : (
-                'Review & Lock Tokens'
-              )}
+              Next: Prize Settings →
             </Button>
-          </ProtectedAction>
-        </div>
+          </div>
+        )}
+
+        {/* Contest Step 2 Actions */}
+        {jobType === 'contest' && contestStep === 2 && mode === 'create' && (
+          <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', width: '100%' }}>
+            <Button 
+              onClick={handleContestPrevStep}
+              disabled={loading}
+              startIcon={<ArrowBackIcon />}
+              sx={{ 
+                color: '#6F7280',
+                textTransform: 'none',
+                fontSize: '16px'
+              }}
+            >
+              Back
+            </Button>
+            <ProtectedAction
+              onAuthorized={handleReviewAndLock}
+              actionName="create a contest"
+            >
+              <Button
+                disabled={loading}
+                variant="contained"
+                startIcon={<LockIcon />}
+                sx={{
+                  backgroundColor: '#7C4DFF',
+                  color: '#fff',
+                  textTransform: 'none',
+                  fontSize: '16px',
+                  px: 4,
+                  fontWeight: 600,
+                  '&:hover': {
+                    backgroundColor: '#6B3FEE'
+                  },
+                  '&:disabled': {
+                    backgroundColor: '#E5E7F0',
+                    color: '#A3A7B5'
+                  }
+                }}
+              >
+                {loading ? (
+                  <>
+                    <CircularProgress size={20} sx={{ mr: 1, color: '#fff' }} />
+                    Processing...
+                  </>
+                ) : (
+                  `🏆 Review & Lock ${calculateTotalWithFee().toFixed(2)} ${tokenSymbol}`
+                )}
+              </Button>
+            </ProtectedAction>
+          </div>
+        )}
+
+        {/* Regular Job Actions */}
+        {(jobType === 'regular' || mode === 'edit') && (
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', width: '100%' }}>
+            <Button 
+              onClick={onClose}
+              disabled={loading}
+              sx={{ 
+                color: '#6F7280',
+                textTransform: 'none',
+                fontSize: '16px'
+              }}
+            >
+              Cancel
+            </Button>
+            <ProtectedAction
+              onAuthorized={mode === 'edit' ? handleConfirmAndLock : handleReviewAndLock}
+              actionName="create a job"
+            >
+              <Button
+                disabled={
+                  loading || 
+                  (mode === 'create' && jobType === 'regular' && (checkingPrice || belowMinimum || priceError)) ||
+                  (mode === 'edit' && applicationCount > 0 && !understoodInvalidation)
+                }
+                variant="contained"
+                startIcon={mode === 'create' ? <LockIcon /> : undefined}
+                sx={{
+                  backgroundColor: '#7C4DFF',
+                  color: '#fff',
+                  textTransform: 'none',
+                  fontSize: '16px',
+                  px: 4,
+                  fontWeight: 600,
+                  '&:hover': {
+                    backgroundColor: '#6B3FEE'
+                  },
+                  '&:disabled': {
+                    backgroundColor: '#E5E7F0',
+                    color: '#A3A7B5'
+                  }
+                }}
+              >
+                {loading ? (
+                  <>
+                    <CircularProgress size={20} sx={{ mr: 1, color: '#fff' }} />
+                    {mode === 'edit' ? 'Updating...' : 'Processing...'}
+                  </>
+                ) : mode === 'edit' ? (
+                  'Update Job'
+                ) : (
+                  'Review & Lock Tokens'
+                )}
+              </Button>
+            </ProtectedAction>
+          </div>
+        )}
       </DialogActions>
     </Dialog>
   )
