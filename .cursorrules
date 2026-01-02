@@ -1,0 +1,111 @@
+# Align Platform Development Rules
+
+## Intent Layer Protocol
+
+**CRITICAL: Always start by reading CLAUDE.md**
+
+When beginning any task:
+1. Read `/CLAUDE.md` (root Intent Node) to understand architecture
+2. Follow downlinks to relevant subsystem nodes (app/, lib/, etc)
+3. Summarize critical patterns that apply to this task
+4. Propose implementation approach before writing code
+
+## Security Invariants (NEVER VIOLATE)
+
+**Authentication:**
+- All authenticated operations require wallet signature verification
+- Use `lib/signature-auth.ts` - never skip verification
+- Signatures are single-use with 5min expiry
+
+**Database Security:**
+- All database access respects Row-Level Security (RLS)
+- Never use service role client in frontend code
+- Client-side uses anon key, RLS enforces permissions
+
+**Holder Verification:**
+- Token holder status verified via on-chain balance
+- Balances cached 5min (see `lib/token-balance.ts`)
+- Jobs, messaging, voting all gated by holder verification
+
+**Escrow Safety:**
+- All payments go through Program Derived Address (PDA) escrow
+- Release requires project owner signature + approval
+- No direct wallet-to-wallet transfers
+
+**Privacy:**
+- Check privacy levels before exposing user data
+- Three levels: Public, Holders Only, Private
+- Use `lib/privacy.ts` helpers
+
+## Mandatory Patterns
+
+**Signature Verification:**
+```typescript
+import { verifyWalletSignature } from '@/lib/signature-auth'
+const verified = await verifyWalletSignature({ wallet, signature, message, expectedAction })
+```
+
+**Token Balance Checks:**
+```typescript
+import { getTokenBalance } from '@/lib/token-balance'
+const balance = await getTokenBalance(walletAddress, tokenMint)
+```
+
+**Solana Interactions:**
+- Use `lib/solana/*` helpers, never direct RPC calls
+- Connection pooling in `lib/solana/connection.ts`
+
+**Database Queries:**
+- Server Components: `import { createClient } from '@/lib/supabase/server'`
+- Client Components: `import { createClient } from '@/lib/supabase'`
+- Never use service role in frontend
+
+## Development Flow
+
+1. **Understand Task** → Read relevant Intent Nodes
+2. **Plan Approach** → Identify affected files and patterns
+3. **Propose Solution** → Present implementation plan
+4. **Get Approval** → Wait for confirmation
+5. **Implement** → Follow established patterns
+6. **Test** → Cover edge cases and security scenarios
+
+## Common Anti-Patterns (AVOID)
+
+❌ Direct RPC calls from components
+❌ Bypassing signature verification
+❌ Using service role client-side
+❌ Mixing privacy levels in queries
+❌ Storing signatures client-side
+❌ Client Components for data fetching (use Server Components)
+❌ Skipping holder verification checks
+
+## Code Quality
+
+- TypeScript strict mode enabled
+- Explicit error handling (no silent failures)
+- Descriptive variable names
+- Document security-critical code
+- Test authentication and permission flows
+
+## When Working On:
+
+**Jobs:** Check escrow patterns, deadline enforcement, karma system  
+**Messaging:** Verify holder status, privacy levels, real-time subscriptions  
+**Auth:** Always use cryptographic signatures, implement rate limiting  
+**Blockchain:** Use connection pooling, handle RPC rate limits, cache balances  
+**API Routes:** Verify signatures, respect RLS, return typed errors
+
+## Intent Node Updates
+
+If you make architectural changes:
+- Update relevant Intent Nodes (CLAUDE.md files)
+- Note changes in commit message
+- Sync system will propose updates automatically
+
+## Questions Before Starting
+
+- Which security invariants apply to this task?
+- Which Intent Nodes should I review?
+- What patterns from lib/ or app/ apply?
+- Are there privacy or holder verification requirements?
+- Does this involve escrow or signatures?
