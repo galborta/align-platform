@@ -13,7 +13,7 @@ import { SupporterBadge } from '@/components/SupporterBadge'
 import { SupporterBadgeFetcher } from '@/components/SupporterBadgeFetcher'
 import JobComments from '@/components/JobComments'
 import TipModal from '@/components/TipModal'
-import ContestJobHeader from '@/components/ContestJobHeader'
+import ContestJobSidebar from '@/components/ContestJobSidebar'
 import ContestSubmissionModal from '@/components/ContestSubmissionModal'
 import ContestSubmissionGallery from '@/components/ContestSubmissionGallery'
 import WinnerSelectionModal from '@/components/WinnerSelectionModal'
@@ -1424,15 +1424,6 @@ export default function JobDetailPage() {
           Jobs
         </Button>
 
-        {/* Contest Header (if contest job) */}
-        {job.is_contest && (
-          <ContestJobHeader 
-            job={job} 
-            submissionCount={contestSubmissionCount}
-            tokenSymbol={project.token_symbol}
-          />
-        )}
-
         {/* Poster Contest Actions (Winner Selection & Payout) */}
         {job.is_contest && isPoster && (
           <Box sx={{ mb: 3 }}>
@@ -1553,80 +1544,6 @@ export default function JobDetailPage() {
                 )}
               </Alert>
             )}
-          </Box>
-        )}
-
-        {/* Contest Submit Button */}
-        {job.is_contest && (
-          <Box sx={{ mb: 3 }}>
-            {checkingContestEligibility ? (
-              <Button
-                variant="primary"
-                disabled
-                className="w-full py-3"
-              >
-                <CircularProgress size={24} sx={{ color: 'white' }} />
-              </Button>
-            ) : (() => {
-              // Check eligibility
-              const canSubmitToContest = publicKey && 
-                !hasSubmittedToContest && 
-                job.poster_wallet !== publicKey.toString() &&
-                job.contest_submission_deadline &&
-                new Date() < new Date(job.contest_submission_deadline) &&
-                job.status === 'open'
-              
-              if (canSubmitToContest) {
-                return (
-                  <Button
-                    variant="primary"
-                    onClick={() => setContestSubmissionModalOpen(true)}
-                    className="w-full py-3"
-                    style={{
-                      background: 'var(--accent-primary, #7C4DFF)',
-                      fontSize: '1.1rem',
-                      fontWeight: 600
-                    }}
-                  >
-                    🏆 Submit Your Entry
-                  </Button>
-                )
-              } else {
-                // Show reason why can't submit
-                let reason = ''
-                if (!publicKey) reason = 'Connect wallet to submit'
-                else if (hasSubmittedToContest) reason = 'You have already submitted to this contest'
-                else if (job.poster_wallet === publicKey.toString()) reason = 'You cannot submit to your own contest'
-                else if (!job.contest_submission_deadline || new Date() > new Date(job.contest_submission_deadline)) reason = 'Submission deadline has passed'
-                else if (job.status !== 'open') reason = 'This contest is no longer accepting submissions'
-
-                return (
-                  <Alert 
-                    severity={hasSubmittedToContest ? 'success' : 'warning'}
-                    sx={{
-                      borderRadius: '16px',
-                      '& .MuiAlert-message': {
-                        fontFamily: 'var(--font-body, Satoshi, sans-serif)'
-                      }
-                    }}
-                  >
-                    {reason}
-                    {hasSubmittedToContest && (
-                      <Typography 
-                        variant="caption" 
-                        sx={{ 
-                          display: 'block', 
-                          mt: 1,
-                          fontFamily: 'var(--font-body, Satoshi, sans-serif)'
-                        }}
-                      >
-                        You can view your submission in the gallery below
-                      </Typography>
-                    )}
-                  </Alert>
-                )
-              }
-            })()}
           </Box>
         )}
 
@@ -2114,6 +2031,22 @@ export default function JobDetailPage() {
                   >
                     {statusLabels[job.status]}
                   </span>
+                  
+                  {/* Competition Badge */}
+                  {job.is_contest && (
+                    <Chip
+                      icon={<EmojiEventsIcon sx={{ fontSize: 14 }} />}
+                      label="Competition"
+                      size="small"
+                      sx={{
+                        backgroundColor: '#EEE7FF',
+                        color: '#7C4DFF',
+                        fontWeight: 600,
+                        fontSize: '12px',
+                        ml: 1
+                      }}
+                    />
+                  )}
                 </div>
 
                 {/* Title */}
@@ -2844,6 +2777,19 @@ export default function JobDetailPage() {
 
           {/* Right Column (1/3 width) */}
           <div className="lg:col-span-1 space-y-6">
+            {/* Contest Sidebar (for competition jobs) */}
+            {job.is_contest && (
+              <ContestJobSidebar 
+                job={job}
+                submissionCount={contestSubmissionCount}
+                tokenSymbol={project.token_symbol}
+                userWallet={publicKey?.toString()}
+                hasSubmitted={hasSubmittedToContest}
+                checkingEligibility={checkingContestEligibility}
+                onSubmitClick={() => setContestSubmissionModalOpen(true)}
+              />
+            )}
+
             {/* Voting Bonus Info (only for open review jobs) */}
             {job.status === 'open' && job.assignment_mode === 'review' && publicKey && !isPoster && (
               <Card style={{ borderColor: '#E5DEFF', borderWidth: '2px' }}>
@@ -2866,11 +2812,11 @@ export default function JobDetailPage() {
                     className="p-3 rounded-lg text-center"
                     style={{ backgroundColor: '#F8F5FF' }}
                   >
-                    <div className="text-lg font-bold" style={{ color: '#7C4DFF' }}>
-                      ${job.payment_amount_usd.toFixed(0)} × 5 × tier
+                    <div className="text-2xl font-bold" style={{ color: '#7C4DFF' }}>
+                      50 karma
                     </div>
                     <div className="text-xs mt-1" style={{ color: '#6F7280' }}>
-                      = {(job.payment_amount_usd * 5).toFixed(0)}+ bonus karma
+                      flat bonus
                     </div>
                   </div>
                 </CardContent>
