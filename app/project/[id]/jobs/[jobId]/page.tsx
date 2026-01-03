@@ -836,11 +836,9 @@ export default function JobDetailPage() {
 
     setCancelling(true)
     try {
-      // Check if this is a contest with no submissions after deadline (no karma penalty)
-      const isContestWithNoSubmissions = job.is_contest && 
-        contestSubmissions.length === 0 && 
-        job.contest_submission_deadline && 
-        new Date() > new Date(job.contest_submission_deadline)
+      // Skip karma penalty for contests with no submissions (regardless of deadline)
+      // Or for contests with no submissions after deadline (existing logic)
+      const skipKarmaPenalty = job.is_contest && contestSubmissions.length === 0
 
       // Sign once for both refund and cancel operations
       toast.loading('Please sign to authorize action...', { id: 'action' })
@@ -848,7 +846,7 @@ export default function JobDetailPage() {
         action: 'Cancel job and refund',
         resourceId: job.id,
         additionalInfo: {
-          'Skip Penalty': isContestWithNoSubmissions ? 'Yes (no submissions)' : 'No',
+          'Skip Penalty': skipKarmaPenalty ? 'Yes (no submissions)' : 'No',
           'Refund Amount': job.escrow_locked ? `${job.escrow_amount_tokens} tokens` : 'None'
         }
       })
@@ -915,7 +913,7 @@ export default function JobDetailPage() {
           },
           body: JSON.stringify({
             ...signedAction,
-            skip_karma_penalty: isContestWithNoSubmissions
+            skip_karma_penalty: skipKarmaPenalty
           })
         })
 
@@ -934,7 +932,7 @@ export default function JobDetailPage() {
       const refundText = refundSuccess 
         ? ` ${refundAmount.toFixed(2)} tokens refunded.` 
         : ''
-      const penaltyText = isContestWithNoSubmissions 
+      const penaltyText = skipKarmaPenalty 
         ? '' 
         : ' -50 karma penalty applied.'
       toast.success(`Job cancelled.${penaltyText}${refundText}`, {
@@ -2787,6 +2785,8 @@ export default function JobDetailPage() {
                 hasSubmitted={hasSubmittedToContest}
                 checkingEligibility={checkingContestEligibility}
                 onSubmitClick={() => setContestSubmissionModalOpen(true)}
+                onEditClick={handleEdit}
+                onCancelClick={handleCancel}
               />
             )}
 
@@ -2935,21 +2935,50 @@ export default function JobDetailPage() {
                 {/* If job is Open and user IS poster */}
                 {job.status === 'open' && isPoster && (
                   <div className="space-y-3">
-                    <Button
-                      variant="outline"
+                    <MuiButton
+                      fullWidth
+                      variant="outlined"
                       onClick={handleEdit}
-                      className="w-full"
+                      sx={{
+                        color: '#7C4DFF',
+                        borderColor: '#E5DEFF',
+                        bgcolor: 'rgba(124, 77, 255, 0.04)',
+                        py: 1.2,
+                        borderRadius: 'var(--radius-card, 16px)',
+                        fontFamily: 'var(--font-body, Satoshi, sans-serif)',
+                        fontSize: '14px',
+                        fontWeight: 600,
+                        textTransform: 'none',
+                        '&:hover': {
+                          bgcolor: 'rgba(124, 77, 255, 0.08)',
+                          borderColor: '#7C4DFF'
+                        }
+                      }}
                     >
-                      Edit Job
-                    </Button>
-                    <Button
-                      variant="outline"
+                      ✏️ Edit Job
+                    </MuiButton>
+                    <MuiButton
+                      fullWidth
+                      variant="outlined"
                       onClick={handleCancel}
-                      className="w-full"
-                      style={{ color: '#EF4444', borderColor: '#EF4444' }}
+                      sx={{
+                        color: '#EF4444',
+                        borderColor: '#FEE2E2',
+                        bgcolor: 'rgba(239, 68, 68, 0.04)',
+                        py: 1.2,
+                        borderRadius: 'var(--radius-card, 16px)',
+                        fontFamily: 'var(--font-body, Satoshi, sans-serif)',
+                        fontSize: '14px',
+                        fontWeight: 600,
+                        textTransform: 'none',
+                        '&:hover': {
+                          bgcolor: 'rgba(239, 68, 68, 0.08)',
+                          borderColor: '#EF4444'
+                        }
+                      }}
                     >
-                      Cancel Job
-                    </Button>
+                      🚫 Cancel Job
+                    </MuiButton>
                   </div>
                 )}
 
@@ -4285,9 +4314,7 @@ export default function JobDetailPage() {
           <div className="flex items-center gap-2">
             <WarningIcon sx={{ color: '#EF4444' }} />
             <span style={{ color: '#1A1A1E' }}>
-              {job?.is_contest && contestSubmissions.length === 0 && 
-               job?.contest_submission_deadline && 
-               new Date() > new Date(job.contest_submission_deadline)
+              {job?.is_contest && contestSubmissions.length === 0
                 ? 'Cancel Contest?'
                 : 'Cancel Job?'
               }
@@ -4303,10 +4330,8 @@ export default function JobDetailPage() {
               Are you sure you want to cancel this {job?.is_contest ? 'contest' : 'job'}? <strong>This action cannot be undone.</strong>
             </p>
 
-            {job?.is_contest && contestSubmissions.length === 0 && 
-             job?.contest_submission_deadline && 
-             new Date() > new Date(job.contest_submission_deadline) ? (
-              // Special messaging for contests with no submissions
+            {job?.is_contest && contestSubmissions.length === 0 ? (
+              // Special messaging for contests with no submissions (no karma penalty)
               <>
                 {/* Refund Preview */}
                 {job?.escrow_locked && job?.escrow_amount_tokens && (
@@ -4319,7 +4344,7 @@ export default function JobDetailPage() {
                         You will receive:
                       </span>
                       <span className="text-xl font-bold" style={{ color: '#10B981' }}>
-                        +{job.escrow_amount_tokens.toFixed(2)} {job.token_symbol || 'tokens'}
+                        +{job.escrow_amount_tokens.toFixed(2)} {project?.token_symbol || 'tokens'}
                       </span>
                     </div>
                     <p className="text-xs mt-1" style={{ color: '#059669' }}>
@@ -4346,7 +4371,7 @@ export default function JobDetailPage() {
                 </div>
               </>
             ) : (
-              // Regular cancellation consequences
+              // Regular cancellation consequences (with karma penalty)
             <div 
               className="p-4 rounded-lg border-2"
               style={{ borderColor: '#FEE2E2', backgroundColor: '#FEF2F2' }}
@@ -4360,7 +4385,11 @@ export default function JobDetailPage() {
               <ul className="space-y-2 text-sm" style={{ color: '#1A1A1E' }}>
                 <li>❌ You will lose <strong>-50 karma</strong></li>
                 <li>💰 Payment will be returned to your wallet</li>
-                <li>🚫 All applications will be invalidated</li>
+                {job?.is_contest ? (
+                  <li>🚫 All submissions will be invalidated</li>
+                ) : (
+                  <li>🚫 All applications will be invalidated</li>
+                )}
                 <li>⏰ Cannot repost same job for 24 hours</li>
               </ul>
             </div>

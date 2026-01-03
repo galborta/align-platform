@@ -19,6 +19,9 @@ interface ContestJobSidebarProps {
   hasSubmitted?: boolean
   checkingEligibility?: boolean
   onSubmitClick?: () => void
+  // Poster actions
+  onEditClick?: () => void
+  onCancelClick?: () => void
 }
 
 export default function ContestJobSidebar({ 
@@ -28,7 +31,9 @@ export default function ContestJobSidebar({
   userWallet,
   hasSubmitted = false,
   checkingEligibility = false,
-  onSubmitClick
+  onSubmitClick,
+  onEditClick,
+  onCancelClick
 }: ContestJobSidebarProps) {
   
   // Time remaining calculation
@@ -358,6 +363,104 @@ export default function ContestJobSidebar({
           )}
         </Paper>
       )}
+
+      {/* Poster Actions (Edit/Cancel) */}
+      {(() => {
+        const isPoster = userWallet === job.poster_wallet
+        const canEdit = isPoster && job.status === 'open' && !job.contest_winners_selected_at
+        const canCancel = isPoster && job.status === 'open' && !job.contest_winners_selected_at
+        
+        if (isPoster && (canEdit || canCancel)) {
+          return (
+            <Paper sx={{ p: 2.5, borderRadius: 'var(--radius-card, 16px)' }}>
+              <Typography 
+                sx={{ 
+                  fontSize: '11px',
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.05em',
+                  color: '#6F7280',
+                  fontWeight: 600,
+                  mb: 2,
+                  fontFamily: 'var(--font-body, Satoshi, sans-serif)'
+                }}
+              >
+                Poster Actions
+              </Typography>
+              
+              <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
+                {canEdit && onEditClick && (
+                  <Button
+                    fullWidth
+                    variant="outlined"
+                    onClick={onEditClick}
+                    sx={{
+                      color: '#7C4DFF',
+                      borderColor: '#E5DEFF',
+                      bgcolor: 'rgba(124, 77, 255, 0.04)',
+                      py: 1.2,
+                      borderRadius: 'var(--radius-card, 16px)',
+                      fontFamily: 'var(--font-body, Satoshi, sans-serif)',
+                      fontSize: '14px',
+                      fontWeight: 600,
+                      textTransform: 'none',
+                      '&:hover': {
+                        bgcolor: 'rgba(124, 77, 255, 0.08)',
+                        borderColor: '#7C4DFF'
+                      }
+                    }}
+                  >
+                    ✏️ Edit Contest
+                  </Button>
+                )}
+                
+                {canCancel && onCancelClick && (
+                  <>
+                    {submissionCount === 0 && (
+                      <Alert 
+                        severity="info"
+                        sx={{
+                          borderRadius: 'var(--radius-card, 16px)',
+                          fontSize: '11px',
+                          py: 0.5,
+                          '& .MuiAlert-message': {
+                            fontFamily: 'var(--font-body, Satoshi, sans-serif)',
+                            fontSize: '11px'
+                          }
+                        }}
+                      >
+                        No submissions yet - cancel without karma penalty
+                      </Alert>
+                    )}
+                    <Button
+                      fullWidth
+                      variant="outlined"
+                      onClick={onCancelClick}
+                      sx={{
+                        color: '#EF4444',
+                        borderColor: '#FEE2E2',
+                        bgcolor: 'rgba(239, 68, 68, 0.04)',
+                        py: 1.2,
+                        borderRadius: 'var(--radius-card, 16px)',
+                        fontFamily: 'var(--font-body, Satoshi, sans-serif)',
+                        fontSize: '14px',
+                        fontWeight: 600,
+                        textTransform: 'none',
+                        '&:hover': {
+                          bgcolor: 'rgba(239, 68, 68, 0.08)',
+                          borderColor: '#EF4444'
+                        }
+                      }}
+                    >
+                      🚫 Cancel Contest
+                    </Button>
+                  </>
+                )}
+              </Box>
+            </Paper>
+          )
+        }
+        return null
+      })()}
 
       {/* Submit Entry Action */}
       {checkingEligibility ? (
