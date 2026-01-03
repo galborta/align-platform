@@ -24,3 +24,4 @@ AND poster_percentage IS NULL;
 -- For resolved disputes that have percentages but were resolved before this migration,
 -- we leave escrow_distributed as false so admin can manually trigger distribution
 
+

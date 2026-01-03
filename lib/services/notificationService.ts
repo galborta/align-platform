@@ -1138,7 +1138,60 @@ class NotificationService {
             : `${rejectedAsset} was rejected`
         };
 
+      // Social media job submission notifications
+      case 'social_submission_received':
+        return {
+          title: '📱 Social Submission Received',
+          body: `${actorName} submitted social proof for ${metadata.job_title || 'your social job'}`
+        };
+
+      case 'social_submission_approved':
+        return {
+          title: '✅ Social Submission Approved!',
+          body: `Your submission for ${metadata.job_title || 'a social job'} was approved! Payment incoming.`
+        };
+
+      case 'social_submission_denied':
+        return {
+          title: '❌ Social Submission Denied',
+          body: metadata.rejection_reason 
+            ? `Your submission for ${metadata.job_title || 'a social job'} was denied: ${metadata.rejection_reason}`
+            : `Your submission for ${metadata.job_title || 'a social job'} was denied`
+        };
+
+      case 'social_payment_distributed':
+        return {
+          title: '💸 Social Payment Distributed',
+          body: `${metadata.amount || '...'} ${metadata.token || 'tokens'} distributed for ${metadata.job_title || 'your social job'}`
+        };
+
+      // Editor notifications
+      case 'editor_added':
+        return {
+          title: '🎉 You\'re Now an Editor!',
+          body: `${actorName} added you as an editor for ${metadata.project_name || 'a project'}`
+        };
+
+      case 'editor_removed':
+        return {
+          title: '👋 Editor Access Removed',
+          body: `You were removed as an editor from ${metadata.project_name || 'a project'}`
+        };
+
+      // Dispute resolution notification
+      case 'job_dispute_resolved':
+        const resolutionText = metadata.resolution_type === 'poster_favor' 
+          ? 'in favor of the poster' 
+          : metadata.resolution_type === 'worker_favor'
+            ? 'in favor of the worker'
+            : 'by admin decision';
+        return {
+          title: '⚖️ Dispute Resolved',
+          body: `The dispute on ${metadata.job_title || 'a job'} was resolved ${resolutionText}`
+        };
+
       default:
+        console.warn(`[NotificationService] Unknown notification type: ${notification.type}`);
         return {
           title: '🔔 Notification',
           body: 'You have a new notification'

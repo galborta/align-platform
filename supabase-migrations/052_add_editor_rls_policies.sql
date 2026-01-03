@@ -218,3 +218,4 @@ COMMENT ON POLICY "Editors can manage social assets for their projects" ON socia
 -- DROP POLICY IF EXISTS "Editors can manage social assets for their projects" ON social_assets;
 -- DROP FUNCTION IF EXISTS is_project_editor_or_creator(uuid, text);
 
+

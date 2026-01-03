@@ -49,6 +49,10 @@ export interface EscrowTransferResult {
   error?: string
   /** Escrow wallet address that received the tokens */
   escrowWallet: string
+  /** Warning message (e.g., for uncertain success states) */
+  warning?: string
+  /** Flag indicating the transaction may have been sent despite an error */
+  mayHaveBeenSent?: boolean
 }
 
 /**
@@ -232,17 +236,46 @@ export async function transferToEscrow(
   } catch (error: any) {
     console.error('Escrow transfer failed:', error)
     
+    // IMPORTANT: Check if this is a false "User rejected" error
+    // Sometimes the wallet adapter reports rejection even when the transaction was sent
+    // This can happen due to timeout, network issues, or wallet extension bugs
+    const errorMsg = error.message || ''
+    const isUserRejected = errorMsg.includes('User rejected') || 
+                           errorMsg.includes('user rejected') ||
+                           errorMsg.includes('rejected the request')
+    
+    // If it looks like user rejection, check if a signature was somehow captured
+    // The error object sometimes contains the signature even on "rejection"
+    if (isUserRejected && error.signature) {
+      console.warn('Wallet reported rejection but signature exists:', error.signature)
+      console.warn('This may be a false rejection - transaction might have been sent!')
+      
+      // Return as potentially successful with a warning
+      return {
+        success: true, // Mark as success since tx may have gone through
+        signature: error.signature,
+        escrowWallet: '', // Will be filled by caller
+        warning: 'Transaction may have been sent despite wallet showing rejection. Please check your wallet history.'
+      }
+    }
+    
     // Provide user-friendly error messages
     let errorMessage = 'Unknown error occurred'
+    let mayHaveBeenSent = false
     
-    if (error.message?.includes('User rejected')) {
-      errorMessage = 'Transaction was rejected by user'
-    } else if (error.message?.includes('Insufficient funds')) {
+    if (isUserRejected) {
+      // Add warning that it MIGHT have been sent
+      errorMessage = 'Transaction was rejected by user. If your token balance decreased, please use the recovery page to create your job.'
+      mayHaveBeenSent = true // Flag for UI to show recovery option
+    } else if (errorMsg.includes('Insufficient funds')) {
       errorMessage = 'Insufficient SOL for transaction fees'
-    } else if (error.message?.includes('insufficient lamports')) {
+    } else if (errorMsg.includes('insufficient lamports')) {
       errorMessage = 'Insufficient SOL for transaction fees and rent'
-    } else if (error.message?.includes('custom program error')) {
+    } else if (errorMsg.includes('custom program error')) {
       errorMessage = 'Insufficient token balance or invalid token account'
+    } else if (errorMsg.includes('timeout') || errorMsg.includes('Timeout')) {
+      errorMessage = 'Transaction timed out. Please check your wallet history - the transaction may have been sent.'
+      mayHaveBeenSent = true
     } else if (error instanceof Error) {
       errorMessage = error.message
     }
@@ -250,7 +283,8 @@ export async function transferToEscrow(
     return {
       success: false,
       error: errorMessage,
-      escrowWallet: ''
+      escrowWallet: '',
+      mayHaveBeenSent // Flag to help UI show recovery option
     }
   }
 }

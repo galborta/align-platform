@@ -58,6 +58,7 @@ import WarningIcon from '@mui/icons-material/Warning'
 import CloseIcon from '@mui/icons-material/Close'
 import GavelIcon from '@mui/icons-material/Gavel'
 import OpenInNewIcon from '@mui/icons-material/OpenInNew'
+import AttachFileIcon from '@mui/icons-material/AttachFile'
 import ThumbUpIcon from '@mui/icons-material/ThumbUp'
 import InfoIcon from '@mui/icons-material/Info'
 import Dialog from '@mui/material/Dialog'
@@ -2163,6 +2164,69 @@ export default function JobDetailPage() {
                     {job.kpis}
                   </div>
                 </div>
+
+                {/* Attachments */}
+                {job.attachment_urls && job.attachment_urls.length > 0 && (
+                  <div className="space-y-3">
+                    <h3 
+                      className="text-sm font-semibold uppercase tracking-wide flex items-center gap-2"
+                      style={{ color: '#6F7280' }}
+                    >
+                      <AttachFileIcon sx={{ fontSize: 18 }} />
+                      Attachments & Resources
+                    </h3>
+                    <div className="space-y-2">
+                      {job.attachment_urls.map((url, index) => {
+                        const filename = url.split('/').pop()?.split('-').slice(1).join('-') || 'attachment'
+                        const getFileIcon = () => {
+                          const ext = filename.split('.').pop()?.toLowerCase()
+                          switch (ext) {
+                            case 'pdf': return '📄'
+                            case 'jpg': case 'jpeg': case 'png': case 'gif': case 'webp': return '🖼️'
+                            case 'zip': return '📦'
+                            case 'doc': case 'docx': return '📝'
+                            case 'xls': case 'xlsx': return '📊'
+                            case 'txt': return '📃'
+                            case 'ttf': case 'otf': case 'woff': case 'woff2': return '🔤'
+                            default: return '📎'
+                          }
+                        }
+                        
+                        return (
+                          <a
+                            key={index}
+                            href={url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="flex items-center gap-3 p-3 rounded-lg hover:bg-opacity-80 transition-all"
+                            style={{ 
+                              backgroundColor: '#F8F9FC',
+                              border: '1px solid #E5E7EB',
+                              textDecoration: 'none'
+                            }}
+                          >
+                            <span className="text-2xl">{getFileIcon()}</span>
+                            <div className="flex-1 min-w-0">
+                              <div 
+                                className="text-sm font-medium truncate"
+                                style={{ color: '#1A1A1E' }}
+                              >
+                                {filename}
+                              </div>
+                              <div 
+                                className="text-xs"
+                                style={{ color: '#6F7280' }}
+                              >
+                                Click to download
+                              </div>
+                            </div>
+                            <OpenInNewIcon sx={{ fontSize: 18, color: '#7C4DFF' }} />
+                          </a>
+                        )
+                      })}
+                    </div>
+                  </div>
+                )}
 
                 {/* Assignment Mode */}
                 <div 

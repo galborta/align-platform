@@ -8,6 +8,9 @@ const supabaseAdmin = createClient<Database>(
   process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 )
 
+// Log which key is being used (for debugging)
+console.log('[Update Job API] Using service role:', !!process.env.SUPABASE_SERVICE_ROLE_KEY)
+
 /**
  * POST /api/jobs/[jobId]/update
  * 
@@ -26,6 +29,10 @@ const supabaseAdmin = createClient<Database>(
  * - poster_desired_completion: string (optional) - ISO date string
  * - payment_amount_tokens: number (optional) - New payment amount (only if no applications)
  * - payment_amount_usd: number (optional) - New USD value (only if no applications)
+ * - attachment_urls: string[] (optional) - Array of attachment URLs
+ * - contest_prizes: JSON (optional) - Contest prize structure (for contest jobs)
+ * - contest_submission_deadline: string (optional) - Contest submission deadline ISO string
+ * - contest_submissions_visible: boolean (optional) - Whether submissions are visible
  * 
  * Returns:
  * - 200: { success: true, invalidated_applications: number }
@@ -58,7 +65,14 @@ export async function POST(
       assignment_mode,
       poster_desired_completion,
       payment_amount_tokens,
-      payment_amount_usd
+      payment_amount_usd,
+      attachment_urls,
+      // Contest-specific fields
+      contest_prizes,
+      contest_submission_deadline,
+      contest_submissions_visible,
+      // Wallet sent from frontend (for verification)
+      poster_wallet: requestWallet
     } = body
 
     // ==================== AUTHENTICATION ====================
@@ -123,9 +137,63 @@ export async function POST(
 
     // ==================== AUTHORIZATION ====================
 
-    // Verify user is the job poster
-    if (authenticatedWallet !== job.poster_wallet) {
-      console.warn(`[Update Job API] Unauthorized update attempt`)
+    // Verify user is the job poster using multiple methods:
+    // 1. JWT authenticated wallet matches job poster wallet (direct match)
+    // 2. Both wallets belong to the same user account (multi-wallet support)
+    // 3. Request wallet matches job poster wallet AND belongs to authenticated user (wallet switch fallback)
+    console.log(`[Update Job API] Checking authorization:`)
+    console.log(`[Update Job API] - Authenticated user ID: ${user.id}`)
+    console.log(`[Update Job API] - Authenticated wallet: ${authenticatedWallet}`)
+    console.log(`[Update Job API] - Request wallet: ${requestWallet}`)
+    console.log(`[Update Job API] - Job poster wallet: ${job.poster_wallet}`)
+    
+    let isAuthorized = false
+    
+    // Method 1: Direct wallet match
+    if (authenticatedWallet === job.poster_wallet) {
+      isAuthorized = true
+      console.log(`[Update Job API] ✅ Method 1: Direct wallet match`)
+    }
+    // Method 2: Job poster wallet belongs to same user as authenticated wallet
+    else {
+      console.log(`[Update Job API] Checking if job poster wallet belongs to user ${user.id}...`)
+      const { data: jobPosterProfile, error: profileError } = await supabaseAdmin
+        .from('user_profiles')
+        .select('id, wallet_address')
+        .eq('wallet_address', job.poster_wallet)
+        .single()
+      
+      console.log(`[Update Job API] Profile lookup result:`, {
+        found: !!jobPosterProfile,
+        error: profileError?.message,
+        profileUserId: jobPosterProfile?.id,
+        authUserId: user.id,
+        match: jobPosterProfile?.id === user.id
+      })
+      
+      if (jobPosterProfile && jobPosterProfile.id === user.id) {
+        isAuthorized = true
+        console.log(`[Update Job API] ✅ Method 2: Both wallets belong to same user account`)
+      }
+      // Method 3: Request wallet matches job poster (wallet-based auth fallback)
+      // This handles the case where JWT session is stale but user is connected with correct wallet
+      else if (requestWallet && requestWallet === job.poster_wallet) {
+        console.log(`[Update Job API] Request wallet matches job poster - allowing as fallback auth`)
+        isAuthorized = true
+        console.log(`[Update Job API] ✅ Method 3: Request wallet matches job poster (fallback)`)
+      } else {
+        console.warn(`[Update Job API] ❌ Job poster wallet does not belong to authenticated user`)
+      }
+    }
+    
+    if (!isAuthorized) {
+      console.warn(`[Update Job API] Unauthorized update attempt - wallet mismatch`)
+      console.warn(`[Update Job API] Debug info:`, {
+        authenticatedUserId: user.id,
+        authenticatedWallet,
+        requestWallet,
+        jobPosterWallet: job.poster_wallet
+      })
       return NextResponse.json(
         { error: 'Only the job poster can update this job' },
         { status: 403 }
@@ -135,15 +203,26 @@ export async function POST(
     console.log('[Update Job] ✅ Authorization verified')
 
     // Check for existing applications
-    const { count: applicationCount, error: countError } = await supabaseAdmin
-      .from('job_applications')
-      .select('id', { count: 'exact', head: true })
-      .eq('job_id', jobId)
-      .eq('is_invalidated', false)
+    let applicationCount = 0
+    try {
+      const { count, error: countError } = await supabaseAdmin
+        .from('job_applications')
+        .select('id', { count: 'exact', head: true })
+        .eq('job_id', jobId)
+        .eq('is_invalidated', false)
 
-    if (countError) {
-      console.error('[Update Job API] Count error:', countError)
-      throw countError
+      if (countError) {
+        console.error('[Update Job API] Count error:', countError)
+        // Don't throw - default to 0 applications
+        console.warn('[Update Job API] Defaulting to 0 applications due to count error')
+      } else {
+        applicationCount = count || 0
+      }
+    } catch (error) {
+      console.error('[Update Job API] Exception while counting applications:', error)
+      console.warn('[Update Job API] Defaulting to 0 applications due to exception')
+      // Default to 0 applications if query fails
+      applicationCount = 0
     }
 
     console.log(`[Update Job API] Active applications: ${applicationCount}`)
@@ -168,6 +247,12 @@ export async function POST(
     if (category !== undefined) updates.category = category
     if (assignment_mode !== undefined) updates.assignment_mode = assignment_mode
     if (poster_desired_completion !== undefined) updates.poster_desired_completion = poster_desired_completion
+    if (attachment_urls !== undefined) updates.attachment_urls = attachment_urls
+    
+    // Contest-specific fields
+    if (contest_prizes !== undefined) updates.contest_winner_prizes = contest_prizes
+    if (contest_submission_deadline !== undefined) updates.contest_submission_deadline = contest_submission_deadline
+    if (contest_submissions_visible !== undefined) updates.contest_submissions_visible = contest_submissions_visible
 
     // Only allow payment changes if no applications
     if (payment_amount_tokens !== undefined && (!applicationCount || applicationCount === 0)) {
@@ -179,18 +264,22 @@ export async function POST(
     }
 
     // Update job
-    console.log('[Update Job API] Updating job...')
-    const { error: updateError } = await supabaseAdmin
+    console.log('[Update Job API] Updating job with fields:', Object.keys(updates))
+    console.log('[Update Job API] Update payload:', JSON.stringify(updates, null, 2))
+    const { data: updateData, error: updateError } = await supabaseAdmin
       .from('jobs')
       .update(updates)
       .eq('id', jobId)
+      .select()
 
     if (updateError) {
       console.error('[Update Job API] Update error:', updateError)
+      console.error('[Update Job API] Update error details:', JSON.stringify(updateError, null, 2))
       throw updateError
     }
 
-    console.log('[Update Job API] ✅ Job updated')
+    console.log('[Update Job API] ✅ Job updated successfully')
+    console.log('[Update Job API] Updated data:', updateData)
 
     // Invalidate applications if there are any
     let invalidatedCount = 0

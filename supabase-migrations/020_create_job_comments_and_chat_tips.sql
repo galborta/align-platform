@@ -72,3 +72,4 @@ COMMENT ON COLUMN chat_tips.amount_nub IS 'Amount in NUB tokens (project native 
 
 
 
+

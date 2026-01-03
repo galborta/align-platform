@@ -816,6 +816,7 @@ export type Database = {
           assigned_at: string | null
           assigned_to: string | null
           assignment_mode: string | null
+          attachment_urls: string[] | null
           cancelled_at: string | null
           category: string
           completed_at: string | null

@@ -76,3 +76,4 @@ END $$;
 -- To rollback this migration, run:
 -- COMMENT ON TABLE notifications IS 'Notification system for user alerts. See types/database.ts for all notification types.';
 
+

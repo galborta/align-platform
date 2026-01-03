@@ -10,6 +10,11 @@ import { Button } from '@/components/ui/Button'
 import { AppHeader } from '@/components/AppHeader'
 import { ProjectChat } from '@/components/ProjectChat'
 import { AddAssetModal } from '@/components/AddAssetModal'
+import { CreateJobModal } from '@/components/CreateJobModal'
+import CreateSocialMediaJobModal from '@/components/jobs/CreateSocialMediaJobModal'
+import Dialog from '@mui/material/Dialog'
+import DialogTitle from '@mui/material/DialogTitle'
+import DialogContent from '@mui/material/DialogContent'
 import { CurationChatFeed } from '@/components/CurationChatFeed'
 import { KarmaLeaderboard } from '@/components/KarmaLeaderboard'
 import { ActivityFeed } from '@/components/ActivityFeed'
@@ -90,6 +95,10 @@ export default function ProjectDetailPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [showAddAssetModal, setShowAddAssetModal] = useState(false)
+  const [showCreateJobModal, setShowCreateJobModal] = useState(false)
+  const [showJobTypeSelector, setShowJobTypeSelector] = useState(false)
+  const [showSocialMediaModal, setShowSocialMediaModal] = useState(false)
+  const [selectedJobType, setSelectedJobType] = useState<'regular' | 'contest'>('regular')
   const [tokenStats, setTokenStats] = useState<TokenStats>({
     price: null,
     marketCap: null,
@@ -646,6 +655,156 @@ export default function ProjectDetailPage() {
               />
             )}
 
+            {/* Job Type Selector Dialog */}
+            <Dialog 
+              open={showJobTypeSelector} 
+              onClose={() => setShowJobTypeSelector(false)}
+              maxWidth="sm"
+              fullWidth
+              PaperProps={{
+                sx: {
+                  borderRadius: '16px',
+                  p: 2
+                }
+              }}
+            >
+              <DialogTitle sx={{ fontFamily: 'var(--font-display)', fontWeight: 600 }}>
+                What type of work do you want to post?
+              </DialogTitle>
+              <DialogContent>
+                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, mt: 1 }}>
+                  {/* Regular Job Option */}
+                  <Box
+                    onClick={() => {
+                      setSelectedJobType('regular')
+                      setShowJobTypeSelector(false)
+                      setShowCreateJobModal(true)
+                    }}
+                    sx={{
+                      p: 3,
+                      border: '1px solid #E5E7F0',
+                      borderRadius: '12px',
+                      cursor: 'pointer',
+                      transition: 'all 0.2s',
+                      '&:hover': {
+                        borderColor: '#7C4DFF',
+                        bgcolor: 'rgba(124, 77, 255, 0.04)'
+                      }
+                    }}
+                  >
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                      <Box sx={{ fontSize: '24px' }}>💼</Box>
+                      <Box>
+                        <Box sx={{ fontWeight: 600, fontFamily: 'var(--font-display)' }}>Regular Job</Box>
+                        <Box sx={{ fontSize: '14px', color: '#6F7280' }}>Assign work to a single person</Box>
+                      </Box>
+                    </Box>
+                  </Box>
+
+                  {/* Contest Job Option */}
+                  <Box
+                    onClick={() => {
+                      setSelectedJobType('contest')
+                      setShowJobTypeSelector(false)
+                      setShowCreateJobModal(true)
+                    }}
+                    sx={{
+                      p: 3,
+                      border: '1px solid #E5E7F0',
+                      borderRadius: '12px',
+                      cursor: 'pointer',
+                      transition: 'all 0.2s',
+                      '&:hover': {
+                        borderColor: '#7C4DFF',
+                        bgcolor: 'rgba(124, 77, 255, 0.04)'
+                      }
+                    }}
+                  >
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                      <Box sx={{ fontSize: '24px' }}>🏆</Box>
+                      <Box>
+                        <Box sx={{ fontWeight: 600, fontFamily: 'var(--font-display)' }}>Contest</Box>
+                        <Box sx={{ fontSize: '14px', color: '#6F7280' }}>Multiple submissions, pick the best</Box>
+                      </Box>
+                    </Box>
+                  </Box>
+
+                  {/* Social Media Campaign Option */}
+                  <Box
+                    onClick={() => {
+                      setShowJobTypeSelector(false)
+                      setShowSocialMediaModal(true)
+                    }}
+                    sx={{
+                      p: 3,
+                      border: '2px solid #7C4DFF',
+                      borderRadius: '12px',
+                      cursor: 'pointer',
+                      transition: 'all 0.2s',
+                      bgcolor: 'rgba(124, 77, 255, 0.04)',
+                      '&:hover': {
+                        bgcolor: 'rgba(124, 77, 255, 0.08)'
+                      }
+                    }}
+                  >
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                      <Box sx={{ fontSize: '24px' }}>📱</Box>
+                      <Box>
+                        <Box sx={{ fontWeight: 600, fontFamily: 'var(--font-display)', color: '#7C4DFF' }}>
+                          Social Media Campaign
+                        </Box>
+                        <Box sx={{ fontSize: '14px', color: '#6F7280' }}>
+                          Get community to post on X, TikTok, YouTube, etc.
+                        </Box>
+                      </Box>
+                    </Box>
+                  </Box>
+                </Box>
+              </DialogContent>
+            </Dialog>
+
+            {/* Create Job Modal (Regular & Contest) */}
+            {showCreateJobModal && wallet.publicKey && (
+              <CreateJobModal
+                isOpen={showCreateJobModal}
+                onClose={() => setShowCreateJobModal(false)}
+                projectId={project.id}
+                tokenMint={project.token_mint}
+                tokenSymbol={project.token_symbol}
+                walletAddress={wallet.publicKey.toString()}
+                initialJobType={selectedJobType}
+                onSwitchToSocialMedia={() => {
+                  setShowCreateJobModal(false)
+                  setShowSocialMediaModal(true)
+                }}
+              />
+            )}
+
+            {/* Create Social Media Job Modal */}
+            {showSocialMediaModal && wallet.publicKey && (
+              <CreateSocialMediaJobModal
+                open={showSocialMediaModal}
+                onClose={() => setShowSocialMediaModal(false)}
+                projectId={project.id}
+                posterWallet={wallet.publicKey.toString()}
+                tokenMint={project.token_mint}
+                tokenSymbol={project.token_symbol}
+                onJobCreated={() => {
+                  setShowSocialMediaModal(false)
+                }}
+                onSwitchToRegular={() => {
+                  setShowSocialMediaModal(false)
+                  setSelectedJobType('regular')
+                  setShowCreateJobModal(true)
+                }}
+                onSwitchToContest={() => {
+                  setShowSocialMediaModal(false)
+                  setSelectedJobType('contest')
+                  setShowCreateJobModal(true)
+                }}
+              />
+            )}
+
             {/* Pending Assets - Editors Only */}
             {project.status === 'live' && permissions?.canEdit && (
               <Box sx={{ order: { xs: 3, lg: 3 } }}>
@@ -719,7 +878,7 @@ export default function ProjectDetailPage() {
             {project.status === 'live' && showMockFeed && (
               <Box>
                 <FeedErrorBoundary>
-                  <ActivityFeed projectId={project.id} tokenMint={project.token_mint} />
+                  <ActivityFeed projectId={project.id} tokenMint={project.token_mint} onAddAsset={() => setShowAddAssetModal(true)} onPostWork={() => setShowJobTypeSelector(true)} />
                 </FeedErrorBoundary>
               </Box>
             )}

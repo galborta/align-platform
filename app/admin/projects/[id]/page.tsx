@@ -228,6 +228,27 @@ export default function AdminProjectPage() {
   const [processingJobAction, setProcessingJobAction] = useState(false)
   const [loadingJobs, setLoadingJobs] = useState(false)
 
+  // Team & Wallets tab state
+  const [editingTeamWallet, setEditingTeamWallet] = useState<TeamWallet | null>(null)
+  const [deletingTeamWallet, setDeletingTeamWallet] = useState<TeamWallet | null>(null)
+  const [addingTeamWallet, setAddingTeamWallet] = useState(false)
+  const [teamWalletFormData, setTeamWalletFormData] = useState<{
+    wallet_address: string
+    label: string
+    wallet_type: 'team' | 'treasury' | 'liquidity' | 'deployer' | 'other'
+    team_role: string
+    custom_label: string
+  }>({ wallet_address: '', label: '', wallet_type: 'team', team_role: 'Founder', custom_label: '' })
+  const [processingTeamWallet, setProcessingTeamWallet] = useState(false)
+  
+  // Creator & Editors management state
+  const [editingCreatorWallet, setEditingCreatorWallet] = useState(false)
+  const [newCreatorWallet, setNewCreatorWallet] = useState('')
+  const [addingEditor, setAddingEditor] = useState(false)
+  const [newEditorWallet, setNewEditorWallet] = useState('')
+  const [removingEditor, setRemovingEditor] = useState<string | null>(null)
+  const [processingWalletManagement, setProcessingWalletManagement] = useState(false)
+
   // Danger Zone tab state
   const [resetConfirmDialog, setResetConfirmDialog] = useState<string | null>(null)
   const [resetConfirmText, setResetConfirmText] = useState('')
@@ -802,6 +823,267 @@ export default function AdminProjectPage() {
       toast.error(error instanceof Error ? error.message : 'Failed to delete job')
     } finally {
       setProcessingJobAction(false)
+    }
+  }
+
+  // Team Wallet Management Handlers
+  const computeWalletLabel = (formData: typeof teamWalletFormData): string => {
+    if (formData.wallet_type === 'team') {
+      if (formData.team_role === 'Other') {
+        return formData.custom_label.trim() || 'Team Member'
+      }
+      return formData.team_role || 'Team Member'
+    } else if (formData.wallet_type === 'other') {
+      return formData.custom_label.trim() || 'Other'
+    }
+    return getDefaultLabel(formData.wallet_type)
+  }
+
+  const handleAddTeamWallet = async () => {
+    if (!project || !publicKey || !teamWalletFormData.wallet_address.trim()) return
+
+    try {
+      setProcessingTeamWallet(true)
+
+      const computedLabel = computeWalletLabel(teamWalletFormData)
+
+      const { error } = await supabase
+        .from('team_wallets')
+        .insert({
+          project_id: project.id,
+          wallet_address: teamWalletFormData.wallet_address.trim(),
+          label: computedLabel,
+          wallet_type: teamWalletFormData.wallet_type
+        })
+
+      if (error) throw error
+
+      await logAdminAction('add_team_wallet', 'team_wallet', null, {
+        wallet_address: teamWalletFormData.wallet_address,
+        label: teamWalletFormData.label,
+        wallet_type: teamWalletFormData.wallet_type
+      })
+
+      toast.success('Team wallet added successfully')
+      setAddingTeamWallet(false)
+      setTeamWalletFormData({ wallet_address: '', label: '', wallet_type: 'team', team_role: 'Founder', custom_label: '' })
+      await fetchProject()
+    } catch (error) {
+      console.error('Error adding team wallet:', error)
+      toast.error('Failed to add team wallet')
+    } finally {
+      setProcessingTeamWallet(false)
+    }
+  }
+
+  const handleEditTeamWallet = async () => {
+    if (!editingTeamWallet || !publicKey) return
+
+    try {
+      setProcessingTeamWallet(true)
+
+      const computedLabel = computeWalletLabel(teamWalletFormData)
+
+      const { error } = await supabase
+        .from('team_wallets')
+        .update({
+          wallet_address: teamWalletFormData.wallet_address.trim(),
+          label: computedLabel,
+          wallet_type: teamWalletFormData.wallet_type
+        })
+        .eq('id', editingTeamWallet.id)
+
+      if (error) throw error
+
+      await logAdminAction('edit_team_wallet', 'team_wallet', editingTeamWallet.id, {
+        old: {
+          wallet_address: editingTeamWallet.wallet_address,
+          label: editingTeamWallet.label
+        },
+        new: {
+          wallet_address: teamWalletFormData.wallet_address,
+          label: teamWalletFormData.label,
+          wallet_type: teamWalletFormData.wallet_type
+        }
+      })
+
+      toast.success('Team wallet updated successfully')
+      setEditingTeamWallet(null)
+      setTeamWalletFormData({ wallet_address: '', label: '', wallet_type: 'team', team_role: 'Founder', custom_label: '' })
+      await fetchProject()
+    } catch (error) {
+      console.error('Error updating team wallet:', error)
+      toast.error('Failed to update team wallet')
+    } finally {
+      setProcessingTeamWallet(false)
+    }
+  }
+
+  const handleDeleteTeamWallet = async () => {
+    if (!deletingTeamWallet || !publicKey) return
+
+    try {
+      setProcessingTeamWallet(true)
+
+      const { error } = await supabase
+        .from('team_wallets')
+        .delete()
+        .eq('id', deletingTeamWallet.id)
+
+      if (error) throw error
+
+      await logAdminAction('delete_team_wallet', 'team_wallet', deletingTeamWallet.id, {
+        wallet_address: deletingTeamWallet.wallet_address,
+        label: deletingTeamWallet.label
+      })
+
+      toast.success('Team wallet deleted successfully')
+      setDeletingTeamWallet(null)
+      await fetchProject()
+    } catch (error) {
+      console.error('Error deleting team wallet:', error)
+      toast.error('Failed to delete team wallet')
+    } finally {
+      setProcessingTeamWallet(false)
+    }
+  }
+
+  const getDefaultLabel = (walletType: string): string => {
+    switch (walletType) {
+      case 'team': return 'Team Member'
+      case 'treasury': return 'Treasury'
+      case 'liquidity': return 'Liquidity Provision'
+      case 'deployer': return 'Deployer Wallet'
+      case 'other': return 'Other'
+      default: return 'Wallet'
+    }
+  }
+
+  const getWalletTypeLabel = (walletType: string | null | undefined): string => {
+    switch (walletType) {
+      case 'team': return '👤 Team'
+      case 'treasury': return '💰 Treasury'
+      case 'liquidity': return '💧 Liquidity'
+      case 'deployer': return '🚀 Deployer'
+      case 'other': return '📌 Other'
+      default: return '👤 Team'
+    }
+  }
+
+  // Creator & Editor Management Handlers
+  const handleUpdateCreatorWallet = async () => {
+    if (!project || !publicKey || !newCreatorWallet.trim()) return
+
+    try {
+      setProcessingWalletManagement(true)
+
+      const { error } = await supabase
+        .from('projects')
+        .update({
+          creator_wallet: newCreatorWallet.trim(),
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', project.id)
+
+      if (error) throw error
+
+      await logAdminAction('update_creator_wallet', 'project', project.id, {
+        old_creator: project.creator_wallet,
+        new_creator: newCreatorWallet.trim()
+      })
+
+      toast.success('Creator wallet updated successfully')
+      setEditingCreatorWallet(false)
+      setNewCreatorWallet('')
+      await fetchProject()
+    } catch (error) {
+      console.error('Error updating creator wallet:', error)
+      toast.error('Failed to update creator wallet')
+    } finally {
+      setProcessingWalletManagement(false)
+    }
+  }
+
+  const handleAddEditor = async () => {
+    if (!project || !publicKey || !newEditorWallet.trim()) return
+
+    // Validate wallet is not already creator or editor
+    if (newEditorWallet.trim() === project.creator_wallet) {
+      toast.error('Cannot add creator as editor')
+      return
+    }
+
+    const currentEditors = project.editor_wallets || []
+    if (currentEditors.includes(newEditorWallet.trim())) {
+      toast.error('Wallet is already an editor')
+      return
+    }
+
+    try {
+      setProcessingWalletManagement(true)
+
+      const updatedEditors = [...currentEditors, newEditorWallet.trim()]
+
+      const { error } = await supabase
+        .from('projects')
+        .update({
+          editor_wallets: updatedEditors,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', project.id)
+
+      if (error) throw error
+
+      await logAdminAction('add_editor', 'project', project.id, {
+        added_editor: newEditorWallet.trim(),
+        total_editors: updatedEditors.length
+      })
+
+      toast.success('Editor added successfully')
+      setAddingEditor(false)
+      setNewEditorWallet('')
+      await fetchProject()
+    } catch (error) {
+      console.error('Error adding editor:', error)
+      toast.error('Failed to add editor')
+    } finally {
+      setProcessingWalletManagement(false)
+    }
+  }
+
+  const handleRemoveEditor = async (editorWallet: string) => {
+    if (!project || !publicKey) return
+
+    try {
+      setProcessingWalletManagement(true)
+      setRemovingEditor(editorWallet)
+
+      const currentEditors = project.editor_wallets || []
+      const updatedEditors = currentEditors.filter(w => w !== editorWallet)
+
+      const { error } = await supabase
+        .from('projects')
+        .update({
+          editor_wallets: updatedEditors,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', project.id)
+
+      if (error) throw error
+
+      await logAdminAction('remove_editor', 'project', project.id, {
+        removed_editor: editorWallet,
+        remaining_editors: updatedEditors.length
+      })
+
+      toast.success('Editor removed successfully')
+      await fetchProject()
+    } catch (error) {
+      console.error('Error removing editor:', error)
+      toast.error('Failed to remove editor')
+    } finally {
+      setProcessingWalletManagement(false)
+      setRemovingEditor(null)
     }
   }
 
@@ -5783,39 +6065,508 @@ export default function AdminProjectPage() {
 
                 {/* Team & Wallets Tab */}
                 {currentTab === 'team' && (
-                  <div className="space-y-4">
-                    <h3 className="font-display text-lg font-semibold">
-                      Team Wallets ({project.team_wallets.length})
-                    </h3>
-
-                    {project.team_wallets.length === 0 ? (
-                      <p className="text-text-muted text-center py-12">No team wallets added</p>
-                    ) : (
-                      <div className="space-y-2">
-                        {project.team_wallets.map((wallet) => (
-                          <div key={wallet.id} className="p-4 bg-white rounded-lg border border-border-subtle">
-                            <div className="flex items-center justify-between gap-4">
-                              <div>
-                                <p className="font-medium mb-2">{wallet.label || 'Team Wallet'}</p>
-                                <WalletAddressWithMessage 
-                                  walletAddress={wallet.wallet_address}
-                                  showFullAddress
-                                  projectId={params.id as string}
-                                />
-                              </div>
-                              <a
-                                href={`https://solscan.io/account/${wallet.wallet_address}`}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="text-accent-primary hover:text-accent-primary-hover text-sm font-medium"
-                              >
-                                View on Solscan →
-                              </a>
-                            </div>
-                          </div>
-                        ))}
+                  <div className="space-y-6">
+                    
+                    {/* Creator Wallet Section */}
+                    <Card className="p-4">
+                      <div className="flex items-center justify-between mb-4">
+                        <h3 className="font-display text-lg font-semibold flex items-center gap-2">
+                          👑 Creator Wallet
+                        </h3>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => {
+                            setEditingCreatorWallet(true)
+                            setNewCreatorWallet(project.creator_wallet)
+                          }}
+                        >
+                          <EditIcon sx={{ fontSize: 16, mr: 0.5 }} />
+                          Edit Creator
+                        </Button>
                       </div>
-                    )}
+                      <div className="p-4 bg-purple-50 rounded-lg border border-purple-200">
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <p className="text-xs text-purple-600 font-medium mb-1">PROJECT CREATOR</p>
+                            <WalletAddressWithMessage 
+                              walletAddress={project.creator_wallet}
+                              showFullAddress
+                              projectId={params.id as string}
+                            />
+                          </div>
+                          <a
+                            href={`https://solscan.io/account/${project.creator_wallet}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-purple-600 hover:text-purple-800 text-sm font-medium"
+                          >
+                            View on Solscan →
+                          </a>
+                        </div>
+                      </div>
+                    </Card>
+
+                    {/* Editor Wallets Section */}
+                    <Card className="p-4">
+                      <div className="flex items-center justify-between mb-4">
+                        <h3 className="font-display text-lg font-semibold flex items-center gap-2">
+                          ✏️ Editor Wallets ({project.editor_wallets?.length || 0})
+                        </h3>
+                        <Button
+                          variant="primary"
+                          size="sm"
+                          onClick={() => setAddingEditor(true)}
+                        >
+                          + Add Editor
+                        </Button>
+                      </div>
+                      
+                      {(!project.editor_wallets || project.editor_wallets.length === 0) ? (
+                        <p className="text-text-muted text-center py-8 bg-gray-50 rounded-lg">
+                          No editors added yet
+                        </p>
+                      ) : (
+                        <div className="space-y-2">
+                          {project.editor_wallets.map((editorWallet) => (
+                            <div key={editorWallet} className="p-3 bg-green-50 rounded-lg border border-green-200">
+                              <div className="flex items-center justify-between">
+                                <div className="flex items-center gap-3">
+                                  <span className="text-lg">✏️</span>
+                                  <div>
+                                    <p className="text-xs text-green-600 font-medium mb-0.5">EDITOR</p>
+                                    <span className="font-mono text-sm">{editorWallet}</span>
+                                  </div>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                  <a
+                                    href={`https://solscan.io/account/${editorWallet}`}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="text-green-600 hover:text-green-800 text-sm font-medium"
+                                  >
+                                    Solscan →
+                                  </a>
+                                  <Button
+                                    variant="danger"
+                                    size="sm"
+                                    onClick={() => handleRemoveEditor(editorWallet)}
+                                    disabled={processingWalletManagement && removingEditor === editorWallet}
+                                  >
+                                    {processingWalletManagement && removingEditor === editorWallet ? (
+                                      <CircularProgress size={14} color="inherit" />
+                                    ) : (
+                                      <DeleteIcon sx={{ fontSize: 16 }} />
+                                    )}
+                                  </Button>
+                                </div>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </Card>
+
+                    {/* Team Wallets Section */}
+                    <Card className="p-4">
+                      <div className="flex items-center justify-between mb-4">
+                        <h3 className="font-display text-lg font-semibold flex items-center gap-2">
+                          💼 Project Wallets ({project.team_wallets.length})
+                        </h3>
+                        <Button
+                          variant="primary"
+                          size="sm"
+                          onClick={() => {
+                            setAddingTeamWallet(true)
+                            setTeamWalletFormData({ wallet_address: '', label: '', wallet_type: 'team', team_role: 'Founder', custom_label: '' })
+                          }}
+                        >
+                          + Add Wallet
+                        </Button>
+                      </div>
+
+                      {project.team_wallets.length === 0 ? (
+                        <p className="text-text-muted text-center py-8 bg-gray-50 rounded-lg">
+                          No project wallets added
+                        </p>
+                      ) : (
+                        <div className="space-y-2">
+                          {project.team_wallets.map((wallet) => (
+                            <div key={wallet.id} className="p-4 bg-white rounded-lg border border-border-subtle hover:border-purple-300 transition-colors">
+                              <div className="flex items-center justify-between gap-4">
+                                <div className="flex-1">
+                                  <div className="flex items-center gap-2 mb-2">
+                                    <p className="font-medium">{wallet.label || 'Team Wallet'}</p>
+                                    <Chip 
+                                      label={getWalletTypeLabel(wallet.wallet_type)} 
+                                      size="small"
+                                      sx={{
+                                        bgcolor: 
+                                          wallet.wallet_type === 'treasury' ? '#E8F5E9' :
+                                          wallet.wallet_type === 'liquidity' ? '#F3E5F5' :
+                                          wallet.wallet_type === 'deployer' ? '#FFF3E0' :
+                                          wallet.wallet_type === 'other' ? '#E0E0E0' :
+                                          '#E3F2FD',
+                                        color: 
+                                          wallet.wallet_type === 'treasury' ? '#2E7D32' :
+                                          wallet.wallet_type === 'liquidity' ? '#7B1FA2' :
+                                          wallet.wallet_type === 'deployer' ? '#E65100' :
+                                          wallet.wallet_type === 'other' ? '#424242' :
+                                          '#1565C0'
+                                      }}
+                                    />
+                                  </div>
+                                  <WalletAddressWithMessage 
+                                    walletAddress={wallet.wallet_address}
+                                    showFullAddress
+                                    projectId={params.id as string}
+                                  />
+                                </div>
+                                <div className="flex items-center gap-2">
+                                  <a
+                                    href={`https://solscan.io/account/${wallet.wallet_address}`}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="text-accent-primary hover:text-accent-primary-hover text-sm font-medium"
+                                  >
+                                    Solscan →
+                                  </a>
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => {
+                                      setEditingTeamWallet(wallet)
+                                      // Determine team_role and custom_label from existing label
+                                      const walletType = wallet.wallet_type || 'team'
+                                      const existingLabel = wallet.label || ''
+                                      const teamRoles = ['Founder', 'Co-Founder', 'Developer', 'Designer', 'Marketing', 'Community Manager', 'Advisor', 'Operations']
+                                      
+                                      let teamRole = 'Founder'
+                                      let customLabel = ''
+                                      
+                                      if (walletType === 'team') {
+                                        if (teamRoles.includes(existingLabel)) {
+                                          teamRole = existingLabel
+                                        } else {
+                                          teamRole = 'Other'
+                                          customLabel = existingLabel
+                                        }
+                                      } else if (walletType === 'other') {
+                                        customLabel = existingLabel
+                                      }
+                                      
+                                      setTeamWalletFormData({
+                                        wallet_address: wallet.wallet_address,
+                                        label: existingLabel,
+                                        wallet_type: walletType,
+                                        team_role: teamRole,
+                                        custom_label: customLabel
+                                      })
+                                    }}
+                                  >
+                                    <EditIcon sx={{ fontSize: 16 }} />
+                                  </Button>
+                                  <Button
+                                    variant="danger"
+                                    size="sm"
+                                    onClick={() => setDeletingTeamWallet(wallet)}
+                                  >
+                                    <DeleteIcon sx={{ fontSize: 16 }} />
+                                  </Button>
+                                </div>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </Card>
+
+                    {/* Edit Creator Wallet Dialog */}
+                    <Dialog open={editingCreatorWallet} onClose={() => setEditingCreatorWallet(false)} maxWidth="sm" fullWidth>
+                      <DialogTitle>Edit Creator Wallet</DialogTitle>
+                      <DialogContent>
+                        <Alert severity="warning" sx={{ mb: 3 }}>
+                          <AlertTitle>Warning</AlertTitle>
+                          Changing the creator wallet will transfer full ownership to a different wallet. This action should be done carefully.
+                        </Alert>
+                        <TextField
+                          label="New Creator Wallet Address"
+                          value={newCreatorWallet}
+                          onChange={(e) => setNewCreatorWallet(e.target.value)}
+                          fullWidth
+                          placeholder="Enter Solana wallet address"
+                          sx={{ mt: 2 }}
+                        />
+                      </DialogContent>
+                      <DialogActions>
+                        <MuiButton onClick={() => setEditingCreatorWallet(false)}>Cancel</MuiButton>
+                        <MuiButton 
+                          variant="contained" 
+                          onClick={handleUpdateCreatorWallet} 
+                          disabled={processingWalletManagement || !newCreatorWallet.trim()}
+                          sx={{ bgcolor: '#7C4DFF' }}
+                        >
+                          {processingWalletManagement ? <CircularProgress size={20} color="inherit" /> : 'Update Creator'}
+                        </MuiButton>
+                      </DialogActions>
+                    </Dialog>
+
+                    {/* Add Editor Dialog */}
+                    <Dialog open={addingEditor} onClose={() => setAddingEditor(false)} maxWidth="sm" fullWidth>
+                      <DialogTitle>Add Project Editor</DialogTitle>
+                      <DialogContent>
+                        <p className="text-sm text-gray-600 mb-4">
+                          Editors can modify project information and manage community assets.
+                        </p>
+                        <TextField
+                          label="Editor Wallet Address"
+                          value={newEditorWallet}
+                          onChange={(e) => setNewEditorWallet(e.target.value)}
+                          fullWidth
+                          placeholder="Enter Solana wallet address"
+                          sx={{ mt: 1 }}
+                        />
+                      </DialogContent>
+                      <DialogActions>
+                        <MuiButton onClick={() => setAddingEditor(false)}>Cancel</MuiButton>
+                        <MuiButton 
+                          variant="contained" 
+                          onClick={handleAddEditor} 
+                          disabled={processingWalletManagement || !newEditorWallet.trim()}
+                          sx={{ bgcolor: '#7C4DFF' }}
+                        >
+                          {processingWalletManagement ? <CircularProgress size={20} color="inherit" /> : 'Add Editor'}
+                        </MuiButton>
+                      </DialogActions>
+                    </Dialog>
+
+                    {/* Add Team Wallet Dialog */}
+                    <Dialog open={addingTeamWallet} onClose={() => setAddingTeamWallet(false)} maxWidth="sm" fullWidth>
+                      <DialogTitle>Add Project Wallet</DialogTitle>
+                      <DialogContent>
+                        <div className="space-y-4 pt-2">
+                          <FormControl fullWidth>
+                            <InputLabel>Wallet Type</InputLabel>
+                            <Select
+                              value={teamWalletFormData.wallet_type}
+                              label="Wallet Type"
+                              onChange={(e) => setTeamWalletFormData({
+                                ...teamWalletFormData,
+                                wallet_type: e.target.value as any,
+                                team_role: 'Founder',
+                                custom_label: ''
+                              })}
+                            >
+                              <MenuItem value="team">👤 Team Member</MenuItem>
+                              <MenuItem value="treasury">💰 Treasury</MenuItem>
+                              <MenuItem value="liquidity">💧 Liquidity Provision</MenuItem>
+                              <MenuItem value="deployer">🚀 Deployer Wallet</MenuItem>
+                              <MenuItem value="other">📌 Other</MenuItem>
+                            </Select>
+                          </FormControl>
+                          <TextField
+                            label="Wallet Address"
+                            value={teamWalletFormData.wallet_address}
+                            onChange={(e) => setTeamWalletFormData({
+                              ...teamWalletFormData,
+                              wallet_address: e.target.value
+                            })}
+                            fullWidth
+                            placeholder="Enter Solana wallet address"
+                          />
+                          
+                          {/* Show Team Role only for team type */}
+                          {teamWalletFormData.wallet_type === 'team' && (
+                            <FormControl fullWidth>
+                              <InputLabel>Team Role</InputLabel>
+                              <Select
+                                value={teamWalletFormData.team_role}
+                                label="Team Role"
+                                onChange={(e) => setTeamWalletFormData({
+                                  ...teamWalletFormData,
+                                  team_role: e.target.value,
+                                  custom_label: e.target.value === 'Other' ? teamWalletFormData.custom_label : ''
+                                })}
+                              >
+                                <MenuItem value="Founder">Founder</MenuItem>
+                                <MenuItem value="Co-Founder">Co-Founder</MenuItem>
+                                <MenuItem value="Developer">Developer</MenuItem>
+                                <MenuItem value="Designer">Designer</MenuItem>
+                                <MenuItem value="Marketing">Marketing</MenuItem>
+                                <MenuItem value="Community Manager">Community Manager</MenuItem>
+                                <MenuItem value="Advisor">Advisor</MenuItem>
+                                <MenuItem value="Operations">Operations</MenuItem>
+                                <MenuItem value="Other">Other</MenuItem>
+                              </Select>
+                            </FormControl>
+                          )}
+                          
+                          {/* Show custom role input if team + Other selected */}
+                          {teamWalletFormData.wallet_type === 'team' && teamWalletFormData.team_role === 'Other' && (
+                            <TextField
+                              label="Custom Role"
+                              value={teamWalletFormData.custom_label}
+                              onChange={(e) => setTeamWalletFormData({
+                                ...teamWalletFormData,
+                                custom_label: e.target.value
+                              })}
+                              fullWidth
+                              placeholder="Enter custom role"
+                            />
+                          )}
+                          
+                          {/* Show description only for "other" wallet type */}
+                          {teamWalletFormData.wallet_type === 'other' && (
+                            <TextField
+                              label="Wallet Description"
+                              value={teamWalletFormData.custom_label}
+                              onChange={(e) => setTeamWalletFormData({
+                                ...teamWalletFormData,
+                                custom_label: e.target.value
+                              })}
+                              fullWidth
+                              placeholder="Describe this wallet's purpose"
+                            />
+                          )}
+                        </div>
+                      </DialogContent>
+                      <DialogActions>
+                        <MuiButton onClick={() => setAddingTeamWallet(false)}>Cancel</MuiButton>
+                        <MuiButton 
+                          variant="contained" 
+                          onClick={handleAddTeamWallet} 
+                          disabled={processingTeamWallet || !teamWalletFormData.wallet_address.trim()}
+                          sx={{ bgcolor: '#7C4DFF' }}
+                        >
+                          {processingTeamWallet ? <CircularProgress size={20} color="inherit" /> : 'Add Wallet'}
+                        </MuiButton>
+                      </DialogActions>
+                    </Dialog>
+
+                    {/* Edit Team Wallet Dialog */}
+                    <Dialog open={!!editingTeamWallet} onClose={() => setEditingTeamWallet(null)} maxWidth="sm" fullWidth>
+                      <DialogTitle>Edit Project Wallet</DialogTitle>
+                      <DialogContent>
+                        <div className="space-y-4 pt-2">
+                          <FormControl fullWidth>
+                            <InputLabel>Wallet Type</InputLabel>
+                            <Select
+                              value={teamWalletFormData.wallet_type}
+                              label="Wallet Type"
+                              onChange={(e) => setTeamWalletFormData({
+                                ...teamWalletFormData,
+                                wallet_type: e.target.value as any,
+                                team_role: 'Founder',
+                                custom_label: ''
+                              })}
+                            >
+                              <MenuItem value="team">👤 Team Member</MenuItem>
+                              <MenuItem value="treasury">💰 Treasury</MenuItem>
+                              <MenuItem value="liquidity">💧 Liquidity Provision</MenuItem>
+                              <MenuItem value="deployer">🚀 Deployer Wallet</MenuItem>
+                              <MenuItem value="other">📌 Other</MenuItem>
+                            </Select>
+                          </FormControl>
+                          <TextField
+                            label="Wallet Address"
+                            value={teamWalletFormData.wallet_address}
+                            onChange={(e) => setTeamWalletFormData({
+                              ...teamWalletFormData,
+                              wallet_address: e.target.value
+                            })}
+                            fullWidth
+                          />
+                          
+                          {/* Show Team Role only for team type */}
+                          {teamWalletFormData.wallet_type === 'team' && (
+                            <FormControl fullWidth>
+                              <InputLabel>Team Role</InputLabel>
+                              <Select
+                                value={teamWalletFormData.team_role}
+                                label="Team Role"
+                                onChange={(e) => setTeamWalletFormData({
+                                  ...teamWalletFormData,
+                                  team_role: e.target.value,
+                                  custom_label: e.target.value === 'Other' ? teamWalletFormData.custom_label : ''
+                                })}
+                              >
+                                <MenuItem value="Founder">Founder</MenuItem>
+                                <MenuItem value="Co-Founder">Co-Founder</MenuItem>
+                                <MenuItem value="Developer">Developer</MenuItem>
+                                <MenuItem value="Designer">Designer</MenuItem>
+                                <MenuItem value="Marketing">Marketing</MenuItem>
+                                <MenuItem value="Community Manager">Community Manager</MenuItem>
+                                <MenuItem value="Advisor">Advisor</MenuItem>
+                                <MenuItem value="Operations">Operations</MenuItem>
+                                <MenuItem value="Other">Other</MenuItem>
+                              </Select>
+                            </FormControl>
+                          )}
+                          
+                          {/* Show custom role input if team + Other selected */}
+                          {teamWalletFormData.wallet_type === 'team' && teamWalletFormData.team_role === 'Other' && (
+                            <TextField
+                              label="Custom Role"
+                              value={teamWalletFormData.custom_label}
+                              onChange={(e) => setTeamWalletFormData({
+                                ...teamWalletFormData,
+                                custom_label: e.target.value
+                              })}
+                              fullWidth
+                              placeholder="Enter custom role"
+                            />
+                          )}
+                          
+                          {/* Show description only for "other" wallet type */}
+                          {teamWalletFormData.wallet_type === 'other' && (
+                            <TextField
+                              label="Wallet Description"
+                              value={teamWalletFormData.custom_label}
+                              onChange={(e) => setTeamWalletFormData({
+                                ...teamWalletFormData,
+                                custom_label: e.target.value
+                              })}
+                              fullWidth
+                              placeholder="Describe this wallet's purpose"
+                            />
+                          )}
+                        </div>
+                      </DialogContent>
+                      <DialogActions>
+                        <MuiButton onClick={() => setEditingTeamWallet(null)}>Cancel</MuiButton>
+                        <MuiButton 
+                          variant="contained" 
+                          onClick={handleEditTeamWallet} 
+                          disabled={processingTeamWallet || !teamWalletFormData.wallet_address.trim()}
+                          sx={{ bgcolor: '#7C4DFF' }}
+                        >
+                          {processingTeamWallet ? <CircularProgress size={20} color="inherit" /> : 'Save Changes'}
+                        </MuiButton>
+                      </DialogActions>
+                    </Dialog>
+
+                    {/* Delete Team Wallet Confirmation Dialog */}
+                    <Dialog open={!!deletingTeamWallet} onClose={() => setDeletingTeamWallet(null)} maxWidth="xs" fullWidth>
+                      <DialogTitle>Delete Wallet</DialogTitle>
+                      <DialogContent>
+                        <p>Are you sure you want to delete this wallet?</p>
+                        <div className="mt-3 p-3 bg-gray-50 rounded-lg">
+                          <p className="font-medium">{deletingTeamWallet?.label || 'Team Wallet'}</p>
+                          <p className="font-mono text-xs text-gray-500 break-all">{deletingTeamWallet?.wallet_address}</p>
+                        </div>
+                      </DialogContent>
+                      <DialogActions>
+                        <MuiButton onClick={() => setDeletingTeamWallet(null)}>Cancel</MuiButton>
+                        <MuiButton 
+                          variant="contained" 
+                          color="error"
+                          onClick={handleDeleteTeamWallet} 
+                          disabled={processingTeamWallet}
+                        >
+                          {processingTeamWallet ? <CircularProgress size={20} color="inherit" /> : 'Delete'}
+                        </MuiButton>
+                      </DialogActions>
+                    </Dialog>
                   </div>
                 )}
 
@@ -6506,6 +7257,127 @@ export default function AdminProjectPage() {
                         }}
                       >
                         Reset Karma
+                      </MuiButton>
+                    </Card>
+
+                    <Card className="p-6 border-2 border-red-200">
+                      <h3 className="font-display text-lg font-semibold text-red-600 mb-2">
+                        Clear Activity Feed
+                      </h3>
+                      <p className="text-sm text-text-secondary mb-4">
+                        Delete ALL activity feed data: jobs, applications, tips, pending assets, votes, and karma. 
+                        This will completely reset the public activity feed shown on the project page.
+                      </p>
+                      <MuiButton 
+                        variant="outlined" 
+                        color="error"
+                        onClick={async () => {
+                          if (confirm('Are you sure? This will delete ALL activity feed data including jobs, pending assets, tips, karma, and votes.')) {
+                            try {
+                              // 1. Get all job IDs for this project
+                              const { data: jobs } = await supabase
+                                .from('jobs')
+                                .select('id')
+                                .eq('project_id', project.id)
+                              
+                              if (jobs && jobs.length > 0) {
+                                const jobIds = jobs.map(j => j.id)
+                                
+                                // Delete job disputes
+                                await supabase
+                                  .from('job_disputes')
+                                  .delete()
+                                  .in('job_id', jobIds)
+                                
+                                // Delete job submissions
+                                await supabase
+                                  .from('job_submissions')
+                                  .delete()
+                                  .in('job_id', jobIds)
+                                
+                                // Delete job comments
+                                await supabase
+                                  .from('job_comments')
+                                  .delete()
+                                  .in('job_id', jobIds)
+                                
+                                // Get application IDs to delete votes
+                                const { data: applications } = await supabase
+                                  .from('job_applications')
+                                  .select('id')
+                                  .in('job_id', jobIds)
+                                
+                                if (applications && applications.length > 0) {
+                                  await supabase
+                                    .from('job_application_votes')
+                                    .delete()
+                                    .in('application_id', applications.map(a => a.id))
+                                }
+                                
+                                // Delete job applications
+                                await supabase
+                                  .from('job_applications')
+                                  .delete()
+                                  .in('job_id', jobIds)
+                                
+                                // Delete jobs
+                                await supabase
+                                  .from('jobs')
+                                  .delete()
+                                  .eq('project_id', project.id)
+                              }
+                              
+                              // 2. Delete chat tips
+                              await supabase
+                                .from('chat_tips')
+                                .delete()
+                                .eq('project_id', project.id)
+                              
+                              // 3. Delete pending assets and their votes
+                              const { data: assets } = await supabase
+                                .from('pending_assets')
+                                .select('id')
+                                .eq('project_id', project.id)
+                              
+                              if (assets && assets.length > 0) {
+                                // Delete asset votes first
+                                await supabase
+                                  .from('asset_votes')
+                                  .delete()
+                                  .in('pending_asset_id', assets.map(a => a.id))
+                                
+                                // Delete curation chat messages linked to assets
+                                await supabase
+                                  .from('curation_chat_messages')
+                                  .delete()
+                                  .in('pending_asset_id', assets.map(a => a.id))
+                              }
+                              
+                              // Delete all pending assets
+                              await supabase
+                                .from('pending_assets')
+                                .delete()
+                                .eq('project_id', project.id)
+                              
+                              // 4. Delete wallet karma (karma milestones)
+                              await supabase
+                                .from('wallet_karma')
+                                .delete()
+                                .eq('project_id', project.id)
+                              
+                              toast.success('Activity feed cleared completely!')
+                              
+                              // Reload relevant data
+                              loadPendingAssets()
+                              loadKarmaData()
+                            } catch (error) {
+                              console.error('Error clearing activity feed:', error)
+                              toast.error('Failed to clear activity feed')
+                            }
+                          }
+                        }}
+                      >
+                        Clear Activity Feed
                       </MuiButton>
                     </Card>
 

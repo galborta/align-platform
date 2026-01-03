@@ -56,7 +56,7 @@ interface ProjectWallet {
   id: string
   address: string
   label: string
-  type: 'team' | 'treasury' | 'liquidity' | 'other'
+  type: 'team' | 'treasury' | 'liquidity' | 'deployer' | 'other'
 }
 
 function CreateProjectPageContent() {
@@ -104,7 +104,7 @@ function CreateProjectPageContent() {
   // Project Wallets
   const [projectWallets, setProjectWallets] = useState<ProjectWallet[]>([])
   const [walletAddress, setWalletAddress] = useState('')
-  const [walletType, setWalletType] = useState<'team' | 'treasury' | 'liquidity' | 'other'>('team')
+  const [walletType, setWalletType] = useState<'team' | 'treasury' | 'liquidity' | 'deployer' | 'other'>('team')
   const [walletRole, setWalletRole] = useState('Founder')
   const [walletLabel, setWalletLabel] = useState('')
 
@@ -682,6 +682,8 @@ function CreateProjectPageContent() {
       finalLabel = 'Treasury'
     } else if (walletType === 'liquidity') {
       finalLabel = 'Liquidity Provision'
+    } else if (walletType === 'deployer') {
+      finalLabel = 'Deployer Wallet'
     } else if (walletType === 'other') {
       if (!walletLabel.trim()) {
         setError('Please describe this wallet')
@@ -1744,6 +1746,7 @@ function CreateProjectPageContent() {
                           <MenuItem value="team">Team Member</MenuItem>
                           <MenuItem value="treasury">Treasury</MenuItem>
                           <MenuItem value="liquidity">Liquidity Provision</MenuItem>
+                          <MenuItem value="deployer">Deployer Wallet</MenuItem>
                           <MenuItem value="other">Other</MenuItem>
                         </Select>
                       </FormControl>
@@ -1823,7 +1826,8 @@ function CreateProjectPageContent() {
                                 <span className="text-xs px-2 py-0.5 rounded-full bg-blue-100 text-blue-700">
                                   {wallet.type === 'team' ? '👤 Team' : 
                                    wallet.type === 'treasury' ? '💰 Treasury' : 
-                                   wallet.type === 'liquidity' ? '💧 Liquidity' : '📌 Other'}
+                                   wallet.type === 'liquidity' ? '💧 Liquidity' : 
+                                   wallet.type === 'deployer' ? '🚀 Deployer' : '📌 Other'}
                                 </span>
                               </div>
                               <p className="font-body text-xs text-text-muted break-all">{wallet.address}</p>

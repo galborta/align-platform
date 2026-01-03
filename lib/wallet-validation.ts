@@ -304,3 +304,4 @@ export function formatWalletDisplay(
   return label ? `${truncated} (${label})` : truncated
 }
 
+

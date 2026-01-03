@@ -18,3 +18,4 @@ CHECK (wallet_type IN ('team', 'treasury', 'liquidity', 'other'));
 COMMENT ON COLUMN team_wallets.wallet_type IS 
   'Type of wallet: team (team member), treasury (project treasury), liquidity (liquidity provision), other (custom)';
 
+

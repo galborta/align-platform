@@ -10,3 +10,4 @@ COMMENT ON COLUMN projects.website IS
 COMMENT ON COLUMN projects.telegram IS 
   'Telegram username or link for the project (e.g., @username or t.me/username)';
 
+

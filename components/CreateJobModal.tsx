@@ -47,6 +47,13 @@ import { LAMPORTS_PER_SOL, PublicKey } from '@solana/web3.js'
 import { ProtectedAction } from '@/components/ProtectedAction'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
+import AttachFileIcon from '@mui/icons-material/AttachFile'
+import DeleteIcon from '@mui/icons-material/Delete'
+import CloudUploadIcon from '@mui/icons-material/CloudUpload'
+import EditIcon from '@mui/icons-material/Edit'
+import CheckIcon from '@mui/icons-material/Check'
+import CloseIcon from '@mui/icons-material/Close'
+import { uploadJobAttachment, getFilenameFromUrl, getFileIcon } from '@/lib/job-attachments'
 
 interface CreateJobModalProps {
   isOpen: boolean
@@ -125,6 +132,10 @@ export function CreateJobModal({
   const [kpis, setKpis] = useState('')
   const [paymentAmount, setPaymentAmount] = useState('')
   const [assignmentMode, setAssignmentMode] = useState<'first_come' | 'review'>('review')
+  const [attachments, setAttachments] = useState<Array<{ file: File; displayName: string }>>([])
+  const [attachmentUrls, setAttachmentUrls] = useState<string[]>([])
+  const [editingFileIndex, setEditingFileIndex] = useState<number | null>(null)
+  const [editingFileName, setEditingFileName] = useState<string>('') // For edit mode
   const [desiredCompletionDays, setDesiredCompletionDays] = useState<string>('')
   
   // Contest-specific state
@@ -156,14 +167,43 @@ export function CreateJobModal({
     if (!isOpen) {
       resetForm()
     } else if (mode === 'edit' && existingJob) {
+      // Detect job type from existing job
+      if (existingJob.is_contest) {
+        setJobType('contest')
+        // Pre-fill contest fields
+        if (existingJob.contest_max_winners) {
+          setContestMaxWinners(existingJob.contest_max_winners)
+        }
+        if (existingJob.contest_winner_prizes) {
+          setContestPrizes(existingJob.contest_winner_prizes as Array<{
+            position: number
+            amount_tokens: number
+            amount_usd: number
+          }>)
+        }
+        if (existingJob.contest_submission_deadline) {
+          setContestSubmissionDeadline(new Date(existingJob.contest_submission_deadline))
+        }
+        if (existingJob.contest_submissions_visible !== undefined) {
+          setContestSubmissionsVisible(existingJob.contest_submissions_visible)
+        }
+      } else {
+        setJobType('regular')
+        setPaymentAmount(existingJob.payment_amount_tokens?.toString() || '')
+      }
+      
       // Populate fields with existing job data
       setTitle(existingJob.title || '')
       setCategory(existingJob.category || '')
       setDescription(existingJob.description || '')
       setKpis(existingJob.kpis || '')
-      setPaymentAmount(existingJob.payment_amount_tokens?.toString() || '')
       setAssignmentMode(existingJob.assignment_mode || 'review')
       setUsdValue(existingJob.payment_amount_usd || 0)
+      
+      // Load existing attachments
+      if (existingJob.attachment_urls && Array.isArray(existingJob.attachment_urls)) {
+        setAttachmentUrls(existingJob.attachment_urls)
+      }
       
       // Fetch application count
       fetchApplicationCount(existingJob.id)
@@ -266,6 +306,8 @@ export function CreateJobModal({
     setPaymentAmount('')
     setAssignmentMode('review')
     setDesiredCompletionDays('')
+    setAttachments([])
+    setAttachmentUrls([])
     // Reset contest-specific state
     setContestStep(1)
     setContestTotalPrizePool('')
@@ -395,6 +437,66 @@ export function CreateJobModal({
       }))
       setContestPrizes(newPrizes)
     }
+  }
+
+  // File attachment handlers
+  const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const files = event.target.files
+    if (!files || files.length === 0) return
+
+    const newFiles = Array.from(files)
+    const validFiles: Array<{ file: File; displayName: string }> = []
+    
+    for (const file of newFiles) {
+      // Check file size (10MB max)
+      if (file.size > 10 * 1024 * 1024) {
+        toast.error(`${file.name} is too large (max 10MB)`)
+        continue
+      }
+      
+      validFiles.push({ file, displayName: file.name })
+    }
+
+    setAttachments(prev => [...prev, ...validFiles])
+    
+    // Reset input so same file can be selected again if removed and re-added
+    event.target.value = ''
+  }
+
+  const handleRemoveAttachment = (index: number) => {
+    setAttachments(prev => prev.filter((_, i) => i !== index))
+    // Cancel editing if this file was being edited
+    if (editingFileIndex === index) {
+      setEditingFileIndex(null)
+      setEditingFileName('')
+    }
+  }
+
+  const handleStartEditFileName = (index: number, currentName: string) => {
+    setEditingFileIndex(index)
+    setEditingFileName(currentName)
+  }
+
+  const handleSaveFileName = (index: number) => {
+    if (!editingFileName.trim()) {
+      toast.error('Filename cannot be empty')
+      return
+    }
+
+    setAttachments(prev => prev.map((item, i) => 
+      i === index ? { ...item, displayName: editingFileName.trim() } : item
+    ))
+    setEditingFileIndex(null)
+    setEditingFileName('')
+  }
+
+  const handleCancelEditFileName = () => {
+    setEditingFileIndex(null)
+    setEditingFileName('')
+  }
+
+  const handleRemoveExistingAttachment = (url: string) => {
+    setAttachmentUrls(prev => prev.filter(u => u !== url))
   }
 
   // Handle individual prize edit (manual override)
@@ -683,6 +785,13 @@ export function CreateJobModal({
           poster_desired_completion: getDesiredCompletionDate()
         }
 
+        // Add contest-specific fields if this is a contest job
+        if (existingJob.is_contest) {
+          updatePayload.contest_prizes = contestPrizes
+          updatePayload.contest_submission_deadline = contestSubmissionDeadline?.toISOString()
+          updatePayload.contest_submissions_visible = contestSubmissionsVisible
+        }
+
         // Handle payment amount change and escrow adjustment
         const newAmount = parseFloat(paymentAmount)
         const oldAmount = existingJob.payment_amount_tokens
@@ -829,6 +938,69 @@ export function CreateJobModal({
         
         if (!response.ok || !data.success) {
           throw new Error(data.error || 'Failed to update job')
+        }
+
+        // Upload new attachments if any
+        if (attachments.length > 0) {
+          toast.loading(`Uploading ${attachments.length} file${attachments.length > 1 ? 's' : ''}...`, { id: 'upload-files' })
+          
+          const uploadedUrls: string[] = []
+          for (const item of attachments) {
+            const result = await uploadJobAttachment(item.file, existingJob.id, item.displayName)
+            if (result.success && result.url) {
+              uploadedUrls.push(result.url)
+            } else {
+              console.error(`Failed to upload ${item.displayName}:`, result.error)
+              toast.error(`Failed to upload ${item.displayName}: ${result.error}`)
+            }
+          }
+          
+          if (uploadedUrls.length > 0) {
+            // Combine with existing attachment URLs that weren't removed
+            const allAttachmentUrls = [...attachmentUrls, ...uploadedUrls]
+            
+            // Update job with all attachment URLs
+            const attachmentResponse = await fetch(`/api/jobs/${existingJob.id}/update`, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${session.access_token}`
+              },
+              body: JSON.stringify({
+                poster_wallet: walletAddress,
+                attachment_urls: allAttachmentUrls
+              })
+            })
+            
+            const attachmentData = await attachmentResponse.json()
+            if (!attachmentResponse.ok || !attachmentData.success) {
+              console.error('Failed to update attachment URLs:', attachmentData.error)
+              toast.error('Files uploaded but failed to link to job. Please try editing again.')
+            } else {
+              toast.success(`${uploadedUrls.length} file${uploadedUrls.length > 1 ? 's' : ''} attached!`, { id: 'upload-files' })
+            }
+          } else {
+            toast.dismiss('upload-files')
+          }
+        } else if (attachmentUrls.length !== (existingJob.attachment_urls?.length || 0)) {
+          // Only attachment URLs changed (removals), update them
+          const attachmentResponse = await fetch(`/api/jobs/${existingJob.id}/update`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${session.access_token}`
+            },
+            body: JSON.stringify({
+              poster_wallet: walletAddress,
+              attachment_urls: attachmentUrls
+            })
+          })
+          
+          const attachmentData = await attachmentResponse.json()
+          if (!attachmentResponse.ok || !attachmentData.success) {
+            console.error('Failed to update attachment URLs:', attachmentData.error)
+            toast.error('Failed to update attachments. Please try again.')
+          }
         }
 
         // Show appropriate success message
@@ -1029,6 +1201,43 @@ export function CreateJobModal({
           jobData = jobResult.job
         }
 
+        // Upload attachments if any
+        if (attachments.length > 0 && jobData?.id) {
+          toast.loading(`Uploading ${attachments.length} file${attachments.length > 1 ? 's' : ''}...`, { id: 'upload-files' })
+          
+          const uploadedUrls: string[] = []
+          for (const item of attachments) {
+            const result = await uploadJobAttachment(item.file, jobData.id, item.displayName)
+            if (result.success && result.url) {
+              uploadedUrls.push(result.url)
+            } else {
+              console.error(`Failed to upload ${item.displayName}:`, result.error)
+              toast.error(`Failed to upload ${item.displayName}`)
+            }
+          }
+          
+          if (uploadedUrls.length > 0) {
+            // Update job with attachment URLs
+            const session = (await supabase.auth.getSession()).data.session
+            if (session) {
+              await fetch(`/api/jobs/${jobData.id}/update`, {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                  'Authorization': `Bearer ${session.access_token}`
+                },
+                body: JSON.stringify({
+                  poster_wallet: walletAddress,
+                  attachment_urls: uploadedUrls
+                })
+              })
+            }
+            toast.success(`${uploadedUrls.length} file${uploadedUrls.length > 1 ? 's' : ''} attached!`, { id: 'upload-files' })
+          } else {
+            toast.dismiss('upload-files')
+          }
+        }
+
         // Note: Escrow transaction logging is handled by the API route
 
         toast.dismiss('escrow-lock')
@@ -1058,6 +1267,7 @@ export function CreateJobModal({
         error,
         errorMessage: error instanceof Error ? error.message : 'Unknown error',
         errorName: error instanceof Error ? error.name : 'Unknown',
+        errorStack: error instanceof Error ? error.stack : undefined,
         escrowTxSignature,
         projectId,
         title: title.trim(),
@@ -1066,6 +1276,7 @@ export function CreateJobModal({
       
       const errorMessage = error instanceof Error ? error.message : 'Unknown error'
       toast.dismiss('escrow-lock')
+      toast.dismiss('upload-files')
       
       // If escrow succeeded but job creation failed, save draft for recovery
       if (mode === 'create' && escrowTxSignature) {
@@ -1595,8 +1806,8 @@ export function CreateJobModal({
         sx={{ pt: 3 }}
         onScroll={handleScroll}
       >
-        {/* Job Type Toggle - Hide on contest Step 2 */}
-        {!(jobType === 'contest' && contestStep === 2) && (
+        {/* Job Type Toggle - Hide in edit mode and on contest Step 2 */}
+        {mode === 'create' && !(jobType === 'contest' && contestStep === 2) && (
           <Box sx={{ mb: 3, display: 'flex', gap: 2, justifyContent: 'center', flexWrap: 'wrap' }}>
             <Button
               variant={jobType === 'regular' ? 'contained' : 'outlined'}
@@ -1762,6 +1973,199 @@ export function CreateJobModal({
                 }
               }}
             />
+
+            {/* File Attachments */}
+            <Box sx={{ mb: 3 }}>
+              <Typography 
+                variant="subtitle2" 
+                sx={{ 
+                  mb: 1.5, 
+                  color: '#1A1A1E',
+                  fontWeight: 600,
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 1
+                }}
+              >
+                <AttachFileIcon sx={{ fontSize: 18 }} />
+                Attachments (Optional)
+              </Typography>
+              <Typography 
+                variant="caption" 
+                sx={{ color: '#6F7280', display: 'block', mb: 2 }}
+              >
+                Upload briefs, references, specifications, fonts, or other resources (Max 10MB per file)
+              </Typography>
+
+              {/* Existing attachments (edit mode) */}
+              {attachmentUrls.length > 0 && (
+                <Box sx={{ mb: 2 }}>
+                  {attachmentUrls.map((url, index) => (
+                    <Box
+                      key={url}
+                      sx={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        p: 1.5,
+                        mb: 1,
+                        borderRadius: '8px',
+                        bgcolor: '#F9FAFB',
+                        border: '1px solid #E5E7EB'
+                      }}
+                    >
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flex: 1, minWidth: 0 }}>
+                        <Typography sx={{ fontSize: 20 }}>
+                          {getFileIcon(url)}
+                        </Typography>
+                        <Typography
+                          sx={{
+                            fontSize: '14px',
+                            color: '#1A1A1E',
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                            whiteSpace: 'nowrap'
+                          }}
+                        >
+                          {getFilenameFromUrl(url)}
+                        </Typography>
+                      </Box>
+                      <IconButton
+                        size="small"
+                        onClick={() => handleRemoveExistingAttachment(url)}
+                        sx={{ color: '#EF4444' }}
+                      >
+                        <DeleteIcon sx={{ fontSize: 18 }} />
+                      </IconButton>
+                    </Box>
+                  ))}
+                </Box>
+              )}
+
+              {/* New attachments */}
+              {attachments.length > 0 && (
+                <Box sx={{ mb: 2 }}>
+                  {attachments.map((item, index) => (
+                    <Box
+                      key={`${item.file.name}-${index}`}
+                      sx={{
+                        display: 'flex',
+                        alignments: 'center',
+                        justifyContent: 'space-between',
+                        p: 1.5,
+                        mb: 1,
+                        borderRadius: '8px',
+                        bgcolor: '#EEF2FF',
+                        border: '1px solid #C7D2FE'
+                      }}
+                    >
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flex: 1, minWidth: 0 }}>
+                        <Typography sx={{ fontSize: 20 }}>
+                          {getFileIcon(item.displayName)}
+                        </Typography>
+                        <Box sx={{ flex: 1, minWidth: 0 }}>
+                          {editingFileIndex === index ? (
+                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                              <input
+                                type="text"
+                                value={editingFileName}
+                                onChange={(e) => setEditingFileName(e.target.value)}
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Enter') handleSaveFileName(index)
+                                  if (e.key === 'Escape') handleCancelEditFileName()
+                                }}
+                                autoFocus
+                                style={{
+                                  flex: 1,
+                                  padding: '4px 8px',
+                                  fontSize: '14px',
+                                  border: '1px solid #7C4DFF',
+                                  borderRadius: '4px',
+                                  outline: 'none'
+                                }}
+                              />
+                              <IconButton
+                                size="small"
+                                onClick={() => handleSaveFileName(index)}
+                                sx={{ color: '#10B981', padding: '4px' }}
+                              >
+                                <CheckIcon sx={{ fontSize: 16 }} />
+                              </IconButton>
+                              <IconButton
+                                size="small"
+                                onClick={handleCancelEditFileName}
+                                sx={{ color: '#6F7280', padding: '4px' }}
+                              >
+                                <CloseIcon sx={{ fontSize: 16 }} />
+                              </IconButton>
+                            </Box>
+                          ) : (
+                            <>
+                              <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                                <Typography
+                                  sx={{
+                                    fontSize: '14px',
+                                    color: '#1A1A1E',
+                                    overflow: 'hidden',
+                                    textOverflow: 'ellipsis',
+                                    whiteSpace: 'nowrap'
+                                  }}
+                                >
+                                  {item.displayName}
+                                </Typography>
+                                <IconButton
+                                  size="small"
+                                  onClick={() => handleStartEditFileName(index, item.displayName)}
+                                  sx={{ padding: '2px', color: '#7C4DFF' }}
+                                >
+                                  <EditIcon sx={{ fontSize: 14 }} />
+                                </IconButton>
+                              </Box>
+                              <Typography sx={{ fontSize: '12px', color: '#6F7280' }}>
+                                {(item.file.size / 1024).toFixed(1)} KB
+                              </Typography>
+                            </>
+                          )}
+                        </Box>
+                      </Box>
+                      <IconButton
+                        size="small"
+                        onClick={() => handleRemoveAttachment(index)}
+                        sx={{ color: '#EF4444' }}
+                      >
+                        <DeleteIcon sx={{ fontSize: 18 }} />
+                      </IconButton>
+                    </Box>
+                  ))}
+                </Box>
+              )}
+
+              {/* Upload button */}
+              <Button
+                component="label"
+                variant="outlined"
+                startIcon={<CloudUploadIcon />}
+                sx={{
+                  color: '#7C4DFF',
+                  borderColor: '#E5DEFF',
+                  textTransform: 'none',
+                  fontWeight: 600,
+                  '&:hover': {
+                    bgcolor: 'rgba(124, 77, 255, 0.04)',
+                    borderColor: '#7C4DFF'
+                  }
+                }}
+              >
+                Add Files
+                <input
+                  type="file"
+                  hidden
+                  multiple
+                  accept=".pdf,.jpg,.jpeg,.png,.gif,.webp,.zip,.txt,.doc,.docx,.xls,.xlsx,.ttf,.otf,.woff,.woff2"
+                  onChange={handleFileSelect}
+                />
+              </Button>
+            </Box>
           </>
         )}
 
@@ -2256,6 +2660,199 @@ export function CreateJobModal({
               inputProps={{ maxLength: 2000 }}
               sx={{ mb: 3 }}
             />
+
+            {/* File Attachments */}
+            <Box sx={{ mb: 3 }}>
+              <Typography 
+                variant="subtitle2" 
+                sx={{ 
+                  mb: 1.5, 
+                  color: '#1A1A1E',
+                  fontWeight: 600,
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 1
+                }}
+              >
+                <AttachFileIcon sx={{ fontSize: 18 }} />
+                Attachments (Optional)
+              </Typography>
+              <Typography 
+                variant="caption" 
+                sx={{ color: '#6F7280', display: 'block', mb: 2 }}
+              >
+                Upload briefs, references, specifications, fonts, or other resources (Max 10MB per file)
+              </Typography>
+
+              {/* Existing attachments (edit mode) */}
+              {attachmentUrls.length > 0 && (
+                <Box sx={{ mb: 2 }}>
+                  {attachmentUrls.map((url, index) => (
+                    <Box
+                      key={url}
+                      sx={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        p: 1.5,
+                        mb: 1,
+                        borderRadius: '8px',
+                        bgcolor: '#F9FAFB',
+                        border: '1px solid #E5E7EB'
+                      }}
+                    >
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flex: 1, minWidth: 0 }}>
+                        <Typography sx={{ fontSize: 20 }}>
+                          {getFileIcon(url)}
+                        </Typography>
+                        <Typography
+                          sx={{
+                            fontSize: '14px',
+                            color: '#1A1A1E',
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                            whiteSpace: 'nowrap'
+                          }}
+                        >
+                          {getFilenameFromUrl(url)}
+                        </Typography>
+                      </Box>
+                      <IconButton
+                        size="small"
+                        onClick={() => handleRemoveExistingAttachment(url)}
+                        sx={{ color: '#EF4444' }}
+                      >
+                        <DeleteIcon sx={{ fontSize: 18 }} />
+                      </IconButton>
+                    </Box>
+                  ))}
+                </Box>
+              )}
+
+              {/* New attachments */}
+              {attachments.length > 0 && (
+                <Box sx={{ mb: 2 }}>
+                  {attachments.map((item, index) => (
+                    <Box
+                      key={`${item.file.name}-${index}`}
+                      sx={{
+                        display: 'flex',
+                        alignments: 'center',
+                        justifyContent: 'space-between',
+                        p: 1.5,
+                        mb: 1,
+                        borderRadius: '8px',
+                        bgcolor: '#EEF2FF',
+                        border: '1px solid #C7D2FE'
+                      }}
+                    >
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flex: 1, minWidth: 0 }}>
+                        <Typography sx={{ fontSize: 20 }}>
+                          {getFileIcon(item.displayName)}
+                        </Typography>
+                        <Box sx={{ flex: 1, minWidth: 0 }}>
+                          {editingFileIndex === index ? (
+                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                              <input
+                                type="text"
+                                value={editingFileName}
+                                onChange={(e) => setEditingFileName(e.target.value)}
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Enter') handleSaveFileName(index)
+                                  if (e.key === 'Escape') handleCancelEditFileName()
+                                }}
+                                autoFocus
+                                style={{
+                                  flex: 1,
+                                  padding: '4px 8px',
+                                  fontSize: '14px',
+                                  border: '1px solid #7C4DFF',
+                                  borderRadius: '4px',
+                                  outline: 'none'
+                                }}
+                              />
+                              <IconButton
+                                size="small"
+                                onClick={() => handleSaveFileName(index)}
+                                sx={{ color: '#10B981', padding: '4px' }}
+                              >
+                                <CheckIcon sx={{ fontSize: 16 }} />
+                              </IconButton>
+                              <IconButton
+                                size="small"
+                                onClick={handleCancelEditFileName}
+                                sx={{ color: '#6F7280', padding: '4px' }}
+                              >
+                                <CloseIcon sx={{ fontSize: 16 }} />
+                              </IconButton>
+                            </Box>
+                          ) : (
+                            <>
+                              <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                                <Typography
+                                  sx={{
+                                    fontSize: '14px',
+                                    color: '#1A1A1E',
+                                    overflow: 'hidden',
+                                    textOverflow: 'ellipsis',
+                                    whiteSpace: 'nowrap'
+                                  }}
+                                >
+                                  {item.displayName}
+                                </Typography>
+                                <IconButton
+                                  size="small"
+                                  onClick={() => handleStartEditFileName(index, item.displayName)}
+                                  sx={{ padding: '2px', color: '#7C4DFF' }}
+                                >
+                                  <EditIcon sx={{ fontSize: 14 }} />
+                                </IconButton>
+                              </Box>
+                              <Typography sx={{ fontSize: '12px', color: '#6F7280' }}>
+                                {(item.file.size / 1024).toFixed(1)} KB
+                              </Typography>
+                            </>
+                          )}
+                        </Box>
+                      </Box>
+                      <IconButton
+                        size="small"
+                        onClick={() => handleRemoveAttachment(index)}
+                        sx={{ color: '#EF4444' }}
+                      >
+                        <DeleteIcon sx={{ fontSize: 18 }} />
+                      </IconButton>
+                    </Box>
+                  ))}
+                </Box>
+              )}
+
+              {/* Upload button */}
+              <Button
+                component="label"
+                variant="outlined"
+                startIcon={<CloudUploadIcon />}
+                sx={{
+                  color: '#7C4DFF',
+                  borderColor: '#E5DEFF',
+                  textTransform: 'none',
+                  fontWeight: 600,
+                  '&:hover': {
+                    bgcolor: 'rgba(124, 77, 255, 0.04)',
+                    borderColor: '#7C4DFF'
+                  }
+                }}
+              >
+                Add Files
+                <input
+                  type="file"
+                  hidden
+                  multiple
+                  accept=".pdf,.jpg,.jpeg,.png,.gif,.webp,.zip,.txt,.doc,.docx,.xls,.xlsx,.ttf,.otf,.woff,.woff2"
+                  onChange={handleFileSelect}
+                />
+              </Button>
+            </Box>
           </>
         )}
 

@@ -87,6 +87,7 @@ export function handleNotificationNavigation(
 
     case 'job_dispute_created':
     case 'job_dispute_vote':
+    case 'job_dispute_resolved':
       if (reference_id && metadata?.project_id) {
         navigate(`/project/${metadata.project_id}/jobs/${reference_id}?tab=disputes`)
       } else if (reference_id) {
@@ -210,6 +211,71 @@ export function handleNotificationNavigation(
       navigate('/admin/revenue')
       break
 
+    // ==================== SOCIAL MEDIA JOB NOTIFICATIONS ====================
+    
+    case 'social_submission_received':
+    case 'social_submission_approved':
+    case 'social_submission_denied':
+    case 'social_payment_distributed':
+      // Navigate to the social job page
+      if (reference_id && metadata?.project_id) {
+        navigate(`/project/${metadata.project_id}/jobs/${reference_id}`)
+      } else if (reference_id) {
+        navigate(`/jobs/${reference_id}`)
+      } else if (metadata?.job_id) {
+        navigate(`/jobs/${metadata.job_id}`)
+      }
+      break
+
+    // ==================== CONTEST NOTIFICATIONS ====================
+    
+    case 'contest_judging_started':
+    case 'contest_winners_selected':
+    case 'contest_prize_won':
+    case 'contest_no_submissions':
+    case 'contest_deadline_reminder':
+      // Navigate to the contest job page
+      if (reference_id && metadata?.project_id) {
+        navigate(`/project/${metadata.project_id}/jobs/${reference_id}`)
+      } else if (reference_id) {
+        navigate(`/jobs/${reference_id}`)
+      }
+      break
+
+    // ==================== JOB STATUS NOTIFICATIONS ====================
+    
+    case 'job_status_changed':
+      if (reference_id && metadata?.project_id) {
+        navigate(`/project/${metadata.project_id}/jobs/${reference_id}`)
+      } else if (reference_id) {
+        navigate(`/jobs/${reference_id}`)
+      }
+      break
+
+    // ==================== EDITOR NOTIFICATIONS ====================
+    
+    case 'editor_added':
+    case 'editor_removed':
+      // Navigate to the project page
+      if (reference_id) {
+        navigate(`/project/${reference_id}`)
+      } else if (metadata?.project_id) {
+        navigate(`/project/${metadata.project_id}`)
+      }
+      break
+
+    // ==================== SOCIAL ASSET NOTIFICATIONS ====================
+    // (These are handled specially in NotificationItem to open the sidebar)
+    
+    case 'social_asset_pending':
+    case 'social_asset_approved':
+    case 'social_asset_rejected':
+      // Fallback navigation if messaging context not available
+      if (metadata?.project_id) {
+        navigate(`/project/${metadata.project_id}?tab=social-assets`)
+      }
+      break
+
     // ==================== DEFAULT ====================
     
     default:
@@ -252,6 +318,7 @@ export function getNotificationPath(notification: EnrichedNotification): string 
 
     case 'job_dispute_created':
     case 'job_dispute_vote':
+    case 'job_dispute_resolved':
       if (!reference_id) return null
       return metadata?.project_id 
         ? `/project/${metadata.project_id}/jobs/${reference_id}?tab=disputes`
@@ -292,6 +359,65 @@ export function getNotificationPath(notification: EnrichedNotification): string 
 
     case 'admin_revenue_earned':
       return '/admin/revenue'
+
+    // Social media job submissions
+    case 'social_submission_received':
+    case 'social_submission_approved':
+    case 'social_submission_denied':
+    case 'social_payment_distributed':
+      if (reference_id) {
+        return metadata?.project_id 
+          ? `/project/${metadata.project_id}/jobs/${reference_id}`
+          : `/jobs/${reference_id}`
+      }
+      return metadata?.job_id ? `/jobs/${metadata.job_id}` : null
+
+    // Contest notifications
+    case 'contest_judging_started':
+    case 'contest_winners_selected':
+    case 'contest_prize_won':
+    case 'contest_no_submissions':
+    case 'contest_deadline_reminder':
+      if (!reference_id) return null
+      return metadata?.project_id 
+        ? `/project/${metadata.project_id}/jobs/${reference_id}`
+        : `/jobs/${reference_id}`
+
+    // Job status changes
+    case 'job_status_changed':
+      if (!reference_id) return null
+      return metadata?.project_id 
+        ? `/project/${metadata.project_id}/jobs/${reference_id}`
+        : `/jobs/${reference_id}`
+
+    // Editor notifications
+    case 'editor_added':
+    case 'editor_removed':
+      if (reference_id) return `/project/${reference_id}`
+      return metadata?.project_id ? `/project/${metadata.project_id}` : null
+
+    // Social asset review notifications
+    case 'social_asset_pending':
+    case 'social_asset_approved':
+    case 'social_asset_rejected':
+      return metadata?.project_id ? `/project/${metadata.project_id}?tab=social-assets` : null
+
+    // Revision notifications
+    case 'revision_requested':
+    case 'voluntary_revision_requested':
+      if (!reference_id) return null
+      return metadata?.project_id 
+        ? `/project/${metadata.project_id}/jobs/${reference_id}#submitted-work`
+        : `/jobs/${reference_id}#submitted-work`
+
+    case 'voluntary_revision_accepted':
+    case 'voluntary_revision_declined':
+    case 'high_revision_count_warning_poster':
+    case 'high_revision_count_warning_worker':
+      if (!reference_id) return null
+      return metadata?.project_id 
+        ? `/project/${metadata.project_id}/jobs/${reference_id}`
+        : `/jobs/${reference_id}`
 
     default:
       return null

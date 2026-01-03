@@ -10,3 +10,4 @@ ON projects USING GIN (domains);
 COMMENT ON COLUMN projects.domains IS 
   'Array of domains associated with the project (e.g., example.com, app.example.com)';
 
+

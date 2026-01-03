@@ -47,7 +47,7 @@ import {
  * <ActivityFeed projectId="project-uuid-123" />
  * ```
  */
-export function ActivityFeed({ projectId, tokenMint }: ActivityFeedProps) {
+export function ActivityFeed({ projectId, tokenMint, onAddAsset, onPostWork }: ActivityFeedProps) {
   const [feedItems, setFeedItems] = useState<FeedItemType[]>([])
   const [loading, setLoading] = useState(true)
   const [hasMore, setHasMore] = useState(true)
@@ -659,7 +659,7 @@ export function ActivityFeed({ projectId, tokenMint }: ActivityFeedProps) {
       )}
       
       {!loading && !error && feedItems.length === 0 && (
-        <FeedEmptyState projectId={projectId} />
+        <FeedEmptyState projectId={projectId} onAddAsset={onAddAsset} onPostWork={onPostWork} />
       )}
       
       {!loading && !error && feedItems.length > 0 && (

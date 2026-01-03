@@ -370,3 +370,4 @@ GRANT EXECUTE ON FUNCTION current_wallet_is_verified() TO authenticated;
 
 
 
+

@@ -127,3 +127,4 @@ COMMENT ON FUNCTION cleanup_expired_editor_sessions IS
 -- DROP FUNCTION IF EXISTS is_valid_editor_session(uuid, text);
 -- DROP TABLE IF EXISTS editor_sessions CASCADE;
 
+

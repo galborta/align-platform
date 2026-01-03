@@ -126,3 +126,4 @@ CREATE INDEX IF NOT EXISTS idx_admin_logs_created_at
 -- COMMENT ON COLUMN admin_logs.action IS 'Action type identifier';
 -- COMMENT ON COLUMN admin_logs.details IS 'JSONB object containing action-specific metadata';
 
+

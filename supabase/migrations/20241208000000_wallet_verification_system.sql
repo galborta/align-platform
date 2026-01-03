@@ -289,3 +289,4 @@ GRANT EXECUTE ON FUNCTION has_accepted_terms(TEXT, TEXT) TO authenticated;
 
 
 
+

@@ -159,3 +159,4 @@ Both elements navigate to:
 **Lines Changed**: ~50 lines (imports + JSX + CSS)  
 **Files Modified**: 1 (`app/submit-project/page.tsx`)
 
+

@@ -65,3 +65,4 @@ ALTER TABLE notifications ADD CONSTRAINT valid_notification_type CHECK (type IN 
 COMMENT ON CONSTRAINT valid_notification_type ON notifications IS 
   'Ensures notification type is one of the valid notification types including social asset review types';
 
+

@@ -36,6 +36,7 @@ const NOTIFICATION_ICONS: Record<NotificationType, LucideIcon> = {
   job_completed: DollarSign,
   job_dispute_created: AlertTriangle,
   job_dispute_vote: ThumbsUp,
+  job_dispute_resolved: CheckCircle,
   job_comment: MessageSquare,
   asset_upvote: ThumbsUp,
   asset_verified: BadgeCheck,
@@ -47,7 +48,7 @@ const NOTIFICATION_ICONS: Record<NotificationType, LucideIcon> = {
   karma_ban: ShieldX,
   payment_released: ArrowDown,
   payment_refunded: ArrowUp,
-  admin_dispute_new: Shield,
+  admin_dispute_new: AlertTriangle,
   admin_job_new: Shield,
   admin_asset_new: Shield,
   admin_revenue_earned: Shield,
@@ -72,9 +73,9 @@ const NOTIFICATION_ICONS: Record<NotificationType, LucideIcon> = {
   social_asset_pending: BadgeCheck,
   social_asset_approved: CheckCircle,
   social_asset_rejected: XCircle,
-  // Dispute notifications
-  admin_dispute_new: AlertTriangle,
-  job_dispute_resolved: CheckCircle,
+  // Editor notifications
+  editor_added: BadgeCheck,
+  editor_removed: EyeOff,
 }
 
 // Icon color mapping

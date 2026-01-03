@@ -36,3 +36,4 @@ COMMENT ON COLUMN projects.editor_wallets IS
 -- ALTER TABLE projects DROP COLUMN IF EXISTS editor_wallets;
 -- DROP INDEX IF EXISTS idx_projects_editor_wallets;
 
+

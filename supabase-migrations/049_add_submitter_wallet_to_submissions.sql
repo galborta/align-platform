@@ -16,3 +16,4 @@ COMMENT ON COLUMN project_submissions.submitter_wallet IS 'Wallet address of the
 -- Note: This column may be NULL for existing submissions (created before this migration)
 -- Future submissions will require a wallet connection and will have this populated
 
+

@@ -300,9 +300,10 @@ export default function AddEditorsStep({
                             '#4B5563',
                         }}
                       >
-                        {wallet.type === 'team' ? '👤 Team' : 
-                         wallet.type === 'treasury' ? '💰 Treasury' : 
-                         wallet.type === 'liquidity' ? '💧 Liquidity' : '📌 Other'}
+                                        {wallet.type === 'team' ? '👤 Team' : 
+                                         wallet.type === 'treasury' ? '💰 Treasury' : 
+                                         wallet.type === 'liquidity' ? '💧 Liquidity' : 
+                                         wallet.type === 'deployer' ? '🚀 Deployer' : '📌 Other'}
                       </span>
                     </div>
                     <p
