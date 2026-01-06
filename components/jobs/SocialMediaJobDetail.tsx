@@ -20,6 +20,7 @@ import { useWallet } from '@solana/wallet-adapter-react'
 import { format, formatDistanceToNow } from 'date-fns'
 import { supabase } from '@/lib/supabase'
 import { toast } from 'react-hot-toast'
+import bs58 from 'bs58'
 
 // Icons
 import CampaignIcon from '@mui/icons-material/Campaign'
@@ -43,7 +44,10 @@ import {
 } from '@/lib/social-media-jobs'
 
 // Submission modal
-import SubmitSocialParticipationModal from './SubmitSocialParticipationModal'
+import SubmissionModal from './social/SubmissionModal'
+
+// Poster review dashboard
+import PosterReviewDashboard from './PosterReviewDashboard'
 
 // Display name hook
 import { usePosterDisplayName } from '@/lib/usePosterDisplayName'
@@ -64,8 +68,19 @@ export default function SocialMediaJobDetail({
   tokenSymbol = 'tokens',
   onSubmissionSuccess
 }: SocialMediaJobDetailProps) {
-  const { publicKey } = useWallet()
+  const { publicKey, signMessage: walletSignMessage } = useWallet()
   const { displayNameOrWallet, hasDisplayName } = usePosterDisplayName(job.poster_wallet)
+  
+  // Wrapper for signing messages
+  const signMessage = async (message: string): Promise<string> => {
+    if (!walletSignMessage) {
+      throw new Error('Wallet does not support message signing')
+    }
+    const encodedMessage = new TextEncoder().encode(message)
+    const signatureUint8 = await walletSignMessage(encodedMessage)
+    // Return base58-encoded signature (expected by backend)
+    return bs58.encode(signatureUint8)
+  }
   const [submissionCount, setSubmissionCount] = useState(0)
   const [userSubmission, setUserSubmission] = useState<JobSubmission | null>(null)
   const [allSubmissions, setAllSubmissions] = useState<JobSubmission[]>([])
@@ -101,7 +116,8 @@ export default function SocialMediaJobDetail({
   }
 
   const campaignPhase = getCampaignPhase()
-  const canSubmit = campaignPhase === 'open' && !userSubmission && publicKey
+  const isPoster = publicKey && job.poster_wallet === publicKey.toString()
+  const canSubmit = campaignPhase === 'open' && !userSubmission && publicKey && !isPoster
 
   // Fetch submission data
   useEffect(() => {
@@ -198,7 +214,7 @@ export default function SocialMediaJobDetail({
 
   return (
     <Box>
-      {/* Campaign Header */}
+      {/* Campaign Header - Full Width */}
       <Paper
         sx={{
           p: 'var(--space-lg, 24px)',
@@ -303,7 +319,7 @@ export default function SocialMediaJobDetail({
         </Box>
       </Paper>
 
-      {/* User Submission Status */}
+      {/* User Submission Status - Full Width */}
       {userSubmission && (
         <Alert
           severity={
@@ -334,8 +350,12 @@ export default function SocialMediaJobDetail({
         </Alert>
       )}
 
-      {/* Campaign Details Section */}
-      <Paper
+      {/* 2-Column Grid Layout */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        {/* Left Column - Main Content (2/3 width) */}
+        <div className="lg:col-span-2 space-y-6">
+          {/* Campaign Details Section */}
+          <Paper
         sx={{
           p: 'var(--space-lg, 24px)',
           mb: 3,
@@ -491,254 +511,109 @@ export default function SocialMediaJobDetail({
         </Box>
       </Paper>
 
-      {/* Campaign Stats Section */}
-      <Paper
-        sx={{
-          p: 'var(--space-lg, 24px)',
-          mb: 3,
-          bgcolor: 'var(--card-background, #FFFFFF)',
-          borderRadius: 'var(--radius-card-lg, 24px)',
-          boxShadow: 'var(--shadow-card, 0 20px 40px 0 rgba(15, 23, 42, 0.06))'
-        }}
-      >
-        <Typography
-          variant="h6"
+          {/* Submissions Section - Show wallets who submitted */}
+      {allSubmissions.length > 0 && (
+        <Paper
           sx={{
-            fontFamily: 'var(--font-heading, Space Grotesk, sans-serif)',
-            fontWeight: 600,
-            color: 'var(--text-primary, #1A1A1E)',
-            mb: 2
+            p: 'var(--space-lg, 24px)',
+            mb: 3,
+            bgcolor: 'var(--card-background, #FFFFFF)',
+            borderRadius: 'var(--radius-card-lg, 24px)',
+            boxShadow: 'var(--shadow-card, 0 20px 40px 0 rgba(15, 23, 42, 0.06))'
           }}
         >
-          Campaign Stats
-        </Typography>
-
-        <Divider sx={{ mb: 3, bgcolor: 'var(--border-subtle, #E5E7F0)' }} />
-
-        {/* Budget tiers display */}
-        <Box sx={{ mb: 3 }}>
           <Typography
-            variant="subtitle2"
+            variant="h6"
             sx={{
-              fontFamily: 'var(--font-body, Satoshi, sans-serif)',
+              fontFamily: 'var(--font-heading, Space Grotesk, sans-serif)',
               fontWeight: 600,
               color: 'var(--text-primary, #1A1A1E)',
               mb: 2
             }}
           >
-            💰 Tiered Budget Structure
+            📋 Submissions ({allSubmissions.length})
           </Typography>
-          <Box sx={{ bgcolor: 'var(--subtle-background, #F7F8FB)', borderRadius: 2, p: 2 }}>
-            {budgetTiers.map((tier, index) => (
+
+          <Divider sx={{ mb: 3, bgcolor: 'var(--border-subtle, #E5E7F0)' }} />
+
+          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+            {allSubmissions.map((submission) => (
               <Box
-                key={index}
+                key={submission.id}
                 sx={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 1,
-                  py: 0.75,
-                  px: 1.5,
-                  borderRadius: 1,
-                  bgcolor: activeTier === tier ? 'var(--accent-primary-soft, #EEE7FF)' : 'transparent',
-                  border: activeTier === tier ? '1px solid var(--accent-primary, #7C4DFF)' : '1px solid transparent',
-                  mb: 0.5
+                  p: 2,
+                  borderRadius: '12px',
+                  border: '1px solid #E5E7F0',
+                  bgcolor: submission.social_approval_status === 'approved' || submission.social_approval_status === 'auto_approved'
+                    ? 'rgba(76, 175, 80, 0.05)'
+                    : submission.social_approval_status === 'denied'
+                      ? 'rgba(244, 67, 54, 0.05)'
+                      : '#FFFFFF'
                 }}
               >
-                <Typography
-                  variant="body2"
-                  sx={{
-                    fontWeight: activeTier === tier ? 700 : 400,
-                    color: activeTier === tier ? 'var(--accent-primary, #7C4DFF)' : 'var(--text-secondary, #6F7280)',
-                    fontFamily: 'var(--font-body, Satoshi, sans-serif)',
-                    flex: 1
-                  }}
-                >
-                  {formatTierRange(tier)}
-                </Typography>
-                <Typography
-                  variant="body2"
-                  sx={{
-                    fontWeight: activeTier === tier ? 700 : 500,
-                    color: activeTier === tier ? 'var(--accent-primary, #7C4DFF)' : 'var(--text-primary, #1A1A1E)',
-                    fontFamily: 'var(--font-body, Satoshi, sans-serif)'
-                  }}
-                >
-                  {tier.budget_tokens.toLocaleString()} {tokenSymbol}
-                </Typography>
-                <Typography
-                  variant="caption"
-                  sx={{
-                    color: 'var(--text-muted, #A3A7B5)',
-                    fontFamily: 'var(--font-body, Satoshi, sans-serif)'
-                  }}
-                >
-                  (~${tier.budget_usd.toFixed(0)})
-                </Typography>
-                {activeTier === tier && (
+                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
+                  <Typography
+                    variant="body2"
+                    sx={{
+                      fontFamily: 'var(--font-mono, JetBrains Mono, monospace)',
+                      fontSize: '13px',
+                      color: 'var(--text-primary, #1A1A1E)',
+                      fontWeight: 600
+                    }}
+                  >
+                    {submission.worker_wallet.slice(0, 4)}...{submission.worker_wallet.slice(-4)}
+                  </Typography>
                   <Chip
-                    label="CURRENT"
+                    label={
+                      submission.social_approval_status === 'approved' || submission.social_approval_status === 'auto_approved'
+                        ? 'Approved'
+                        : submission.social_approval_status === 'denied'
+                          ? 'Denied'
+                          : 'Pending'
+                    }
                     size="small"
                     sx={{
-                      bgcolor: 'var(--accent-primary, #7C4DFF)',
+                      bgcolor: submission.social_approval_status === 'approved' || submission.social_approval_status === 'auto_approved'
+                        ? '#4CAF50'
+                        : submission.social_approval_status === 'denied'
+                          ? '#EF4444'
+                          : '#FFA726',
                       color: '#FFFFFF',
-                      fontSize: '10px',
-                      fontWeight: 700,
-                      height: 20
+                      fontWeight: 600,
+                      fontSize: '11px'
                     }}
                   />
+                </Box>
+                <Typography variant="caption" sx={{ color: 'var(--text-secondary, #6F7280)' }}>
+                  Submitted {formatDistanceToNow(new Date(submission.submitted_at!), { addSuffix: true })}
+                  {submission.social_follower_count && ` • ${submission.social_follower_count.toLocaleString()} followers`}
+                </Typography>
+                {submission.social_tweet_link && (
+                  <Box sx={{ mt: 1 }}>
+                    <MuiLink
+                      href={submission.social_tweet_link}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      sx={{ fontSize: '12px', color: 'var(--accent-primary, #7C4DFF)' }}
+                    >
+                      View Tweet →
+                    </MuiLink>
+                  </Box>
                 )}
               </Box>
             ))}
           </Box>
-        </Box>
+          </Paper>
+          )}
 
-        {/* Current status */}
-        <Box
-          sx={{
-            p: 2.5,
-            bgcolor: 'var(--accent-primary-soft, #EEE7FF)',
-            borderRadius: 'var(--radius-card-lg, 24px)',
-            mb: 3
-          }}
-        >
-          <Typography
-            variant="subtitle2"
-            sx={{
-              fontFamily: 'var(--font-body, Satoshi, sans-serif)',
-              fontWeight: 600,
-              color: 'var(--accent-primary, #7C4DFF)',
-              mb: 1.5
-            }}
-          >
-            📊 Current Status
-          </Typography>
-          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.75 }}>
-            <Typography variant="body2" sx={{ color: 'var(--text-primary, #1A1A1E)' }}>
-              <strong>Current Participants:</strong> {submissionCount}
-            </Typography>
-            {activeTier && (
-              <>
-                <Typography variant="body2" sx={{ color: 'var(--text-primary, #1A1A1E)' }}>
-                  <strong>Active Tier:</strong> {formatTierRange(activeTier)}
-                </Typography>
-                <Typography variant="body2" sx={{ color: 'var(--text-primary, #1A1A1E)' }}>
-                  <strong>Current Budget Pool:</strong> {activeTier.budget_tokens.toLocaleString()} {tokenSymbol} (~${activeTier.budget_usd.toFixed(0)})
-                </Typography>
-                {tierEstimate && (
-                  <Typography variant="body2" sx={{ color: 'var(--accent-primary, #7C4DFF)', fontWeight: 600 }}>
-                    <strong>Est. Payment Per Person:</strong> ~{tierEstimate.tokensPerPerson.toFixed(0)} {tokenSymbol} (~${tierEstimate.usdPerPerson.toFixed(2)})
-                  </Typography>
-                )}
-              </>
-            )}
-          </Box>
-        </Box>
-
-        {/* Next tier incentive */}
-        {nextTier && campaignPhase === 'open' && (
-          <Alert
-            severity="info"
-            sx={{
-              mb: 3,
-              borderRadius: 'var(--radius-card-lg, 24px)',
-              '& .MuiAlert-message': { fontFamily: 'var(--font-body, Satoshi, sans-serif)' }
-            }}
-          >
-            <Typography variant="body2" sx={{ fontWeight: 600 }}>
-              🚀 {nextTier.participantsNeeded} more participant{nextTier.participantsNeeded !== 1 ? 's' : ''} needed to unlock{' '}
-              <strong>{nextTier.tier.budget_tokens.toLocaleString()} {tokenSymbol}</strong> budget tier!
-            </Typography>
-            <LinearProgress
-              variant="determinate"
-              value={((activeTier?.max_participants || submissionCount) - (activeTier?.min_participants || 0)) / 
-                     ((nextTier.tier.min_participants || 1) - (activeTier?.min_participants || 0)) * 100}
-              sx={{
-                mt: 1,
-                height: 6,
-                borderRadius: 1,
-                bgcolor: 'rgba(33, 150, 243, 0.2)',
-                '& .MuiLinearProgress-bar': { bgcolor: '#2196F3', borderRadius: 1 }
-              }}
-            />
-          </Alert>
-        )}
-
-        {/* Requirements */}
-        {job.social_min_followers_required && job.social_min_followers_required > 0 && (
-          <Box sx={{ mb: 3 }}>
-            <Typography
-              variant="body2"
-              sx={{
-                color: 'var(--text-primary, #1A1A1E)',
-                fontFamily: 'var(--font-body, Satoshi, sans-serif)',
-                display: 'flex',
-                alignItems: 'center',
-                gap: 1
-              }}
-            >
-              👥 <strong>Minimum Followers Required:</strong> {job.social_min_followers_required.toLocaleString()}+
-            </Typography>
-          </Box>
-        )}
-
-        {/* Timeline */}
-        <Box>
-          <Typography
-            variant="subtitle2"
-            sx={{
-              fontFamily: 'var(--font-body, Satoshi, sans-serif)',
-              fontWeight: 600,
-              color: 'var(--text-primary, #1A1A1E)',
-              mb: 2
-            }}
-          >
-            ⏰ Timeline
-          </Typography>
-          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1, ml: 1 }}>
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-              {now < submissionDeadline ? (
-                <AccessTimeIcon sx={{ fontSize: 16, color: 'var(--accent-warning, #FFC857)' }} />
-              ) : (
-                <CheckCircleIcon sx={{ fontSize: 16, color: 'var(--accent-success, #36C170)' }} />
-              )}
-              <Typography variant="body2" sx={{ color: 'var(--text-secondary, #6F7280)' }}>
-                <strong>Submit by:</strong> {format(submissionDeadline, 'MMM dd, yyyy h:mm a')}
-                {now < submissionDeadline && (
-                  <span style={{ color: 'var(--accent-warning, #FFC857)', marginLeft: 8 }}>
-                    ({formatDistanceToNow(submissionDeadline, { addSuffix: true }).replace('in ', '')} left)
-                  </span>
-                )}
-              </Typography>
-            </Box>
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-              {now < engagementDeadline ? (
-                <AccessTimeIcon sx={{ fontSize: 16, color: 'var(--text-muted, #A3A7B5)' }} />
-              ) : (
-                <CheckCircleIcon sx={{ fontSize: 16, color: 'var(--accent-success, #36C170)' }} />
-              )}
-              <Typography variant="body2" sx={{ color: 'var(--text-secondary, #6F7280)' }}>
-                <strong>Engagement period ends:</strong> {format(engagementDeadline, 'MMM dd, yyyy h:mm a')}
-              </Typography>
-            </Box>
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-              {now < reviewDeadline ? (
-                <AccessTimeIcon sx={{ fontSize: 16, color: 'var(--text-muted, #A3A7B5)' }} />
-              ) : (
-                <CheckCircleIcon sx={{ fontSize: 16, color: 'var(--accent-success, #36C170)' }} />
-              )}
-              <Typography variant="body2" sx={{ color: 'var(--text-secondary, #6F7280)' }}>
-                <strong>Review deadline:</strong> {format(reviewDeadline, 'MMM dd, yyyy h:mm a')}
-              </Typography>
-            </Box>
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-              <LockIcon sx={{ fontSize: 16, color: 'var(--accent-primary, #7C4DFF)' }} />
-              <Typography variant="body2" sx={{ color: 'var(--accent-primary, #7C4DFF)', fontWeight: 600 }}>
-                <strong>Expected payment:</strong> {format(reviewDeadline, 'MMM dd, yyyy')}
-              </Typography>
-            </Box>
-          </Box>
-        </Box>
-      </Paper>
+          {/* Poster Review Dashboard - Only visible to job poster */}
+      {isPoster && allSubmissions.length > 0 && publicKey && (
+        <PosterReviewDashboard
+          job={job}
+          submissions={allSubmissions}
+          currentUserWallet={publicKey.toString()}
+        />
+      )}
 
       {/* How it works section */}
       <Paper
@@ -815,98 +690,443 @@ export default function SocialMediaJobDetail({
             Final payment is based on your post's reach and engagement metrics.
           </Typography>
         </Alert>
-      </Paper>
+          </Paper>
 
-      {/* Submit Button */}
-      {canSubmit && (
-        <Paper
-          sx={{
-            p: 'var(--space-lg, 24px)',
-            mb: 3,
-            bgcolor: 'var(--accent-primary-soft, #EEE7FF)',
-            border: '2px solid var(--accent-primary, #7C4DFF)',
-            borderRadius: 'var(--radius-card-lg, 24px)',
-            textAlign: 'center'
-          }}
-        >
-          <Typography
-            variant="h6"
-            sx={{
-              fontFamily: 'var(--font-heading, Space Grotesk, sans-serif)',
-              fontWeight: 600,
-              color: 'var(--text-primary, #1A1A1E)',
-              mb: 1
-            }}
-          >
-            Ready to Participate?
-          </Typography>
-          <Typography
-            variant="body2"
-            sx={{
-              color: 'var(--text-secondary, #6F7280)',
-              fontFamily: 'var(--font-body, Satoshi, sans-serif)',
-              mb: 3
-            }}
-          >
-            {job.social_job_type === 'retweet'
-              ? 'Retweet the campaign tweet, then submit your retweet link below.'
-              : 'Post your original tweet, then submit your tweet link below.'}
-          </Typography>
-          <Button
-            variant="contained"
-            size="large"
-            onClick={() => setShowSubmitModal(true)}
-            sx={{
-              bgcolor: 'var(--accent-primary, #7C4DFF)',
-              color: '#FFFFFF',
-              fontFamily: 'var(--font-body, Satoshi, sans-serif)',
-              fontWeight: 600,
-              fontSize: '16px',
-              px: 6,
-              py: 1.5,
-              borderRadius: 'var(--radius-control, 999px)',
-              boxShadow: '0 4px 14px rgba(124, 77, 255, 0.3)',
-              '&:hover': {
-                bgcolor: '#6A3FE8',
-                boxShadow: '0 6px 20px rgba(124, 77, 255, 0.4)'
-              }
-            }}
-          >
-            🚀 Submit My Participation
-          </Button>
-        </Paper>
-      )}
+          {/* Submit Button - Also at bottom of main content */}
+          {canSubmit && (
+            <Paper
+              sx={{
+                p: 'var(--space-lg, 24px)',
+                bgcolor: 'var(--accent-primary-soft, #EEE7FF)',
+                border: '2px solid var(--accent-primary, #7C4DFF)',
+                borderRadius: 'var(--radius-card-lg, 24px)',
+                textAlign: 'center'
+              }}
+            >
+              <Typography
+                variant="h6"
+                sx={{
+                  fontFamily: 'var(--font-heading, Space Grotesk, sans-serif)',
+                  fontWeight: 600,
+                  color: 'var(--text-primary, #1A1A1E)',
+                  mb: 1
+                }}
+              >
+                Ready to Participate?
+              </Typography>
+              <Typography
+                variant="body2"
+                sx={{
+                  color: 'var(--text-secondary, #6F7280)',
+                  fontFamily: 'var(--font-body, Satoshi, sans-serif)',
+                  mb: 3
+                }}
+              >
+                {job.social_job_type === 'retweet'
+                  ? 'Retweet the campaign tweet, then submit your retweet link below.'
+                  : 'Post your original tweet, then submit your tweet link below.'}
+              </Typography>
+              <Button
+                variant="contained"
+                size="large"
+                onClick={() => setShowSubmitModal(true)}
+                sx={{
+                  bgcolor: 'var(--accent-primary, #7C4DFF)',
+                  color: '#FFFFFF',
+                  fontFamily: 'var(--font-body, Satoshi, sans-serif)',
+                  fontWeight: 600,
+                  fontSize: '16px',
+                  px: 6,
+                  py: 1.5,
+                  borderRadius: 'var(--radius-control, 999px)',
+                  boxShadow: '0 4px 14px rgba(124, 77, 255, 0.3)',
+                  '&:hover': {
+                    bgcolor: '#6A3FE8',
+                    boxShadow: '0 6px 20px rgba(124, 77, 255, 0.4)'
+                  }
+                }}
+              >
+                🚀 Submit My Participation
+              </Button>
+            </Paper>
+          )}
 
-      {/* Not connected wallet message */}
-      {!publicKey && campaignPhase === 'open' && (
-        <Alert
-          severity="info"
-          sx={{
-            mb: 3,
-            borderRadius: 'var(--radius-card-lg, 24px)',
-            '& .MuiAlert-message': { fontFamily: 'var(--font-body, Satoshi, sans-serif)' }
-          }}
-        >
-          <Typography variant="body2" sx={{ fontWeight: 500 }}>
-            🔗 Connect your wallet to participate in this campaign.
-          </Typography>
-        </Alert>
-      )}
+          {/* Not connected wallet message */}
+          {!publicKey && campaignPhase === 'open' && (
+            <Alert
+              severity="info"
+              sx={{
+                borderRadius: 'var(--radius-card-lg, 24px)',
+                '& .MuiAlert-message': { fontFamily: 'var(--font-body, Satoshi, sans-serif)' }
+              }}
+            >
+              <Typography variant="body2" sx={{ fontWeight: 500 }}>
+                🔗 Connect your wallet to participate in this campaign.
+              </Typography>
+            </Alert>
+          )}
+        </div>
+
+        {/* Right Column - Sidebar (1/3 width) */}
+        <div className="lg:col-span-1 space-y-6">
+          {/* Submit Participation Action - Top Priority */}
+          {canSubmit && (
+            <Paper
+              sx={{
+                p: 'var(--space-lg, 24px)',
+                bgcolor: 'var(--accent-primary-soft, #EEE7FF)',
+                border: '2px solid var(--accent-primary, #7C4DFF)',
+                borderRadius: 'var(--radius-card-lg, 24px)',
+                boxShadow: 'var(--shadow-card, 0 20px 40px 0 rgba(15, 23, 42, 0.06))',
+                textAlign: 'center'
+              }}
+            >
+              <Typography
+                variant="h6"
+                sx={{
+                  fontFamily: 'var(--font-heading, Space Grotesk, sans-serif)',
+                  fontWeight: 600,
+                  color: 'var(--text-primary, #1A1A1E)',
+                  mb: 1
+                }}
+              >
+                Ready to Participate?
+              </Typography>
+              <Typography
+                variant="body2"
+                sx={{
+                  color: 'var(--text-secondary, #6F7280)',
+                  fontFamily: 'var(--font-body, Satoshi, sans-serif)',
+                  mb: 3
+                }}
+              >
+                {job.social_job_type === 'retweet'
+                  ? 'Retweet the campaign tweet, then submit your retweet link below.'
+                  : 'Post your original tweet, then submit your tweet link below.'}
+              </Typography>
+              <Button
+                variant="contained"
+                fullWidth
+                size="large"
+                onClick={() => setShowSubmitModal(true)}
+                sx={{
+                  bgcolor: 'var(--accent-primary, #7C4DFF)',
+                  color: '#FFFFFF',
+                  fontFamily: 'var(--font-body, Satoshi, sans-serif)',
+                  fontWeight: 600,
+                  fontSize: '16px',
+                  py: 1.5,
+                  borderRadius: 'var(--radius-control, 999px)',
+                  boxShadow: '0 4px 14px rgba(124, 77, 255, 0.3)',
+                  '&:hover': {
+                    bgcolor: '#6A3FE8',
+                    boxShadow: '0 6px 20px rgba(124, 77, 255, 0.4)'
+                  }
+                }}
+              >
+                🚀 Submit My Participation
+              </Button>
+            </Paper>
+          )}
+
+          {/* Not Connected Message */}
+          {!publicKey && campaignPhase === 'open' && (
+            <Alert
+              severity="info"
+              sx={{
+                borderRadius: 'var(--radius-card-lg, 24px)',
+                '& .MuiAlert-message': { fontFamily: 'var(--font-body, Satoshi, sans-serif)' }
+              }}
+            >
+              <Typography variant="body2" sx={{ fontWeight: 500 }}>
+                🔗 Connect your wallet to participate in this campaign.
+              </Typography>
+            </Alert>
+          )}
+
+          {/* Campaign Stats */}
+          <Paper
+            sx={{
+              p: 'var(--space-lg, 24px)',
+              bgcolor: 'var(--card-background, #FFFFFF)',
+              borderRadius: 'var(--radius-card-lg, 24px)',
+              boxShadow: 'var(--shadow-card, 0 20px 40px 0 rgba(15, 23, 42, 0.06))'
+            }}
+          >
+            <Typography
+              variant="h6"
+              sx={{
+                fontFamily: 'var(--font-heading, Space Grotesk, sans-serif)',
+                fontWeight: 600,
+                color: 'var(--text-primary, #1A1A1E)',
+                mb: 2
+              }}
+            >
+              Campaign Stats
+            </Typography>
+
+            <Divider sx={{ mb: 2, bgcolor: 'var(--border-subtle, #E5E7F0)' }} />
+
+            {/* Current status */}
+            <Box sx={{ mb: 2.5 }}>
+              <Typography
+                variant="subtitle2"
+                sx={{
+                  fontFamily: 'var(--font-body, Satoshi, sans-serif)',
+                  fontWeight: 600,
+                  color: 'var(--accent-primary, #7C4DFF)',
+                  mb: 1.5,
+                  fontSize: '12px'
+                }}
+              >
+                📊 CURRENT STATUS
+              </Typography>
+              <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+                <Typography variant="body2" sx={{ color: 'var(--text-primary, #1A1A1E)', fontSize: '14px' }}>
+                  <strong>Participants:</strong> {submissionCount}
+                </Typography>
+                {activeTier && (
+                  <>
+                    <Typography variant="body2" sx={{ color: 'var(--text-primary, #1A1A1E)', fontSize: '14px' }}>
+                      <strong>Active Tier:</strong> {formatTierRange(activeTier)}
+                    </Typography>
+                    <Typography variant="body2" sx={{ color: 'var(--text-primary, #1A1A1E)', fontSize: '14px' }}>
+                      <strong>Budget Pool:</strong> ${activeTier.budget_usd.toFixed(0)}
+                    </Typography>
+                    {tierEstimate && (
+                      <Typography variant="body2" sx={{ color: 'var(--accent-primary, #7C4DFF)', fontWeight: 600, fontSize: '14px' }}>
+                        <strong>Est. Per Person:</strong> ~${tierEstimate.usdPerPerson.toFixed(2)}
+                      </Typography>
+                    )}
+                  </>
+                )}
+              </Box>
+            </Box>
+
+            <Divider sx={{ my: 2, bgcolor: 'var(--border-subtle, #E5E7F0)' }} />
+
+            {/* Timeline */}
+            <Box>
+              <Typography
+                variant="subtitle2"
+                sx={{
+                  fontFamily: 'var(--font-body, Satoshi, sans-serif)',
+                  fontWeight: 600,
+                  color: 'var(--text-primary, #1A1A1E)',
+                  mb: 1.5,
+                  fontSize: '12px'
+                }}
+              >
+                ⏰ TIMELINE
+              </Typography>
+              <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+                <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 1 }}>
+                  {now < submissionDeadline ? (
+                    <AccessTimeIcon sx={{ fontSize: 16, color: 'var(--accent-warning, #FFC857)', mt: 0.3 }} />
+                  ) : (
+                    <CheckCircleIcon sx={{ fontSize: 16, color: 'var(--accent-success, #36C170)', mt: 0.3 }} />
+                  )}
+                  <Box sx={{ flex: 1 }}>
+                    <Typography variant="caption" sx={{ color: 'var(--text-secondary, #6F7280)', display: 'block', fontSize: '11px' }}>
+                      Submit by
+                    </Typography>
+                    <Typography variant="body2" sx={{ color: 'var(--text-primary, #1A1A1E)', fontWeight: 500, fontSize: '13px' }}>
+                      {format(submissionDeadline, 'MMM dd, h:mm a')}
+                    </Typography>
+                    {now < submissionDeadline && (
+                      <Typography variant="caption" sx={{ color: 'var(--accent-warning, #FFC857)', fontSize: '11px' }}>
+                        {formatDistanceToNow(submissionDeadline, { addSuffix: true }).replace('in ', '')} left
+                      </Typography>
+                    )}
+                  </Box>
+                </Box>
+                <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 1 }}>
+                  <LockIcon sx={{ fontSize: 16, color: 'var(--accent-primary, #7C4DFF)', mt: 0.3 }} />
+                  <Box sx={{ flex: 1 }}>
+                    <Typography variant="caption" sx={{ color: 'var(--text-secondary, #6F7280)', display: 'block', fontSize: '11px' }}>
+                      Expected payment
+                    </Typography>
+                    <Typography variant="body2" sx={{ color: 'var(--accent-primary, #7C4DFF)', fontWeight: 600, fontSize: '13px' }}>
+                      {format(reviewDeadline, 'MMM dd, yyyy')}
+                    </Typography>
+                  </Box>
+                </Box>
+              </Box>
+            </Box>
+
+            {/* Minimum followers if required */}
+            {job.social_min_followers_required && job.social_min_followers_required > 0 && (
+              <>
+                <Divider sx={{ my: 2, bgcolor: 'var(--border-subtle, #E5E7F0)' }} />
+                <Box>
+                  <Typography
+                    variant="body2"
+                    sx={{
+                      color: 'var(--text-primary, #1A1A1E)',
+                      fontFamily: 'var(--font-body, Satoshi, sans-serif)',
+                      fontSize: '13px'
+                    }}
+                  >
+                    👥 <strong>Min. Followers:</strong> {job.social_min_followers_required.toLocaleString()}+
+                  </Typography>
+                </Box>
+              </>
+            )}
+          </Paper>
+
+          {/* Payment Tiers */}
+          <Paper
+            sx={{
+              p: 'var(--space-lg, 24px)',
+              bgcolor: 'var(--card-background, #FFFFFF)',
+              borderRadius: 'var(--radius-card-lg, 24px)',
+              boxShadow: 'var(--shadow-card, 0 20px 40px 0 rgba(15, 23, 42, 0.06))'
+            }}
+          >
+            <Typography
+              variant="h6"
+              sx={{
+                fontFamily: 'var(--font-heading, Space Grotesk, sans-serif)',
+                fontWeight: 600,
+                color: 'var(--text-primary, #1A1A1E)',
+                mb: 2
+              }}
+            >
+              💰 Payment Tiers
+            </Typography>
+
+            <Divider sx={{ mb: 2, bgcolor: 'var(--border-subtle, #E5E7F0)' }} />
+
+            {/* Budget tiers display */}
+            <Box>
+              <Typography
+                variant="subtitle2"
+                sx={{
+                  fontFamily: 'var(--font-body, Satoshi, sans-serif)',
+                  fontWeight: 600,
+                  mb: 2,
+                  textTransform: 'uppercase',
+                  fontSize: '11px',
+                  letterSpacing: '0.5px',
+                  color: '#6F7280'
+                }}
+              >
+                Tiered Rewards
+              </Typography>
+              <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
+                {budgetTiers.map((tier, index) => (
+                  <Box
+                    key={index}
+                    sx={{
+                      p: 1.5,
+                      borderRadius: '12px',
+                      border: activeTier === tier ? '2px solid #7C4DFF' : '1px solid #E5E7F0',
+                      bgcolor: activeTier === tier ? '#F5F0FF' : '#FFFFFF',
+                      transition: 'all 0.2s',
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center'
+                    }}
+                  >
+                    <Box sx={{ flex: 1 }}>
+                      <Typography
+                        variant="body2"
+                        sx={{
+                          fontWeight: 600,
+                          color: activeTier === tier ? '#7C4DFF' : '#1A1A1E',
+                          fontFamily: 'var(--font-body, Satoshi, sans-serif)',
+                          fontSize: '13px',
+                          mb: 0.5
+                        }}
+                      >
+                        {formatTierRange(tier)}
+                      </Typography>
+                      <Typography
+                        variant="caption"
+                        sx={{
+                          color: '#6F7280',
+                          fontFamily: 'var(--font-body, Satoshi, sans-serif)',
+                          fontSize: '11px'
+                        }}
+                      >
+                        Base payment per participant
+                      </Typography>
+                    </Box>
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                      <Typography
+                        variant="body1"
+                        sx={{
+                          fontWeight: 700,
+                          color: activeTier === tier ? '#7C4DFF' : '#1A1A1E',
+                          fontFamily: 'var(--font-body, Satoshi, sans-serif)',
+                          fontSize: '15px'
+                        }}
+                      >
+                        ${tier.price_usd.toFixed(2)}
+                      </Typography>
+                      {activeTier === tier && (
+                        <Chip
+                          label="ACTIVE"
+                          size="small"
+                          sx={{
+                            bgcolor: '#7C4DFF',
+                            color: '#FFFFFF',
+                            fontSize: '9px',
+                            fontWeight: 700,
+                            height: 18
+                          }}
+                        />
+                      )}
+                    </Box>
+                  </Box>
+                ))}
+              </Box>
+            </Box>
+
+            {/* Next tier incentive */}
+            {nextTier && campaignPhase === 'open' && (
+              <Alert
+                severity="info"
+                sx={{
+                  mt: 2,
+                  borderRadius: 'var(--radius-card-lg, 24px)',
+                  '& .MuiAlert-message': { fontFamily: 'var(--font-body, Satoshi, sans-serif)' }
+                }}
+              >
+                <Typography variant="body2" sx={{ fontWeight: 600, fontSize: '13px' }}>
+                  🚀 {nextTier.participantsNeeded} more participant{nextTier.participantsNeeded !== 1 ? 's' : ''} needed to unlock{' '}
+                  <strong>{nextTier.tier.budget_tokens.toLocaleString()} {tokenSymbol}</strong> budget tier!
+                </Typography>
+                <LinearProgress
+                  variant="determinate"
+                  value={((activeTier?.max_participants || submissionCount) - (activeTier?.min_participants || 0)) / 
+                         ((nextTier.tier.min_participants || 1) - (activeTier?.min_participants || 0)) * 100}
+                  sx={{
+                    mt: 1,
+                    height: 6,
+                    borderRadius: 1,
+                    bgcolor: 'rgba(33, 150, 243, 0.2)',
+                    '& .MuiLinearProgress-bar': { bgcolor: '#2196F3', borderRadius: 1 }
+                  }}
+                />
+              </Alert>
+            )}
+          </Paper>
+        </div>
+      </div>
 
       {/* Submit Social Participation Modal */}
       {publicKey && (
-        <SubmitSocialParticipationModal
+        <SubmissionModal
           open={showSubmitModal}
           onClose={() => setShowSubmitModal(false)}
-          job={{
-            id: job.id,
-            title: job.title,
-            social_job_type: job.social_job_type as 'retweet' | 'original_tweet',
-            social_tweet_url: job.social_tweet_url,
-            social_min_followers_required: job.social_min_followers_required
+          job={job}
+          walletAddress={publicKey.toString()}
+          signMessage={signMessage}
+          onSuccess={(submissionId) => {
+            console.log('Submission successful:', submissionId)
+            handleSubmissionSuccess()
           }}
-          userWallet={publicKey.toString()}
-          onSubmissionSuccess={handleSubmissionSuccess}
         />
       )}
     </Box>
