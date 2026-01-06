@@ -217,6 +217,8 @@ export function handleNotificationNavigation(
     case 'social_submission_approved':
     case 'social_submission_denied':
     case 'social_payment_distributed':
+    case 'social_campaign_completed':
+    case 'social_campaign_ended_no_participants':
       // Navigate to the social job page
       if (reference_id && metadata?.project_id) {
         navigate(`/project/${metadata.project_id}/jobs/${reference_id}`)

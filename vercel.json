@@ -5,12 +5,12 @@
       "schedule": "*/5 * * * *"
     },
     {
-      "path": "/api/cron/auto-approve-social-jobs",
-      "schedule": "0 * * * *"
-    },
-    {
       "path": "/api/cron/contest-judging-notifications",
       "schedule": "*/15 * * * *"
+    },
+    {
+      "path": "/api/cron/auto-approve-campaigns",
+      "schedule": "*/5 * * * *"
     }
   ]
 }

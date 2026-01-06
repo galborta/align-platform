@@ -223,20 +223,39 @@ export async function POST(
       social_follower_count_verified: sub.social_follower_count_verified || sub.social_follower_count_claimed || 0
     }))
 
-    const payments = calculateProportionalPayments(
+    const basePayments = calculateProportionalPayments(
       submissionsForPayment,
       activeTier.budget_tokens,
       activeTier.budget_usd
     )
 
-    console.log(`[Finalize Payments] Calculated ${payments.length} worker payments`)
+    // Add impression bonuses to payments
+    const payments = basePayments.map(payment => {
+      const submission = submissions.find(s => s.id === payment.submission_id)
+      const impressionBonus = submission?.social_impression_bonus_usd || 0
+      
+      return {
+        ...payment,
+        impression_bonus_usd: impressionBonus,
+        payment_amount_tokens: payment.payment_amount_tokens + impressionBonus, // Add bonus to token amount
+        payment_amount_usd: payment.payment_amount_usd + impressionBonus
+      }
+    })
+
+    console.log(`[Finalize Payments] Calculated ${payments.length} worker payments (including impression bonuses)`)
 
     // Calculate totals
     const totalWorkerPayments = payments.reduce(
       (sum, p) => sum + p.payment_amount_tokens,
       0
     )
+    const totalImpressionBonuses = payments.reduce(
+      (sum, p) => sum + (p.impression_bonus_usd || 0),
+      0
+    )
 
+    console.log(`[Finalize Payments] Base payments: ${totalWorkerPayments - totalImpressionBonuses} tokens`)
+    console.log(`[Finalize Payments] Impression bonuses: ${totalImpressionBonuses} tokens`)
     console.log(`[Finalize Payments] Total worker payments: ${totalWorkerPayments} tokens`)
 
     // ==================== CALCULATE PLATFORM FEE ====================
@@ -508,6 +527,30 @@ export async function POST(
       console.log(`[Finalize Payments] ✅ Notifications sent to ${payments.length} workers`)
     } catch (notificationError) {
       console.error('[Finalize Payments] Failed to send some notifications:', notificationError)
+      // Non-critical - payment was successful
+    }
+
+    // Notify poster of campaign completion
+    try {
+      const totalSpent = payments.reduce((sum, p) => sum + p.payment_amount_usd, 0)
+      await notificationService.createNotification({
+        userWallet: job.poster_wallet,
+        type: 'social_campaign_completed',
+        referenceId: jobId,
+        referenceType: 'job',
+        metadata: {
+          job_title: job.title,
+          social_participants: participantCount,
+          social_total_spent: totalSpent,
+          social_refunded: refund.totalRefund,
+          amount: totalSpent,
+          token: 'USD',
+          project_id: job.project_id
+        }
+      })
+      console.log('[Finalize Payments] ✅ Poster notification sent')
+    } catch (notificationError) {
+      console.error('[Finalize Payments] Failed to notify poster:', notificationError)
       // Non-critical - payment was successful
     }
 
