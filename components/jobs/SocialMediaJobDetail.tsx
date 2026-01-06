@@ -511,8 +511,8 @@ export default function SocialMediaJobDetail({
         </Box>
       </Paper>
 
-          {/* Submissions Section - Show wallets who submitted */}
-      {allSubmissions.length > 0 && (
+          {/* Submissions Section - Show wallets who submitted (NOT for poster - they see full dashboard below) */}
+      {allSubmissions.length > 0 && !isPoster && (
         <Paper
           sx={{
             p: 'var(--space-lg, 24px)',

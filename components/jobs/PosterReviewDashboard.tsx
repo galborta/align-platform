@@ -167,7 +167,7 @@ export default function PosterReviewDashboard({
 
   // ==================== HANDLERS ====================
 
-  const handleApproveSubmission = async (submissionId: string) => {
+  const handleApproveSubmission = async (submissionId: string, impressionCount: number = 0) => {
     try {
       // Get Supabase session for authentication
       const { data: { session }, error: sessionError } = await supabase.auth.getSession()
@@ -184,7 +184,9 @@ export default function PosterReviewDashboard({
         },
         body: JSON.stringify({
           submission_id: submissionId,
-          action: 'approve'
+          action: 'approve',
+          poster_wallet: currentUserWallet,
+          impression_count: impressionCount
         })
       })
 
@@ -289,125 +291,127 @@ export default function PosterReviewDashboard({
 
   return (
     <Box>
-      {/* Header with deadline warning */}
-      <Paper sx={{ p: 3, mb: 3, bgcolor: '#1a1a1a', border: '1px solid #333' }}>
-        <Typography variant="h5" sx={{ mb: 2 }}>
+      {/* Compact Header with deadline and stats */}
+      <Paper 
+        sx={{ 
+          p: 'var(--space-lg, 24px)', 
+          mb: 3, 
+          bgcolor: 'var(--card-background, #FFFFFF)',
+          borderRadius: 'var(--radius-card-lg, 24px)',
+          boxShadow: 'var(--shadow-card, 0 20px 40px 0 rgba(15, 23, 42, 0.06))',
+          border: 'none'
+        }}
+      >
+        <Typography 
+          variant="h5" 
+          sx={{ 
+            mb: 2,
+            fontFamily: 'var(--font-heading, Space Grotesk, sans-serif)',
+            fontWeight: 600,
+            color: 'var(--text-primary, #1A1A1E)'
+          }}
+        >
           📱 Review Campaign Submissions
         </Typography>
-        <Typography variant="h6" color="text.secondary" sx={{ mb: 2 }}>
-          {job.title}
-        </Typography>
+
+        {/* Stats Bar */}
+        <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap', mb: 2 }}>
+          <Chip 
+            label={`⏰ ${timeRemaining} remaining`} 
+            sx={{ 
+              bgcolor: isExpired ? 'rgba(239, 68, 68, 0.1)' : 'rgba(255, 200, 87, 0.1)',
+              color: isExpired ? 'var(--accent-error, #EF4444)' : 'var(--accent-warning, #FFC857)',
+              fontWeight: 600,
+              border: isExpired ? '1px solid var(--accent-error, #EF4444)' : '1px solid var(--accent-warning, #FFC857)'
+            }} 
+          />
+          <Chip 
+            label={`${pendingCount} pending`} 
+            size="small"
+            sx={{
+              bgcolor: 'rgba(255, 200, 87, 0.15)',
+              color: 'var(--accent-warning, #FFC857)',
+              fontWeight: 600,
+              border: '1px solid var(--accent-warning, #FFC857)'
+            }}
+          />
+          <Chip 
+            label={`${approvedCount} approved`} 
+            size="small"
+            sx={{
+              bgcolor: 'rgba(54, 193, 112, 0.15)',
+              color: 'var(--accent-success, #36C170)',
+              fontWeight: 600,
+              border: '1px solid var(--accent-success, #36C170)'
+            }}
+          />
+          {deniedCount > 0 && (
+            <Chip 
+              label={`${deniedCount} denied`} 
+              size="small"
+              sx={{
+                bgcolor: 'rgba(239, 68, 68, 0.15)',
+                color: 'var(--accent-error, #EF4444)',
+                fontWeight: 600,
+                border: '1px solid var(--accent-error, #EF4444)'
+              }}
+            />
+          )}
+          {activeTier && (
+            <Chip 
+              label={`Tier ${job.social_budget_tiers.indexOf(activeTier) + 1} Active`}
+              sx={{ 
+                bgcolor: 'var(--accent-primary-soft, #EEE7FF)',
+                color: 'var(--accent-primary, #7C4DFF)',
+                fontWeight: 600
+              }}
+            />
+          )}
+        </Box>
 
         {!isExpired ? (
-          <Alert severity="warning" sx={{ mb: 2 }}>
-            ⏰ Review Deadline: {timeRemaining} remaining
-            <Typography variant="caption" sx={{ display: 'block', mt: 1 }}>
-              If no action taken, all pending submissions will be auto-approved and payments distributed automatically.
+          <Alert 
+            severity="info" 
+            sx={{ 
+              mb: 0,
+              borderRadius: '12px',
+              bgcolor: 'rgba(124, 77, 255, 0.08)',
+              border: '1px solid var(--accent-primary, #7C4DFF)',
+              '& .MuiAlert-icon': {
+                color: 'var(--accent-primary, #7C4DFF)'
+              }
+            }}
+          >
+            <Typography variant="body2" sx={{ fontWeight: 500 }}>
+              If no action is taken, pending submissions will be auto-approved when the deadline passes.
             </Typography>
           </Alert>
         ) : (
-          <Alert severity="error" sx={{ mb: 2 }}>
+          <Alert 
+            severity="error" 
+            sx={{ 
+              mb: 0,
+              borderRadius: '12px',
+              bgcolor: 'rgba(239, 68, 68, 0.1)',
+              border: '1px solid var(--accent-error, #EF4444)'
+            }}
+          >
             Review deadline has passed. Auto-approval in progress.
           </Alert>
         )}
       </Paper>
 
-      {/* Campaign Summary */}
-      <Paper sx={{ p: 3, mb: 3, bgcolor: '#1a1a1a', border: '1px solid #333' }}>
-        <Typography variant="h6" sx={{ mb: 2 }}>
-          Campaign Summary
-        </Typography>
-        
-        <Divider sx={{ mb: 2, bgcolor: '#333' }} />
-
-        <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: '1fr 1fr' }, gap: 3 }}>
-          {/* Left column */}
-          <Box>
-            <Typography variant="subtitle2" sx={{ mb: 1 }}>
-              Maximum Budget
-            </Typography>
-            <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-              {job.social_total_budget_tokens.toFixed(0)} tokens (~${job.social_total_budget_usd.toFixed(0)})
-            </Typography>
-
-            <Typography variant="subtitle2" sx={{ mb: 1 }}>
-              Budget Tiers
-            </Typography>
-            {job.social_budget_tiers.map((tier, index) => (
-              <Typography 
-                key={index}
-                variant="body2" 
-                color="text.secondary"
-                sx={{ 
-                  ml: 1, 
-                  mb: 0.5,
-                  fontWeight: activeTier === tier ? 600 : 400,
-                  color: activeTier === tier ? '#E3F06F' : 'text.secondary'
-                }}
-              >
-                • {tier.min_participants}-{tier.max_participants || '∞'}: {tier.budget_tokens} tokens
-                {activeTier === tier && ' ← Active'}
-              </Typography>
-            ))}
-          </Box>
-
-          {/* Right column */}
-          <Box>
-            <Typography variant="subtitle2" sx={{ mb: 1 }}>
-              Current Participants
-            </Typography>
-            <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-              {submissions.length} total ({pendingCount} pending, {approvedCount} approved, {deniedCount} denied)
-            </Typography>
-
-            {activeTier && (
-              <>
-                <Typography variant="subtitle2" sx={{ mb: 1 }}>
-                  Active Tier
-                </Typography>
-                <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-                  {activeTier.min_participants}-{activeTier.max_participants || '∞'} participants
-                </Typography>
-
-                <Typography variant="subtitle2" sx={{ mb: 1 }}>
-                  Budget to Release
-                </Typography>
-                <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-                  {tierBudget.toFixed(0)} tokens (~${tierBudgetUsd.toFixed(0)})
-                </Typography>
-
-                <Typography variant="subtitle2" sx={{ mb: 1 }}>
-                  Platform Fee (5%)
-                </Typography>
-                <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-                  {platformFee.toFixed(0)} tokens
-                </Typography>
-
-                <Typography variant="subtitle2" sx={{ mb: 1 }}>
-                  Expected Refund
-                </Typography>
-                <Typography variant="body2" color="text.secondary">
-                  {refundAmount.toFixed(0)} tokens (~${(refundAmount * (tierBudgetUsd / tierBudget)).toFixed(0)})
-                </Typography>
-              </>
-            )}
-          </Box>
-        </Box>
-
-        <Divider sx={{ my: 2, bgcolor: '#333' }} />
-
-        <Box>
-          <Typography variant="subtitle2" sx={{ mb: 1 }}>
-            Total Reported Followers: {totalReportedFollowers.toLocaleString()}
-          </Typography>
-          <Typography variant="subtitle2">
-            Adjusted Followers: {totalVerifiedFollowers.toLocaleString()}
-          </Typography>
-        </Box>
-      </Paper>
-
       {/* Filter and sort controls */}
-      <Paper sx={{ p: 2, mb: 3, bgcolor: '#1a1a1a', border: '1px solid #333' }}>
+      <Paper 
+        sx={{ 
+          p: 'var(--space-md, 16px)', 
+          mb: 3, 
+          bgcolor: 'var(--card-background, #FFFFFF)',
+          borderRadius: 'var(--radius-card-lg, 24px)',
+          boxShadow: 'var(--shadow-card, 0 20px 40px 0 rgba(15, 23, 42, 0.06))',
+          border: 'none'
+        }}
+      >
         <Box sx={{ display: 'flex', gap: 2, alignItems: 'center', flexWrap: 'wrap' }}>
           <FormControl size="small" sx={{ minWidth: 150 }}>
             <InputLabel>Filter</InputLabel>
@@ -438,9 +442,36 @@ export default function PosterReviewDashboard({
           </FormControl>
 
           <Box sx={{ display: 'flex', gap: 1, ml: 'auto' }}>
-            <Chip label={`${pendingCount} pending`} color="warning" size="small" />
-            <Chip label={`${approvedCount} approved`} color="success" size="small" />
-            <Chip label={`${deniedCount} denied`} color="error" size="small" />
+            <Chip 
+              label={`${pendingCount} pending`} 
+              size="small"
+              sx={{
+                bgcolor: 'rgba(255, 200, 87, 0.15)',
+                color: 'var(--accent-warning, #FFC857)',
+                fontWeight: 600,
+                border: '1px solid var(--accent-warning, #FFC857)'
+              }}
+            />
+            <Chip 
+              label={`${approvedCount} approved`} 
+              size="small"
+              sx={{
+                bgcolor: 'rgba(54, 193, 112, 0.15)',
+                color: 'var(--accent-success, #36C170)',
+                fontWeight: 600,
+                border: '1px solid var(--accent-success, #36C170)'
+              }}
+            />
+            <Chip 
+              label={`${deniedCount} denied`} 
+              size="small"
+              sx={{
+                bgcolor: 'rgba(239, 68, 68, 0.15)',
+                color: 'var(--accent-error, #EF4444)',
+                fontWeight: 600,
+                border: '1px solid var(--accent-error, #EF4444)'
+              }}
+            />
           </Box>
         </Box>
       </Paper>
@@ -448,8 +479,20 @@ export default function PosterReviewDashboard({
       {/* Submissions List */}
       <Box sx={{ mb: 3 }}>
         {sortedSubmissions.length === 0 ? (
-          <Paper sx={{ p: 4, textAlign: 'center', bgcolor: '#1a1a1a', border: '1px solid #333' }}>
-            <Typography variant="body1" color="text.secondary">
+          <Paper 
+            sx={{ 
+              p: 4, 
+              textAlign: 'center', 
+              bgcolor: 'var(--card-background, #FFFFFF)',
+              borderRadius: 'var(--radius-card-lg, 24px)',
+              boxShadow: 'var(--shadow-card, 0 20px 40px 0 rgba(15, 23, 42, 0.06))',
+              border: 'none'
+            }}
+          >
+            <Typography 
+              variant="body1" 
+              sx={{ color: 'var(--text-secondary, #6F7280)' }}
+            >
               {filter === 'all' 
                 ? 'No submissions yet'
                 : `No ${filter} submissions`}
@@ -466,9 +509,10 @@ export default function PosterReviewDashboard({
                 submission={submission}
                 estimatedPayment={payment || null}
                 jobId={job.id}
-                onApprove={async () => {
+                posterWallet={currentUserWallet}
+                onApprove={async (impressionCount: number) => {
                   // Will implement API call
-                  await handleApproveSubmission(submission.id)
+                  await handleApproveSubmission(submission.id, impressionCount)
                 }}
                 onDeny={async () => {
                   // Will implement API call
@@ -486,48 +530,122 @@ export default function PosterReviewDashboard({
 
       {/* Finalize Campaign Button */}
       {approvedCount > 0 && !isExpired && (
-        <Paper sx={{ p: 3, bgcolor: '#1a1a1a', border: '1px solid #333' }}>
-          <Typography variant="h6" sx={{ mb: 2 }}>
+        <Paper 
+          sx={{ 
+            p: 'var(--space-lg, 24px)', 
+            bgcolor: 'var(--card-background, #FFFFFF)',
+            borderRadius: 'var(--radius-card-lg, 24px)',
+            boxShadow: 'var(--shadow-card, 0 20px 40px 0 rgba(15, 23, 42, 0.06))',
+            border: 'none'
+          }}
+        >
+          <Typography 
+            variant="h6" 
+            sx={{ 
+              mb: 2,
+              fontFamily: 'var(--font-heading, Space Grotesk, sans-serif)',
+              fontWeight: 600,
+              color: 'var(--text-primary, #1A1A1E)'
+            }}
+          >
             Ready to Finalize?
           </Typography>
 
-          <Alert severity="info" sx={{ mb: 2 }}>
+          <Alert 
+            severity="info" 
+            sx={{ 
+              mb: 2,
+              borderRadius: '12px',
+              bgcolor: 'var(--accent-primary-soft, #EEE7FF)',
+              border: '1px solid var(--accent-primary, #7C4DFF)',
+              '& .MuiAlert-icon': {
+                color: 'var(--accent-primary, #7C4DFF)'
+              }
+            }}
+          >
             Once you finalize, payments will be distributed to all approved participants 
             based on their follower counts. This action cannot be undone.
           </Alert>
 
           {pendingCount > 0 && (
-            <Alert severity="warning" sx={{ mb: 2 }}>
+            <Alert 
+              severity="warning" 
+              sx={{ 
+                mb: 2,
+                borderRadius: '12px',
+                bgcolor: 'rgba(255, 200, 87, 0.1)',
+                border: '1px solid var(--accent-warning, #FFC857)'
+              }}
+            >
               ⚠️ You still have {pendingCount} pending submission{pendingCount !== 1 ? 's' : ''}. 
               These will NOT receive payment unless you approve them first.
             </Alert>
           )}
 
-          <Box sx={{ p: 2, bgcolor: 'rgba(124, 77, 255, 0.1)', borderRadius: 1, mb: 2 }}>
-            <Typography variant="subtitle2" sx={{ mb: 1 }}>
+          <Box 
+            sx={{ 
+              p: 'var(--space-md, 16px)', 
+              bgcolor: 'var(--accent-primary-soft, #EEE7FF)', 
+              borderRadius: '12px', 
+              mb: 2 
+            }}
+          >
+            <Typography 
+              variant="subtitle2" 
+              sx={{ 
+                mb: 1,
+                fontWeight: 600,
+                color: 'var(--text-primary, #1A1A1E)',
+                fontSize: '14px'
+              }}
+            >
               Payment Breakdown:
             </Typography>
             {paymentPreview.slice(0, 5).map((payment, index) => (
-              <Typography key={index} variant="body2" color="text.secondary" sx={{ mb: 0.5 }}>
+              <Typography 
+                key={index} 
+                variant="body2" 
+                sx={{ 
+                  mb: 0.5,
+                  color: 'var(--text-secondary, #6F7280)',
+                  fontFamily: 'var(--font-mono, JetBrains Mono, monospace)',
+                  fontSize: '13px'
+                }}
+              >
                 • {payment.worker_wallet.slice(0, 8)}...{payment.worker_wallet.slice(-6)}: {' '}
                 {payment.payment_amount_tokens.toFixed(2)} tokens ({payment.percentage_of_total.toFixed(1)}%)
               </Typography>
             ))}
             {paymentPreview.length > 5 && (
-              <Typography variant="body2" color="text.secondary">
+              <Typography 
+                variant="body2" 
+                sx={{ color: 'var(--text-secondary, #6F7280)' }}
+              >
                 ... and {paymentPreview.length - 5} more
               </Typography>
             )}
 
-            <Divider sx={{ my: 1, bgcolor: '#333' }} />
+            <Divider sx={{ my: 1, bgcolor: 'var(--accent-primary, #7C4DFF)', opacity: 0.2 }} />
 
-            <Typography variant="body2" sx={{ fontWeight: 600 }}>
+            <Typography 
+              variant="body2" 
+              sx={{ 
+                fontWeight: 600,
+                color: 'var(--text-primary, #1A1A1E)'
+              }}
+            >
               Total to distribute: {tierBudget.toFixed(0)} tokens (~${tierBudgetUsd.toFixed(0)})
             </Typography>
-            <Typography variant="body2" color="text.secondary">
+            <Typography 
+              variant="body2" 
+              sx={{ color: 'var(--text-secondary, #6F7280)' }}
+            >
               Platform fee: {platformFee.toFixed(0)} tokens
             </Typography>
-            <Typography variant="body2" color="text.secondary">
+            <Typography 
+              variant="body2" 
+              sx={{ color: 'var(--text-secondary, #6F7280)' }}
+            >
               Refund to you: {refundAmount.toFixed(0)} tokens
             </Typography>
           </Box>
@@ -539,10 +657,23 @@ export default function PosterReviewDashboard({
             onClick={handleFinalize}
             disabled={finalizingLoading}
             sx={{
-              bgcolor: '#4CAF50',
+              bgcolor: 'var(--accent-success, #36C170)',
+              color: '#FFFFFF',
               py: 2,
               fontSize: '1.1rem',
-              '&:hover': { bgcolor: '#45a049' }
+              fontWeight: 600,
+              borderRadius: 'var(--radius-control, 999px)',
+              textTransform: 'none',
+              fontFamily: 'var(--font-body, Satoshi, sans-serif)',
+              boxShadow: '0 8px 20px 0 rgba(54, 193, 112, 0.25)',
+              '&:hover': { 
+                bgcolor: 'var(--accent-success-hover, #2DA85E)',
+                boxShadow: '0 12px 28px 0 rgba(54, 193, 112, 0.35)'
+              },
+              '&:disabled': {
+                bgcolor: 'var(--text-muted, #A3A7B5)',
+                color: '#FFFFFF'
+              }
             }}
           >
             {finalizingLoading ? 'Processing...' : 'Finalize Campaign & Distribute Payments'}
