@@ -508,10 +508,10 @@ export function calculateProportionalPayments(
  * ```
  */
 export function formatTierRange(tier: BudgetTier): string {
-  if (tier.max_participants === null) {
-    return `${tier.min_participants}+ participants`
+  if (tier.max_followers === null) {
+    return `${tier.min_followers.toLocaleString()}+ followers`
   }
-  return `${tier.min_participants}-${tier.max_participants} participants`
+  return `${tier.min_followers.toLocaleString()}-${tier.max_followers.toLocaleString()} followers`
 }
 
 /**

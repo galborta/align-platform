@@ -41,6 +41,7 @@ import ContentCopyIcon from '@mui/icons-material/ContentCopy'
 import { formatDistanceToNow } from 'date-fns'
 import { toast } from 'react-hot-toast'
 import { WalletAddressWithMessage } from '@/components/WalletAddressWithMessage'
+import { useActionSignature } from '@/hooks/useActionSignature'
 
 type Project = Database['public']['Tables']['projects']['Row']
 type SocialAsset = Database['public']['Tables']['social_assets']['Row']
@@ -77,6 +78,7 @@ export default function AdminProjectPage() {
   const params = useParams()
   const router = useRouter()
   const { publicKey } = useWallet()
+  const { signAction } = useActionSignature()
   const [project, setProject] = useState<ProjectDetails | null>(null)
   const [loading, setLoading] = useState(true)
   const [currentTab, setCurrentTab] = useState<TabValue>('overview')
@@ -773,32 +775,43 @@ export default function AdminProjectPage() {
 
       // If job has escrow locked, we need to handle refund first
       if (deletingJob.escrow_locked && deletingJob.escrow_amount_tokens) {
-        // Get Supabase session for authentication
-        const { data: { session }, error: sessionError } = await supabase.auth.getSession()
-        if (sessionError || !session) {
-          toast.error('Authentication required. Please sign in again.')
-          setDeleting(false)
-          return
-        }
+        // Request wallet signature to authorize refund
+        toast.loading('Please sign to authorize refund...', { id: 'delete-action' })
         
-        // Call the refund API
+        const signedAction = await signAction({
+          action: 'Cancel job and refund',
+          resourceId: deletingJob.id,
+          additionalInfo: {
+            'Refund Amount': `${deletingJob.escrow_amount_tokens} tokens`,
+            'Job Type': deletingJob.job_type || 'Unknown'
+          }
+        })
+
+        console.log('[Admin] Signed action for refund:', {
+          wallet: signedAction.wallet,
+          signatureLength: signedAction.signature.length
+        })
+        
+        toast.loading('Processing refund...', { id: 'delete-action' })
+        
+        // Call the refund API with cryptographic signature
         const refundResponse = await fetch(`/api/jobs/${deletingJob.id}/refund-escrow`, {
           method: 'POST',
           headers: { 
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${session.access_token}`
+            'Content-Type': 'application/json'
           },
-          body: JSON.stringify({
-            poster_wallet: deletingJob.poster_wallet
-          })
+          body: JSON.stringify(signedAction) // Send wallet, signature, message
         })
 
         if (!refundResponse.ok) {
           const refundError = await refundResponse.json()
+          toast.dismiss('delete-action')
           throw new Error(refundError.error || 'Failed to refund escrow')
         }
 
-        toast.success('Escrow refunded to poster')
+        const refundData = await refundResponse.json()
+        console.log('[Admin] Refund successful:', refundData)
+        toast.success('Escrow refunded to poster', { id: 'delete-action' })
       }
 
       // Delete associated records first

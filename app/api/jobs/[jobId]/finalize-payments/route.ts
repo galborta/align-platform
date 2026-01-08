@@ -30,7 +30,13 @@ const connection = new Connection(SOLANA_RPC, 'confirmed')
 /**
  * POST /api/jobs/[jobId]/finalize-payments
  * 
- * Finalizes and distributes payments for a social media engagement job.
+ * ⚠️ DEPRECATED FOR NEW JOBS: Use /api/jobs/[jobId]/end-campaign for instant payment jobs
+ * 
+ * This endpoint is kept for backward compatibility with jobs created before the
+ * instant payment system. New jobs using uses_instant_payment=true should use
+ * the end-campaign endpoint instead.
+ * 
+ * Finalizes and distributes payments for a social media engagement job (OLD SYSTEM).
  * 
  * Security:
  * - CRITICAL: Requires Supabase JWT authentication
@@ -90,22 +96,22 @@ export async function POST(
 
     console.log(`[Finalize Payments] Authenticated user: ${user.id}`)
 
-    // Get user's wallet from profile
-    const { data: profile, error: profileError } = await supabaseAdmin
-      .from('profiles')
-      .select('wallet_address')
-      .eq('id', user.id)
-      .single()
-
-    if (profileError || !profile?.wallet_address) {
-      console.error('[Finalize Payments] No wallet found for user:', profileError)
+    // Get request body to extract poster_wallet (following existing pattern)
+    const body = await request.json()
+    const { impression_bonuses = {} } = body
+    
+    // Wallet address must be provided by frontend (consistent with other endpoints)
+    const posterWallet = body.poster_wallet
+    
+    if (!posterWallet) {
+      console.error('[Finalize Payments] Missing poster_wallet in request')
       return NextResponse.json(
-        { error: 'No wallet address linked to account' },
-        { status: 403 }
+        { error: 'Missing poster_wallet in request body' },
+        { status: 400 }
       )
     }
 
-    console.log(`[Finalize Payments] User wallet: ${profile.wallet_address}`)
+    console.log(`[Finalize Payments] User wallet: ${posterWallet}`)
 
     // ==================== RATE LIMITING ====================
 
@@ -141,7 +147,7 @@ export async function POST(
     // ==================== AUTHORIZATION ====================
 
     // Verify user is the job poster
-    if (profile.wallet_address !== job.poster_wallet) {
+    if (posterWallet !== job.poster_wallet) {
       console.error('[Finalize Payments] Unauthorized - not job poster')
       return NextResponse.json(
         { error: 'Only the job poster can finalize payments' },
@@ -158,6 +164,60 @@ export async function POST(
         { error: 'Payments have already been distributed for this job' },
         { status: 400 }
       )
+    }
+
+    // ==================== AUTO-APPROVE PENDING SUBMISSIONS ====================
+    
+    console.log('[Finalize Payments] Auto-approving pending submissions...')
+    
+    const { data: pendingSubmissions, error: pendingError } = await supabaseAdmin
+      .from('job_submissions')
+      .select('*')
+      .eq('job_id', jobId)
+      .eq('social_approval_status', 'pending')
+    
+    if (pendingError) {
+      console.error('[Finalize Payments] Error fetching pending submissions:', pendingError)
+    } else if (pendingSubmissions && pendingSubmissions.length > 0) {
+      console.log(`[Finalize Payments] Found ${pendingSubmissions.length} pending submissions to auto-approve`)
+      
+      // Auto-approve all pending submissions
+      const { error: autoApproveError } = await supabaseAdmin
+        .from('job_submissions')
+        .update({ social_approval_status: 'auto_approved' })
+        .eq('job_id', jobId)
+        .eq('social_approval_status', 'pending')
+      
+      if (autoApproveError) {
+        console.error('[Finalize Payments] Error auto-approving pending submissions:', autoApproveError)
+      } else {
+        console.log(`[Finalize Payments] ✅ Auto-approved ${pendingSubmissions.length} pending submissions`)
+        
+        // Send notifications to workers (non-blocking)
+        pendingSubmissions.forEach(async (submission) => {
+          try {
+            await notificationService.createNotification({
+              userWallet: submission.worker_wallet,
+              type: 'social_submission_approved',
+              actorWallet: job.poster_wallet,
+              referenceId: jobId,
+              referenceType: 'job',
+              metadata: {
+                job_title: job.title,
+                project_id: job.project_id,
+                submission_id: submission.id,
+                action: 'approved',
+                is_social_media_job: true,
+                auto_approved: true
+              }
+            })
+          } catch (notifError) {
+            console.error('[Finalize Payments] Failed to send notification:', notifError)
+          }
+        })
+      }
+    } else {
+      console.log('[Finalize Payments] No pending submissions to auto-approve')
     }
 
     // ==================== GET APPROVED SUBMISSIONS ====================
@@ -317,7 +377,7 @@ export async function POST(
     // ==================== BUILD AND EXECUTE TRANSACTION ====================
 
     const platformFeeWallet = new PublicKey(feeWalletAddress)
-    const posterWallet = new PublicKey(job.poster_wallet)
+    const posterPublicKey = new PublicKey(job.poster_wallet)
 
     // Prepare recipients for transaction
     const recipients = payments.map(p => ({
@@ -332,7 +392,7 @@ export async function POST(
       connection,
       tokenMint,
       platformFeeWallet,
-      posterWallet,
+      posterWallet: posterPublicKey,
       recipients,
       platformFeeAmount,
       refundAmount: refund.totalRefund

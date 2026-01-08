@@ -19,13 +19,27 @@ import { Database } from './database'
 export type SocialJobType = 'retweet' | 'original_tweet'
 
 /**
- * Approval status for social media job submissions
+ * Approval status for social media job submissions with payment lifecycle tracking
+ * 
+ * State Machine:
+ * pending → approved_pending_payment → approved (success)
+ *                                   → approved_failed (retry exhausted)
+ * pending → denied (rejected by poster)
+ * 
  * - pending: Awaiting poster review
- * - approved: Poster manually approved the submission
- * - auto_approved: Automatically approved after review deadline passed
+ * - approved_pending_payment: Payment transaction submitted to blockchain, awaiting confirmation
+ * - approved: Payment confirmed successfully, worker has been paid
+ * - auto_approved: Automatically approved after review deadline passed (transitions to approved_pending_payment)
+ * - approved_failed: Payment failed after all retry attempts exhausted
  * - denied: Poster rejected the submission
  */
-export type SocialApprovalStatus = 'pending' | 'approved' | 'auto_approved' | 'denied'
+export type SocialApprovalStatus = 
+  | 'pending' 
+  | 'approved_pending_payment'
+  | 'approved' 
+  | 'auto_approved'
+  | 'approved_failed'
+  | 'denied'
 
 // ==================== BUDGET TIER ====================
 

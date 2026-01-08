@@ -603,3 +603,430 @@ export function formatPaymentSummary(params: SocialJobPaymentParams): string {
   ].join('\n')
 }
 
+// ==================== INSTANT PAYMENT SYSTEM ====================
+
+/**
+ * Parameters for instant submission payment
+ */
+export interface InstantPaymentParams {
+  /** Token mint address (SPL token or SOL) */
+  tokenMint: PublicKey
+  /** Worker's wallet address to receive payment */
+  workerWallet: PublicKey
+  /** Platform fee wallet address */
+  platformFeeWallet: PublicKey
+  /** Base payment amount in tokens (e.g., 50 for 50 tokens) */
+  basePaymentAmount: number
+  /** Platform fee as decimal (e.g., 0.05 for 5%) */
+  platformFeePercentage: number
+  /** Optional impression bonus amount in tokens */
+  impressionBonusAmount?: number
+  /** Token decimal places (default: 9) */
+  decimals?: number
+  /** Submission ID for logging */
+  submissionId?: string
+  /** Job ID for logging */
+  jobId?: string
+}
+
+/**
+ * Result of instant payment execution
+ */
+export interface InstantPaymentResult {
+  /** Whether the payment was successful */
+  success: boolean
+  /** Solana transaction signature if successful */
+  txSignature?: string
+  /** Number of retry attempts made */
+  retryAttempts?: number
+  /** Total payment amount (base + bonus) */
+  totalPayment?: number
+  /** Platform fee amount collected */
+  platformFee?: number
+  /** Detailed error message if failed */
+  error?: string
+  /** Error code for programmatic handling */
+  errorCode?: 'INSUFFICIENT_BALANCE' | 'RPC_TIMEOUT' | 'TRANSACTION_FAILED' | 'INVALID_ADDRESS' | 'UNKNOWN'
+}
+
+/**
+ * Delay helper for exponential backoff
+ * 
+ * @param ms - Milliseconds to delay
+ * @returns Promise that resolves after delay
+ */
+function delay(ms: number): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, ms))
+}
+
+/**
+ * Calculates exponential backoff delay
+ * 
+ * @param attempt - Attempt number (0-based)
+ * @param baseDelay - Base delay in milliseconds (default: 30000 = 30s)
+ * @returns Delay in milliseconds
+ */
+function getExponentialBackoffDelay(attempt: number, baseDelay: number = 30000): number {
+  // Attempt 0: 0ms (immediate)
+  // Attempt 1: 30s
+  // Attempt 2: 60s
+  // Attempt 3: 120s
+  return attempt === 0 ? 0 : baseDelay * Math.pow(2, attempt - 1)
+}
+
+/**
+ * Creates and executes instant payment transaction for single submission approval
+ * 
+ * This is called immediately when poster approves a submission. Unlike the batch
+ * payment at campaign end, this processes one worker at a time with instant execution.
+ * 
+ * **Payment Flow:**
+ * 1. Validate escrow has sufficient balance
+ * 2. Build transaction with worker payment + platform fee (+ optional bonus)
+ * 3. Execute transaction with retry logic
+ * 4. Return result with transaction signature or detailed error
+ * 
+ * **Transaction Structure:**
+ * ```
+ * Escrow Account (PDA)
+ *   ├→ Worker Wallet (basePaymentAmount + impressionBonus)
+ *   └→ Platform Fee Wallet (basePaymentAmount × feePercentage)
+ * ```
+ * 
+ * **Retry Logic:**
+ * - Attempt 1: Immediate (0ms)
+ * - Attempt 2: 30s after first failure
+ * - Attempt 3: 60s after second failure (90s total)
+ * - Attempt 4: 120s after third failure (210s total)
+ * - After 4 failures: return error, caller updates DB to 'approved_failed'
+ * 
+ * **Error Handling:**
+ * - Insufficient balance → Returns error with balance details
+ * - RPC timeout → Retries with exponential backoff
+ * - Transaction failed → Returns detailed error message
+ * - Invalid address → Returns error immediately (no retry)
+ * 
+ * @param connection - Solana connection instance
+ * @param params - Instant payment parameters
+ * @returns Payment result with signature or error
+ * 
+ * @example
+ * ```typescript
+ * // When poster approves submission:
+ * const result = await executeInstantSubmissionPayment(connection, {
+ *   tokenMint: new PublicKey(job.escrow_token_mint),
+ *   workerWallet: new PublicKey(submission.worker_wallet),
+ *   platformFeeWallet: new PublicKey(platformWallet),
+ *   basePaymentAmount: 50, // $50 from their follower tier
+ *   platformFeePercentage: 0.05, // 5%
+ *   impressionBonusAmount: 10, // Optional $10 impression bonus
+ *   submissionId: submission.id,
+ *   jobId: job.id
+ * })
+ * 
+ * if (result.success) {
+ *   // Update submission: approved_pending_payment → approved
+ *   await updateSubmission(submissionId, {
+ *     social_approval_status: 'approved',
+ *     social_payment_tx_signature: result.txSignature
+ *   })
+ * } else {
+ *   // Update submission: approved_pending_payment → approved_failed
+ *   await updateSubmission(submissionId, {
+ *     social_approval_status: 'approved_failed',
+ *     social_payment_failed_reason: result.error,
+ *     social_payment_retry_count: result.retryAttempts
+ *   })
+ * }
+ * ```
+ */
+export async function executeInstantSubmissionPayment(
+  connection: Connection,
+  params: InstantPaymentParams
+): Promise<InstantPaymentResult> {
+  const startTime = Date.now()
+  const maxRetries = 4 // 1 initial + 3 retries
+  
+  const {
+    tokenMint,
+    workerWallet,
+    platformFeeWallet,
+    basePaymentAmount,
+    platformFeePercentage,
+    impressionBonusAmount = 0,
+    decimals = 9,
+    submissionId = 'unknown',
+    jobId = 'unknown'
+  } = params
+
+  console.log(`\n${'='.repeat(80)}`)
+  console.log(`[Instant Payment] Starting payment for submission ${submissionId}`)
+  console.log(`[Instant Payment] Job: ${jobId}`)
+  console.log(`[Instant Payment] Worker: ${workerWallet.toString()}`)
+  console.log(`[Instant Payment] Base Payment: ${basePaymentAmount} tokens`)
+  console.log(`[Instant Payment] Impression Bonus: ${impressionBonusAmount} tokens`)
+  console.log(`[Instant Payment] Platform Fee: ${(basePaymentAmount * platformFeePercentage).toFixed(4)} tokens (${(platformFeePercentage * 100).toFixed(1)}%)`)
+  console.log(`${'='.repeat(80)}\n`)
+
+  // Calculate amounts
+  const totalPaymentToWorker = basePaymentAmount + impressionBonusAmount
+  const platformFee = basePaymentAmount * platformFeePercentage
+  const totalFromEscrow = totalPaymentToWorker + platformFee
+
+  console.log(`[Instant Payment] Total to worker: ${totalPaymentToWorker} tokens`)
+  console.log(`[Instant Payment] Total from escrow: ${totalFromEscrow} tokens`)
+
+  // ==================== 1. VALIDATE ESCROW BALANCE ====================
+
+  console.log(`\n[Instant Payment] Step 1: Validating escrow balance...`)
+  
+  const balanceValidation = await validateSocialJobEscrowBalance(
+    connection,
+    tokenMint,
+    totalFromEscrow,
+    decimals
+  )
+
+  if (!balanceValidation.valid) {
+    const error = balanceValidation.error || 'Insufficient escrow balance'
+    console.error(`[Instant Payment] ❌ Balance validation failed: ${error}`)
+    console.log(`[Instant Payment] Required: ${totalFromEscrow} tokens`)
+    console.log(`[Instant Payment] Available: ${balanceValidation.actualBalance || 0} tokens`)
+    
+    return {
+      success: false,
+      error: `Escrow balance too low. Expected ${totalFromEscrow.toFixed(4)}, found ${(balanceValidation.actualBalance || 0).toFixed(4)} tokens`,
+      errorCode: 'INSUFFICIENT_BALANCE',
+      retryAttempts: 0
+    }
+  }
+
+  console.log(`[Instant Payment] ✅ Balance sufficient (${balanceValidation.actualBalance} tokens available)`)
+
+  // ==================== 2. RETRY LOOP WITH EXPONENTIAL BACKOFF ====================
+
+  let lastError: Error | null = null
+  
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
+    try {
+      // Calculate and apply delay for retries
+      if (attempt > 0) {
+        const delayMs = getExponentialBackoffDelay(attempt)
+        console.log(`\n[Instant Payment] Retry attempt ${attempt}/${maxRetries - 1}`)
+        console.log(`[Instant Payment] Waiting ${delayMs / 1000}s before retry...`)
+        await delay(delayMs)
+      }
+
+      console.log(`\n[Instant Payment] Step 2: Building transaction (attempt ${attempt + 1}/${maxRetries})...`)
+
+      // ==================== 3. GET ESCROW CONFIGURATION ====================
+
+      const escrowPrivateKey = process.env.ESCROW_WALLET_PRIVATE_KEY
+      if (!escrowPrivateKey) {
+        throw new Error('ESCROW_WALLET_PRIVATE_KEY not configured in environment')
+      }
+
+      let escrowKeypair: Keypair
+      try {
+        escrowKeypair = Keypair.fromSecretKey(bs58.decode(escrowPrivateKey))
+      } catch (error) {
+        return {
+          success: false,
+          error: 'Invalid escrow private key format (must be base58 encoded)',
+          errorCode: 'INVALID_ADDRESS',
+          retryAttempts: attempt
+        }
+      }
+
+      const escrowWallet = escrowKeypair.publicKey
+      const escrowTokenAccount = await getAssociatedTokenAddress(
+        tokenMint,
+        escrowWallet
+      )
+
+      console.log(`[Instant Payment] Escrow wallet: ${escrowWallet.toString()}`)
+      console.log(`[Instant Payment] Escrow ATA: ${escrowTokenAccount.toString()}`)
+
+      // ==================== 4. BUILD TRANSACTION ====================
+
+      const transaction = new Transaction()
+
+      // 4a. Worker payment
+      console.log(`[Instant Payment] Adding worker payment: ${totalPaymentToWorker} tokens`)
+      
+      const workerATA = await getAssociatedTokenAddress(tokenMint, workerWallet)
+      const workerATAInfo = await connection.getAccountInfo(workerATA)
+
+      if (!workerATAInfo) {
+        console.log(`[Instant Payment] Creating worker ATA: ${workerATA.toString()}`)
+        transaction.add(
+          createAssociatedTokenAccountInstruction(
+            escrowWallet,
+            workerATA,
+            workerWallet,
+            tokenMint
+          )
+        )
+      }
+
+      const workerAmountRaw = Math.floor(totalPaymentToWorker * Math.pow(10, decimals))
+      transaction.add(
+        createTransferInstruction(
+          escrowTokenAccount,
+          workerATA,
+          escrowWallet,
+          workerAmountRaw,
+          [],
+          TOKEN_PROGRAM_ID
+        )
+      )
+      console.log(`[Instant Payment] ✓ Worker transfer added (raw: ${workerAmountRaw})`)
+
+      // 4b. Platform fee
+      console.log(`[Instant Payment] Adding platform fee: ${platformFee.toFixed(4)} tokens`)
+      
+      const platformATA = await getAssociatedTokenAddress(tokenMint, platformFeeWallet)
+      const platformATAInfo = await connection.getAccountInfo(platformATA)
+
+      if (!platformATAInfo) {
+        console.log(`[Instant Payment] Creating platform ATA: ${platformATA.toString()}`)
+        transaction.add(
+          createAssociatedTokenAccountInstruction(
+            escrowWallet,
+            platformATA,
+            platformFeeWallet,
+            tokenMint
+          )
+        )
+      }
+
+      const feeAmountRaw = Math.floor(platformFee * Math.pow(10, decimals))
+      transaction.add(
+        createTransferInstruction(
+          escrowTokenAccount,
+          platformATA,
+          escrowWallet,
+          feeAmountRaw,
+          [],
+          TOKEN_PROGRAM_ID
+        )
+      )
+      console.log(`[Instant Payment] ✓ Platform fee transfer added (raw: ${feeAmountRaw})`)
+
+      // 4c. Finalize transaction
+      const { blockhash } = await connection.getLatestBlockhash('confirmed')
+      transaction.recentBlockhash = blockhash
+      transaction.feePayer = escrowWallet
+
+      console.log(`[Instant Payment] Transaction built with ${transaction.instructions.length} instructions`)
+
+      // ==================== 5. SIGN AND SEND ====================
+
+      console.log(`[Instant Payment] Step 3: Signing and sending transaction...`)
+      transaction.sign(escrowKeypair)
+
+      const txSignature = await connection.sendRawTransaction(
+        transaction.serialize(),
+        { 
+          skipPreflight: false, 
+          preflightCommitment: 'confirmed',
+          maxRetries: 2 // RPC-level retries
+        }
+      )
+      
+      console.log(`[Instant Payment] Transaction sent: ${txSignature}`)
+      console.log(`[Instant Payment] Waiting for confirmation...`)
+
+      // ==================== 6. CONFIRM TRANSACTION ====================
+
+      await connection.confirmTransaction(txSignature, 'confirmed')
+
+      const duration = Date.now() - startTime
+      console.log(`\n${'='.repeat(80)}`)
+      console.log(`[Instant Payment] ✅ SUCCESS!`)
+      console.log(`[Instant Payment] Transaction: ${txSignature}`)
+      console.log(`[Instant Payment] Duration: ${duration}ms`)
+      console.log(`[Instant Payment] Retry attempts: ${attempt}`)
+      console.log(`[Instant Payment] Worker received: ${totalPaymentToWorker} tokens`)
+      console.log(`[Instant Payment] Platform fee: ${platformFee.toFixed(4)} tokens`)
+      console.log(`${'='.repeat(80)}\n`)
+
+      return {
+        success: true,
+        txSignature,
+        retryAttempts: attempt,
+        totalPayment: totalPaymentToWorker,
+        platformFee
+      }
+
+    } catch (error) {
+      lastError = error as Error
+      const duration = Date.now() - startTime
+      
+      console.error(`\n[Instant Payment] ❌ Attempt ${attempt + 1}/${maxRetries} failed after ${duration}ms`)
+      console.error(`[Instant Payment] Error:`, error)
+
+      // Determine if error is retryable
+      const errorMessage = error instanceof Error ? error.message : String(error)
+      const isRetryable = 
+        errorMessage.includes('timeout') ||
+        errorMessage.includes('429') ||
+        errorMessage.includes('503') ||
+        errorMessage.includes('network') ||
+        errorMessage.includes('blockhash not found')
+
+      // Don't retry for non-retryable errors
+      if (!isRetryable) {
+        console.error(`[Instant Payment] Non-retryable error detected, stopping retries`)
+        break
+      }
+
+      // Don't retry if this was the last attempt
+      if (attempt >= maxRetries - 1) {
+        console.error(`[Instant Payment] Max retries reached, giving up`)
+        break
+      }
+
+      console.log(`[Instant Payment] Error appears retryable, will retry...`)
+    }
+  }
+
+  // ==================== 7. ALL RETRIES FAILED ====================
+
+  const finalDuration = Date.now() - startTime
+  console.error(`\n${'='.repeat(80)}`)
+  console.error(`[Instant Payment] ❌ FAILED after ${finalDuration}ms`)
+  console.error(`[Instant Payment] All ${maxRetries} attempts exhausted`)
+  console.error(`[Instant Payment] Final error:`, lastError)
+  console.error(`${'='.repeat(80)}\n`)
+
+  // Categorize error for caller
+  let errorCode: InstantPaymentResult['errorCode'] = 'UNKNOWN'
+  let errorMessage = 'Unknown error during payment execution'
+
+  if (lastError) {
+    errorMessage = lastError.message
+
+    if (errorMessage.includes('Insufficient funds') || errorMessage.includes('insufficient')) {
+      errorCode = 'INSUFFICIENT_BALANCE'
+      errorMessage = 'Escrow has insufficient balance for this transaction'
+    } else if (errorMessage.includes('timeout') || errorMessage.includes('429') || errorMessage.includes('503')) {
+      errorCode = 'RPC_TIMEOUT'
+      errorMessage = `Network timeout after ${maxRetries} attempts. Last error: ${errorMessage}`
+    } else if (errorMessage.includes('Invalid public key') || errorMessage.includes('invalid')) {
+      errorCode = 'INVALID_ADDRESS'
+      errorMessage = 'Invalid wallet address provided'
+    } else if (errorMessage.includes('Transaction') || errorMessage.includes('simulation')) {
+      errorCode = 'TRANSACTION_FAILED'
+      errorMessage = `Transaction failed: ${errorMessage}`
+    }
+  }
+
+  return {
+    success: false,
+    error: errorMessage,
+    errorCode,
+    retryAttempts: maxRetries - 1
+  }
+}
+

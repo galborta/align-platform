@@ -746,11 +746,19 @@ export type Database = {
           social_denial_reason: string | null
           social_follower_count: number | null
           social_follower_count_verified: number | null
+          social_impression_count: number | null
+          social_impression_bonus_usd: number | null
           social_payment_amount_tokens: number | null
           social_payment_amount_usd: number | null
           social_payment_released: boolean | null
           social_payment_tx_signature: string | null
           social_tweet_link: string | null
+          // Payment lifecycle tracking (Phase 1 - Instant Payments)
+          social_payment_retry_count: number
+          social_base_payment_amount_tokens: number | null
+          social_base_payment_amount_usd: number | null
+          social_follower_tier_at_payment: string | null
+          social_payment_failed_reason: string | null
           submitted_at: string | null
           winner_position: number | null
           worker_wallet: string
@@ -769,11 +777,19 @@ export type Database = {
           social_denial_reason?: string | null
           social_follower_count?: number | null
           social_follower_count_verified?: number | null
+          social_impression_count?: number | null
+          social_impression_bonus_usd?: number | null
           social_payment_amount_tokens?: number | null
           social_payment_amount_usd?: number | null
           social_payment_released?: boolean | null
           social_payment_tx_signature?: string | null
           social_tweet_link?: string | null
+          // Payment lifecycle tracking
+          social_payment_retry_count?: number
+          social_base_payment_amount_tokens?: number | null
+          social_base_payment_amount_usd?: number | null
+          social_follower_tier_at_payment?: string | null
+          social_payment_failed_reason?: string | null
           submitted_at?: string | null
           winner_position?: number | null
           worker_wallet: string
@@ -792,11 +808,19 @@ export type Database = {
           social_denial_reason?: string | null
           social_follower_count?: number | null
           social_follower_count_verified?: number | null
+          social_impression_count?: number | null
+          social_impression_bonus_usd?: number | null
           social_payment_amount_tokens?: number | null
           social_payment_amount_usd?: number | null
           social_payment_released?: boolean | null
           social_payment_tx_signature?: string | null
           social_tweet_link?: string | null
+          // Payment lifecycle tracking
+          social_payment_retry_count?: number
+          social_base_payment_amount_tokens?: number | null
+          social_base_payment_amount_usd?: number | null
+          social_follower_tier_at_payment?: string | null
+          social_payment_failed_reason?: string | null
           submitted_at?: string | null
           winner_position?: number | null
           worker_wallet?: string
@@ -1903,6 +1927,8 @@ export type NotificationType =
   | 'social_submission_approved'
   | 'social_submission_denied'
   | 'social_payment_distributed'
+  | 'social_campaign_completed'
+  | 'social_campaign_ended_no_participants'
   // Social asset review notifications
   | 'social_asset_pending'
   | 'social_asset_approved'
@@ -2118,7 +2144,7 @@ export interface TipFormData {
 
 // ==================== SOCIAL MEDIA JOB TYPES ====================
 // Re-export from dedicated file for convenience
-export type { BudgetTier, SocialJobType, SocialApprovalStatus, DisputeType, SocialDisputeType } from './social-media-jobs'
+export type { BudgetTier, FollowerTier, SocialJobType, SocialApprovalStatus, DisputeType, SocialDisputeType } from './social-media-jobs'
 
 // ==================== REVISION OFFERING TYPES ====================
 

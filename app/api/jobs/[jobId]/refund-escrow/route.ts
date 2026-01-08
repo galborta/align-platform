@@ -17,28 +17,29 @@ const supabaseAdmin = createClient<Database>(
  * Refunds all tokens locked in escrow back to the job poster when a job is cancelled.
  * 
  * Authentication:
- * - Requires Supabase JWT token in Authorization header
- * - User's wallet must match the job poster's wallet
+ * - Requires wallet signature verification
+ * - User's wallet must match the job poster's wallet OR be an active admin
  * 
  * Returns:
  * - 200: { success: true, txSignature: string, amountRefunded: number }
  * - 400: { error: string } - Invalid request
  * - 401: { error: string } - Unauthorized (missing/invalid token)
- * - 403: { error: string } - Forbidden (not the poster)
+ * - 403: { error: string } - Forbidden (not the poster or admin)
  * - 404: { error: string } - Job not found
  * - 500: { error: string } - Internal server error
  * 
  * Process:
- * 1. Authenticates user via Supabase JWT
+ * 1. Authenticates user via wallet signature
  * 2. Fetches job details from database
- * 3. Verifies authenticated user's wallet matches job poster
+ * 3. Verifies authenticated user's wallet matches job poster OR is an active admin
  * 4. Verifies escrow is locked
  * 5. Processes full refund (payment + fee) back to poster
  * 6. Logs transaction to job_escrow_transactions table
  * 
  * Security:
- * - CRITICAL: Uses Supabase JWT authentication
- * - Only the authenticated job poster can request a refund
+ * - CRITICAL: Uses cryptographic signature authentication
+ * - Only the authenticated job poster OR active admin can request a refund
+ * - Admin override logged for audit trail
  * - Requires escrow to be locked (escrow_locked = true)
  * - Uses secure escrow wallet private key from environment
  */
@@ -131,16 +132,36 @@ export async function POST(
     console.log('  Authenticated wallet:', authenticatedWallet)
     console.log('  Match:', job.poster_wallet === authenticatedWallet)
 
-    // Verify authenticated user is the job poster
-    if (job.poster_wallet !== authenticatedWallet) {
+    // Check if user is an admin (admin override for job deletion)
+    const { data: adminCheck } = await supabaseAdmin
+      .from('admin_wallets')
+      .select('wallet_address, role, is_active')
+      .eq('wallet_address', authenticatedWallet)
+      .eq('is_active', true)
+      .maybeSingle()
+
+    const isAdmin = !!adminCheck
+
+    console.log('[Refund API] Admin check:', {
+      wallet: authenticatedWallet,
+      isAdmin,
+      role: adminCheck?.role
+    })
+
+    // Verify authenticated user is either the job poster OR an admin
+    if (job.poster_wallet !== authenticatedWallet && !isAdmin) {
       console.warn(`[Refund API] Unauthorized refund attempt by ${authenticatedWallet}`)
       return NextResponse.json(
-        { error: 'Only the job poster can request a refund' },
+        { error: 'Only the job poster or an admin can request a refund' },
         { status: 403 }
       )
     }
 
-    console.log('[Refund API] ✅ Poster verified via Supabase auth')
+    if (isAdmin && job.poster_wallet !== authenticatedWallet) {
+      console.log(`[Refund API] ⚠️  Admin override: ${authenticatedWallet} (${adminCheck?.role}) refunding job on behalf of poster ${job.poster_wallet}`)
+    } else {
+      console.log('[Refund API] ✅ Poster verified via signature')
+    }
 
     // Verify escrow is locked
     if (!job.escrow_locked) {

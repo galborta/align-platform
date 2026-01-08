@@ -98,7 +98,7 @@ export async function POST(
 
     // Get user's wallet from profile (this is the trusted worker wallet)
     const { data: profile, error: profileError } = await supabaseAdmin
-      .from('profiles')
+      .from('user_profiles')
       .select('wallet_address')
       .eq('id', user.id)
       .single()
@@ -352,7 +352,7 @@ export async function GET(
 
     // Get user's wallet from profile
     const { data: profile, error: profileError } = await supabaseAdmin
-      .from('profiles')
+      .from('user_profiles')
       .select('wallet_address')
       .eq('id', user.id)
       .single()

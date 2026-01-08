@@ -11,7 +11,7 @@ import { AppHeader } from '@/components/AppHeader'
 import { ProjectChat } from '@/components/ProjectChat'
 import { AddAssetModal } from '@/components/AddAssetModal'
 import { CreateJobModal } from '@/components/CreateJobModal'
-import CreateSocialMediaJobModal from '@/components/jobs/CreateSocialMediaJobModal'
+import { SocialJobCreationWizard } from '@/components/jobs/social'
 import Dialog from '@mui/material/Dialog'
 import DialogTitle from '@mui/material/DialogTitle'
 import DialogContent from '@mui/material/DialogContent'
@@ -99,6 +99,7 @@ export default function ProjectDetailPage() {
   const [showJobTypeSelector, setShowJobTypeSelector] = useState(false)
   const [showSocialMediaModal, setShowSocialMediaModal] = useState(false)
   const [selectedJobType, setSelectedJobType] = useState<'regular' | 'contest'>('regular')
+  const [tokenPrice, setTokenPrice] = useState<number>(0.01)
   const [tokenStats, setTokenStats] = useState<TokenStats>({
     price: null,
     marketCap: null,
@@ -137,7 +138,14 @@ export default function ProjectDetailPage() {
       }
       return response.json()
     },
-    { refreshInterval: 10000 } // Refresh every 10 seconds
+    {
+      refreshInterval: 10000, // Refresh every 10 seconds
+      errorRetryInterval: 5000, // Wait 5 seconds before retrying on error
+      errorRetryCount: 3, // Only retry 3 times max
+      dedupingInterval: 2000, // Prevent duplicate requests within 2 seconds
+      revalidateOnFocus: false, // Don't refetch when window regains focus
+      revalidateOnReconnect: false // Don't refetch on network reconnect
+    }
   )
 
   // Scroll to top when navigating to this page
@@ -313,6 +321,11 @@ export default function ProjectDetailPage() {
         marketCap: tokenData?.marketCap || null,
         topHolders: holders
       })
+      
+      // Update token price for social media wizard
+      if (tokenData?.price) {
+        setTokenPrice(tokenData.price)
+      }
     } catch (error) {
       console.error('Error fetching token stats:', error)
     } finally {
@@ -782,26 +795,18 @@ export default function ProjectDetailPage() {
 
             {/* Create Social Media Job Modal */}
             {showSocialMediaModal && wallet.publicKey && (
-              <CreateSocialMediaJobModal
-                open={showSocialMediaModal}
-                onClose={() => setShowSocialMediaModal(false)}
+              <SocialJobCreationWizard
                 projectId={project.id}
-                posterWallet={wallet.publicKey.toString()}
+                isOpen={showSocialMediaModal}
+                onClose={() => setShowSocialMediaModal(false)}
+                onSuccess={(jobId) => {
+                  setShowSocialMediaModal(false)
+                  router.push(`/project/${project.id}/jobs/${jobId}`)
+                }}
                 tokenMint={project.token_mint}
                 tokenSymbol={project.token_symbol}
-                onJobCreated={() => {
-                  setShowSocialMediaModal(false)
-                }}
-                onSwitchToRegular={() => {
-                  setShowSocialMediaModal(false)
-                  setSelectedJobType('regular')
-                  setShowCreateJobModal(true)
-                }}
-                onSwitchToContest={() => {
-                  setShowSocialMediaModal(false)
-                  setSelectedJobType('contest')
-                  setShowCreateJobModal(true)
-                }}
+                tokenPrice={tokenPrice}
+                posterWallet={wallet.publicKey.toString()}
               />
             )}
 
