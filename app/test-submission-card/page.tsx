@@ -1,3 +1,5 @@
+'use client'
+
 import SubmissionReviewCard from '@/components/jobs/social/SubmissionReviewCard'
 import { Box, Container, Typography } from '@mui/material'
 
