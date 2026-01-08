@@ -2,6 +2,7 @@ import { supabase } from './supabase'
 import { Database } from '@/types/database'
 import { notificationService } from '@/lib/services/notificationService'
 import { requireVerifiedWallet } from '@/lib/middleware'
+import type { BudgetTier, SocialJobType } from '@/types/social-jobs'
 
 type Job = Database['public']['Tables']['jobs']['Row']
 
@@ -135,6 +136,161 @@ export async function createJob(jobData: {
     maxRetries,
     initialDelay,
     'createJob'
+  )
+}
+
+/**
+ * Create a new social media job (retweet or original tweet campaign)
+ * 
+ * This function includes retry logic for resilience against transient failures.
+ * Social media jobs have tier-based payments and automatic deadline calculations.
+ * 
+ * @param jobData - Social job configuration
+ * @returns Created job record
+ * 
+ * @example
+ * ```typescript
+ * const job = await createSocialJob({
+ *   project_id: 'uuid',
+ *   poster_wallet: '5yG3...',
+ *   title: 'Retweet our product launch',
+ *   description: 'Help spread the word about our new product',
+ *   social_job_type: 'retweet',
+ *   social_tweet_url: 'https://twitter.com/user/status/123',
+ *   social_submission_deadline: '2026-01-10T12:00:00.000Z',
+ *   social_review_deadline: '2026-01-11T12:00:00.000Z',
+ *   social_engagement_deadline: '2026-01-17T12:00:00.000Z',
+ *   social_total_budget_usd: 1000,
+ *   social_total_budget_tokens: 5000,
+ *   social_budget_tiers: [
+ *     { min_followers: 1000, max_followers: 10000, price_usd: 50 },
+ *     { min_followers: 10001, max_followers: 100000, price_usd: 200 },
+ *     { min_followers: 100001, max_followers: null, price_usd: 500 }
+ *   ],
+ *   social_min_followers_required: 1000,
+ *   kpis: 'Social media engagement metrics',
+ *   category: 'social_media',
+ *   fee_percentage_at_creation: 5.0,
+ *   escrow_locked: true,
+ *   escrow_tx_signature: 'tx123...',
+ *   escrow_amount_tokens: 5000,
+ *   escrow_token_mint: 'EPjFWdd5...'
+ * })
+ * ```
+ */
+export async function createSocialJob(jobData: {
+  // Base job fields
+  project_id: string
+  poster_wallet: string
+  title: string
+  description: string
+  kpis: string
+  category: string
+  fee_percentage_at_creation: number
+  
+  // Social media job specific fields
+  social_job_type: SocialJobType
+  social_tweet_url?: string
+  social_tweet_topic?: string
+  social_submission_deadline: string
+  social_review_deadline: string
+  social_engagement_deadline: string
+  social_total_budget_usd: number
+  social_total_budget_tokens: number
+  social_budget_tiers: BudgetTier[]
+  social_min_followers_required?: number
+  
+  // Escrow fields
+  escrow_locked?: boolean
+  escrow_tx_signature?: string | null
+  escrow_amount_tokens?: number | null
+  escrow_token_mint?: string | null
+}): Promise<Job> {
+  // Social jobs always have escrow locked since they're prepaid campaigns
+  const isEscrowLocked = jobData.escrow_locked && jobData.escrow_tx_signature
+  const maxRetries = isEscrowLocked ? 5 : 3 // More retries for escrow jobs
+  const initialDelay = isEscrowLocked ? 2000 : 1000 // Longer delay for escrow jobs
+  
+  return retryWithBackoff(
+    async () => {
+      console.log('[createSocialJob] Attempting to insert social media job:', {
+        title: jobData.title,
+        social_job_type: jobData.social_job_type,
+        social_total_budget_usd: jobData.social_total_budget_usd,
+        tier_count: jobData.social_budget_tiers.length,
+        escrow_locked: jobData.escrow_locked,
+        tx: jobData.escrow_tx_signature?.slice(0, 8)
+      })
+      
+      // Construct job insert data
+      const socialJobInsert: JobInsert = {
+        // Base fields
+        project_id: jobData.project_id,
+        poster_wallet: jobData.poster_wallet,
+        title: jobData.title,
+        description: jobData.description,
+        kpis: jobData.kpis,
+        category: jobData.category,
+        payment_amount_tokens: 0, // Social jobs use tier-based payments
+        payment_amount_usd: 0,
+        assignment_mode: 'review', // Social jobs always use review mode
+        status: 'open',
+        fee_percentage_at_creation: jobData.fee_percentage_at_creation,
+        
+        // Social media job fields
+        is_social_media_job: true,
+        social_job_type: jobData.social_job_type,
+        social_tweet_url: jobData.social_tweet_url || null,
+        social_tweet_topic: jobData.social_tweet_topic || null,
+        social_submission_deadline: jobData.social_submission_deadline,
+        social_review_deadline: jobData.social_review_deadline,
+        social_engagement_deadline: jobData.social_engagement_deadline,
+        social_total_budget_usd: jobData.social_total_budget_usd,
+        social_total_budget_tokens: jobData.social_total_budget_tokens,
+        social_budget_tiers: jobData.social_budget_tiers as any, // Cast to JSONB
+        social_actual_budget_released: 0,
+        social_payments_distributed: false,
+        social_min_followers_required: jobData.social_min_followers_required || null,
+        
+        // Escrow fields
+        escrow_locked: jobData.escrow_locked || false,
+        escrow_tx_signature: jobData.escrow_tx_signature || null,
+        escrow_amount_tokens: jobData.escrow_amount_tokens || null,
+        escrow_token_mint: jobData.escrow_token_mint || null,
+        
+        // Timestamps
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      }
+      
+      const { data, error } = await supabase
+        .from('jobs')
+        .insert(socialJobInsert)
+        .select()
+        .single()
+
+      if (error) {
+        console.error('[createSocialJob] Insert failed:', {
+          code: error.code,
+          message: error.message,
+          details: error.details,
+          hint: error.hint
+        })
+        throw error
+      }
+      
+      console.log('[createSocialJob] Social media job created successfully:', {
+        id: data.id,
+        type: data.social_job_type,
+        budget: data.social_total_budget_usd,
+        tiers: (data.social_budget_tiers as BudgetTier[])?.length || 0
+      })
+      
+      return data
+    },
+    maxRetries,
+    initialDelay,
+    'createSocialJob'
   )
 }
 

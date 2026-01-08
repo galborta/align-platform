@@ -93,7 +93,15 @@ class NotificationService {
     'contest_prize_won', // Winner needs to know they won
     'contest_no_submissions', // Poster can cancel for refund
     'contest_deadline_reminder', // Important deadline reminder
-    'job_status_changed' // Status changes are important
+    'job_status_changed', // Status changes are important
+    // Social media job notifications (all non-batchable for now)
+    'social_submission_received', // Poster needs to review each submission
+    'social_submission_approved', // Worker needs to know immediately
+    'social_submission_denied', // Worker needs to know immediately
+    'job_deadline_extended', // Workers/participants need to know deadline changed
+    'social_payment_distributed', // Worker needs to know about payment
+    'social_campaign_completed', // Poster needs final campaign results
+    'social_campaign_ended_no_participants' // Poster needs to know to cancel
   ];
 
   // Types that trigger browser notifications (high priority)
@@ -118,7 +126,12 @@ class NotificationService {
     'high_revision_count_warning_poster', // Important warning
     'high_revision_count_warning_worker', // Important warning
     'contest_judging_started', // Poster needs to select winners
-    'contest_prize_won' // Winner needs to know immediately
+    'contest_prize_won', // Winner needs to know immediately
+    // Social media job notifications (high priority)
+    'social_submission_approved', // Worker payment notification
+    'social_submission_denied', // Worker needs to know rejection
+    'social_payment_distributed', // Worker payment notification
+    'social_campaign_ended_no_participants' // Poster needs to cancel for refund
   ];
 
   // Batching window in milliseconds (5 minutes)
@@ -1163,6 +1176,18 @@ class NotificationService {
         return {
           title: '💸 Social Payment Distributed',
           body: `${metadata.amount || '...'} ${metadata.token || 'tokens'} distributed for ${metadata.job_title || 'your social job'}`
+        };
+
+      case 'social_campaign_completed':
+        return {
+          title: '🎉 Social Campaign Completed!',
+          body: `Your campaign "${metadata.job_title || 'a social job'}" ended with ${metadata.social_participants || 0} participants. Total spent: $${metadata.social_total_spent || 0}`
+        };
+
+      case 'social_campaign_ended_no_participants':
+        return {
+          title: '📭 Social Campaign Ended - No Participants',
+          body: `Your campaign "${metadata.job_title || 'a social job'}" received no submissions. You can cancel for a full refund with no karma penalty.`
         };
 
       // Editor notifications

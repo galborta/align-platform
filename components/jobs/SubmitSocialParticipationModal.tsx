@@ -440,6 +440,9 @@ export default function SubmitSocialParticipationModal({
                     fontFamily: 'var(--font-body, Satoshi, sans-serif)',
                     '&.Mui-focused fieldset': {
                       borderColor: 'var(--accent-primary, #7C4DFF)'
+                    },
+                    '& input:focus': {
+                      outline: 'none'
                     }
                   },
                   '& .MuiInputLabel-root.Mui-focused': {
@@ -512,6 +515,9 @@ export default function SubmitSocialParticipationModal({
                     fontFamily: 'var(--font-body, Satoshi, sans-serif)',
                     '&.Mui-focused fieldset': {
                       borderColor: 'var(--accent-primary, #7C4DFF)'
+                    },
+                    '& input:focus': {
+                      outline: 'none'
                     }
                   },
                   '& .MuiInputLabel-root.Mui-focused': {

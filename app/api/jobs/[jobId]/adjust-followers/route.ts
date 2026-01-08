@@ -37,7 +37,7 @@ export async function POST(
     const { jobId } = await params
 
     const body = await request.json()
-    const { submission_id, verified_follower_count, adjustment_reason } = body
+    const { submission_id, verified_follower_count, adjustment_reason, poster_wallet } = body
 
     // === VALIDATION ===
 
@@ -81,22 +81,16 @@ export async function POST(
 
     console.log(`[Adjust Followers] Authenticated user: ${user.id}`)
 
-    // Get user's wallet from profile
-    const { data: profile, error: profileError } = await supabaseAdmin
-      .from('profiles')
-      .select('wallet_address')
-      .eq('id', user.id)
-      .single()
-
-    if (profileError || !profile?.wallet_address) {
-      console.error('[Adjust Followers] No wallet found for user:', profileError)
+    // Use wallet address from request body (provided by frontend)
+    if (!poster_wallet) {
+      console.error('[Adjust Followers] Missing poster_wallet in request')
       return NextResponse.json(
-        { error: 'No wallet address linked to account' },
-        { status: 403 }
+        { error: 'Wallet address required' },
+        { status: 400 }
       )
     }
 
-    console.log(`[Adjust Followers] User wallet: ${profile.wallet_address}`)
+    console.log(`[Adjust Followers] User wallet: ${poster_wallet}`)
 
     // === GET JOB DETAILS ===
 
@@ -118,7 +112,7 @@ export async function POST(
     // === AUTHORIZATION ===
 
     // Verify user is the job poster
-    if (profile.wallet_address !== job.poster_wallet) {
+    if (poster_wallet !== job.poster_wallet) {
       console.error('[Adjust Followers] Unauthorized - not job poster')
       return NextResponse.json(
         { error: 'Only job poster can adjust follower counts' },

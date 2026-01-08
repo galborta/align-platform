@@ -30,6 +30,7 @@ interface DenySubmissionModalProps {
     worker_wallet: string
   }
   jobId: string
+  posterWallet: string
 }
 
 // ==================== COMPONENT ====================
@@ -39,7 +40,8 @@ export default function DenySubmissionModal({
   onClose,
   onDeny,
   submission,
-  jobId
+  jobId,
+  posterWallet
 }: DenySubmissionModalProps) {
   const [denialReason, setDenialReason] = useState<string>('tweet_link_invalid')
   const [customReason, setCustomReason] = useState('')
@@ -61,9 +63,9 @@ export default function DenySubmissionModal({
 
     try {
       // Get Supabase session for authentication
-      const { session, error: sessionError } = await getSessionWithError()
+      const { data: { session }, error: sessionError } = await supabase.auth.getSession()
       if (sessionError || !session) {
-        setError(sessionError || 'Authentication required. Please sign in again.')
+        setError('Authentication required. Please sign in again.')
         setLoading(false)
         return
       }
@@ -77,7 +79,8 @@ export default function DenySubmissionModal({
         body: JSON.stringify({
           submission_id: submission.id,
           action: 'deny',
-          denial_reason: finalReason
+          denial_reason: finalReason,
+          poster_wallet: posterWallet
         })
       })
 
@@ -118,21 +121,58 @@ export default function DenySubmissionModal({
       maxWidth="sm"
       fullWidth
       PaperProps={{
-        sx: { bgcolor: '#1a1a1a', color: '#fff' }
+        sx: { 
+          bgcolor: 'var(--card-background, #FFFFFF)',
+          borderRadius: 'var(--radius-card-lg, 24px)',
+          boxShadow: 'var(--shadow-floating, 0 24px 60px 0 rgba(15, 23, 42, 0.10))'
+        }
       }}
     >
-      <DialogTitle sx={{ borderBottom: '1px solid #333' }}>
+      <DialogTitle 
+        sx={{ 
+          borderBottom: '1px solid var(--border-subtle, #E5E7F0)',
+          fontFamily: 'var(--font-heading, Space Grotesk, sans-serif)',
+          fontWeight: 600,
+          color: 'var(--text-primary, #1A1A1E)',
+          fontSize: '22px',
+          pb: 2
+        }}
+      >
         Deny Submission
       </DialogTitle>
 
-      <DialogContent sx={{ mt: 2 }}>
-        <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
+      <DialogContent sx={{ mt: 3 }}>
+        <Typography 
+          variant="body2" 
+          sx={{ 
+            mb: 3,
+            color: 'var(--text-secondary, #6F7280)',
+            fontSize: '14px'
+          }}
+        >
           Are you sure you want to deny this submission from{' '}
-          {submission.worker_wallet.slice(0, 8)}...{submission.worker_wallet.slice(-6)}?
+          <Box
+            component="span"
+            sx={{
+              fontFamily: 'var(--font-mono, JetBrains Mono, monospace)',
+              fontWeight: 600,
+              color: 'var(--text-primary, #1A1A1E)'
+            }}
+          >
+            {submission.worker_wallet.slice(0, 8)}...{submission.worker_wallet.slice(-6)}
+          </Box>
+          ?
         </Typography>
 
-        <FormControl component="fieldset" sx={{ mb: 2 }}>
-          <FormLabel sx={{ color: '#fff', mb: 1 }}>
+        <FormControl component="fieldset" sx={{ mb: 2, width: '100%' }}>
+          <FormLabel 
+            sx={{ 
+              color: 'var(--text-primary, #1A1A1E)',
+              fontWeight: 600,
+              fontSize: '14px',
+              mb: 1.5
+            }}
+          >
             Reason for Denial (Required)
           </FormLabel>
           <RadioGroup
@@ -141,28 +181,93 @@ export default function DenySubmissionModal({
           >
             <FormControlLabel
               value="tweet_link_invalid"
-              control={<Radio sx={{ color: '#7C4DFF' }} />}
-              label="Tweet link is broken/invalid"
+              control={
+                <Radio 
+                  sx={{ 
+                    color: 'var(--accent-primary, #7C4DFF)',
+                    '&.Mui-checked': {
+                      color: 'var(--accent-primary, #7C4DFF)'
+                    }
+                  }} 
+                />
+              }
+              label={
+                <Typography sx={{ fontSize: '14px', color: 'var(--text-secondary, #6F7280)' }}>
+                  Tweet link is broken/invalid
+                </Typography>
+              }
             />
             <FormControlLabel
               value="guidelines_not_followed"
-              control={<Radio sx={{ color: '#7C4DFF' }} />}
-              label="Did not follow guidelines"
+              control={
+                <Radio 
+                  sx={{ 
+                    color: 'var(--accent-primary, #7C4DFF)',
+                    '&.Mui-checked': {
+                      color: 'var(--accent-primary, #7C4DFF)'
+                    }
+                  }} 
+                />
+              }
+              label={
+                <Typography sx={{ fontSize: '14px', color: 'var(--text-secondary, #6F7280)' }}>
+                  Did not follow guidelines
+                </Typography>
+              }
             />
             <FormControlLabel
               value="fake_followers"
-              control={<Radio sx={{ color: '#7C4DFF' }} />}
-              label="Suspected fake followers"
+              control={
+                <Radio 
+                  sx={{ 
+                    color: 'var(--accent-primary, #7C4DFF)',
+                    '&.Mui-checked': {
+                      color: 'var(--accent-primary, #7C4DFF)'
+                    }
+                  }} 
+                />
+              }
+              label={
+                <Typography sx={{ fontSize: '14px', color: 'var(--text-secondary, #6F7280)' }}>
+                  Suspected fake followers
+                </Typography>
+              }
             />
             <FormControlLabel
               value="low_quality"
-              control={<Radio sx={{ color: '#7C4DFF' }} />}
-              label="Low quality/spammy tweet"
+              control={
+                <Radio 
+                  sx={{ 
+                    color: 'var(--accent-primary, #7C4DFF)',
+                    '&.Mui-checked': {
+                      color: 'var(--accent-primary, #7C4DFF)'
+                    }
+                  }} 
+                />
+              }
+              label={
+                <Typography sx={{ fontSize: '14px', color: 'var(--text-secondary, #6F7280)' }}>
+                  Low quality/spammy tweet
+                </Typography>
+              }
             />
             <FormControlLabel
               value="other"
-              control={<Radio sx={{ color: '#7C4DFF' }} />}
-              label="Other (explain below)"
+              control={
+                <Radio 
+                  sx={{ 
+                    color: 'var(--accent-primary, #7C4DFF)',
+                    '&.Mui-checked': {
+                      color: 'var(--accent-primary, #7C4DFF)'
+                    }
+                  }} 
+                />
+              }
+              label={
+                <Typography sx={{ fontSize: '14px', color: 'var(--text-secondary, #6F7280)' }}>
+                  Other (explain below)
+                </Typography>
+              }
             />
           </RadioGroup>
         </FormControl>
@@ -176,23 +281,80 @@ export default function DenySubmissionModal({
             value={customReason}
             onChange={(e) => setCustomReason(e.target.value)}
             placeholder="Explain why you're denying this submission..."
-            sx={{ mb: 2 }}
+            sx={{ 
+              mb: 2,
+              '& .MuiOutlinedInput-root': {
+                borderRadius: '12px',
+                bgcolor: 'var(--subtle-background, #F7F8FB)',
+                '& fieldset': {
+                  borderColor: 'var(--border-subtle, #E5E7F0)'
+                },
+                '&:hover fieldset': {
+                  borderColor: 'var(--accent-primary, #7C4DFF)'
+                },
+                '&.Mui-focused fieldset': {
+                  borderColor: 'var(--accent-primary, #7C4DFF)'
+                }
+              },
+              '& .MuiInputLabel-root': {
+                color: 'var(--text-secondary, #6F7280)',
+                fontSize: '14px'
+              }
+            }}
           />
         )}
 
-        <Alert severity="warning">
+        <Alert 
+          severity="warning"
+          sx={{
+            borderRadius: '12px',
+            bgcolor: 'rgba(255, 200, 87, 0.1)',
+            border: '1px solid var(--accent-warning, #FFC857)',
+            '& .MuiAlert-icon': {
+              color: 'var(--accent-warning, #FFC857)'
+            }
+          }}
+        >
           ⚠️ Worker can dispute this denial if they believe it's unjust.
         </Alert>
 
         {error && (
-          <Alert severity="error" sx={{ mt: 2 }}>
+          <Alert 
+            severity="error" 
+            sx={{ 
+              mt: 2,
+              borderRadius: '12px',
+              bgcolor: 'rgba(239, 68, 68, 0.1)',
+              border: '1px solid #EF4444'
+            }}
+          >
             {error}
           </Alert>
         )}
       </DialogContent>
 
-      <DialogActions sx={{ borderTop: '1px solid #333', p: 2 }}>
-        <Button onClick={onClose} disabled={loading} sx={{ color: '#fff' }}>
+      <DialogActions 
+        sx={{ 
+          borderTop: '1px solid var(--border-subtle, #E5E7F0)',
+          p: 'var(--space-lg, 24px)',
+          gap: 1
+        }}
+      >
+        <Button 
+          onClick={onClose} 
+          disabled={loading}
+          sx={{ 
+            color: 'var(--text-secondary, #6F7280)',
+            textTransform: 'none',
+            fontWeight: 500,
+            fontSize: '14px',
+            borderRadius: 'var(--radius-control, 999px)',
+            px: 3,
+            '&:hover': {
+              bgcolor: 'var(--subtle-background, #F7F8FB)'
+            }
+          }}
+        >
           Cancel
         </Button>
         <Button
@@ -200,8 +362,23 @@ export default function DenySubmissionModal({
           onClick={handleSubmit}
           disabled={loading}
           sx={{
-            bgcolor: '#f44336',
-            '&:hover': { bgcolor: '#d32f2f' }
+            bgcolor: '#EF4444',
+            color: '#FFFFFF',
+            textTransform: 'none',
+            fontWeight: 600,
+            fontSize: '14px',
+            borderRadius: 'var(--radius-control, 999px)',
+            px: 3,
+            fontFamily: 'var(--font-body, Satoshi, sans-serif)',
+            boxShadow: '0 4px 12px 0 rgba(239, 68, 68, 0.25)',
+            '&:hover': { 
+              bgcolor: '#DC2626',
+              boxShadow: '0 6px 16px 0 rgba(239, 68, 68, 0.35)'
+            },
+            '&:disabled': {
+              bgcolor: 'var(--text-muted, #A3A7B5)',
+              color: '#FFFFFF'
+            }
           }}
         >
           {loading ? 'Denying...' : 'Confirm Denial'}

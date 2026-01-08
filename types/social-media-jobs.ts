@@ -32,6 +32,56 @@ export interface BudgetTier {
   budget_usd: number
 }
 
+// ==================== FOLLOWER TIER (INSTANT PAYMENT SYSTEM) ====================
+
+/**
+ * Represents a single payment tier based on follower count for instant payment system
+ * 
+ * Unlike BudgetTier (which defines TOTAL budget based on participant count),
+ * FollowerTier defines PER-PERSON payment based on follower count.
+ * 
+ * This enables instant payments where workers are paid immediately upon approval
+ * based on their follower count tier, rather than waiting for batch payments at end.
+ * 
+ * @example
+ * ```typescript
+ * // Micro influencers: 0-1,000 followers get $10 each
+ * {
+ *   min_followers: 0,
+ *   max_followers: 1000,
+ *   base_payment_usd: 10,
+ *   tier_name: "Micro"
+ * }
+ * 
+ * // Macro influencers: 10,000+ followers get $100 each
+ * {
+ *   min_followers: 10001,
+ *   max_followers: null,  // Open-ended
+ *   base_payment_usd: 100,
+ *   tier_name: "Macro"
+ * }
+ * ```
+ */
+export interface FollowerTier {
+  /** Minimum follower count for this tier (inclusive). First tier starts at 0. */
+  min_followers: number
+  /** 
+   * Maximum follower count for this tier (inclusive), or null for open-ended tiers.
+   * Boundary: Someone with exactly max_followers falls INTO this tier.
+   */
+  max_followers: number | null
+  /** 
+   * Fixed payment amount in USD for anyone in this tier (per person, not total budget).
+   * Example: 25 means each worker with followers in this range gets $25 when approved.
+   */
+  base_payment_usd: number
+  /** 
+   * Human-readable tier name for UI display.
+   * Examples: "Micro", "Small", "Mid-tier", "Macro", "Mega"
+   */
+  tier_name: string
+}
+
 // ==================== JOB TYPES ====================
 
 /**
@@ -44,13 +94,27 @@ export type SocialJobType = 'retweet' | 'original_tweet'
 // ==================== APPROVAL STATUS ====================
 
 /**
- * Status of a social media submission's approval
+ * Status of a social media submission's approval and payment lifecycle
+ * 
+ * State Machine:
+ * pending → approved_pending_payment → approved (success)
+ *                                   → approved_failed (retry exhausted)
+ * pending → denied (rejected by poster)
+ * 
  * - 'pending': Awaiting poster review
- * - 'approved': Poster accepted the submission
+ * - 'approved_pending_payment': Payment transaction submitted to blockchain, awaiting confirmation
+ * - 'approved': Payment confirmed successfully, worker has been paid
+ * - 'auto_approved': Review deadline passed, auto-approved (will transition to approved_pending_payment)
+ * - 'approved_failed': Payment failed after all retry attempts exhausted
  * - 'denied': Poster rejected the submission (with reason)
- * - 'auto_approved': Review deadline passed, auto-approved
  */
-export type SocialApprovalStatus = 'pending' | 'approved' | 'denied' | 'auto_approved'
+export type SocialApprovalStatus = 
+  | 'pending' 
+  | 'approved_pending_payment'
+  | 'approved' 
+  | 'auto_approved'
+  | 'approved_failed'
+  | 'denied'
 
 // ==================== DISPUTE TYPES ====================
 

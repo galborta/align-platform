@@ -1,6 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { Connection, PublicKey } from '@solana/web3.js'
 import { notificationService } from '@/lib/services/notificationService'
+import { calculateImpressionBonus } from '@/lib/social-jobs'
+import { calculateFollowerTier, type FollowerTier } from '@/lib/social-media-jobs-follower-tiers'
+import { executeInstantSubmissionPayment } from '@/lib/solana/social-job-payments'
+import { getFeeWallet } from '@/lib/platform-settings'
 import { Database } from '@/types/database'
 import { rateLimit } from '@/lib/rate-limit'
 
@@ -9,6 +14,10 @@ const supabaseAdmin = createClient<Database>(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 )
+
+// Solana connection
+const SOLANA_RPC = process.env.NEXT_PUBLIC_SOLANA_RPC_URL || 'https://api.mainnet-beta.solana.com'
+const connection = new Connection(SOLANA_RPC, 'confirmed')
 
 /**
  * POST /api/jobs/[jobId]/review-submission
@@ -43,7 +52,7 @@ export async function POST(
     const { jobId } = await params
 
     const body = await request.json()
-    const { submission_id, action, denial_reason, auto_approve } = body
+    const { submission_id, action, denial_reason, auto_approve, poster_wallet, impression_count } = body
 
     // === VALIDATION ===
 
@@ -114,22 +123,16 @@ export async function POST(
 
       console.log(`[Review Submission] Authenticated user: ${user.id}`)
 
-      // Get user's wallet from profile
-      const { data: profile, error: profileError } = await supabaseAdmin
-        .from('profiles')
-        .select('wallet_address')
-        .eq('id', user.id)
-        .single()
-
-      if (profileError || !profile?.wallet_address) {
-        console.error('[Review Submission] No wallet found for user:', profileError)
+      // Use wallet address from request body (provided by frontend)
+      if (!poster_wallet) {
+        console.error('[Review Submission] Missing poster_wallet in request')
         return NextResponse.json(
-          { error: 'No wallet address linked to account' },
-          { status: 403 }
+          { error: 'Wallet address required' },
+          { status: 400 }
         )
       }
 
-      authenticatedWallet = profile.wallet_address
+      authenticatedWallet = poster_wallet
       console.log(`[Review Submission] User wallet: ${authenticatedWallet}`)
 
       // Rate limiting for manual reviews
@@ -210,10 +213,18 @@ export async function POST(
     const approvalStatus = auto_approve ? 'auto_approved' : 'approved'
 
     if (action === 'approve') {
+      // Calculate impression bonus if impressions provided
+      const impressions = impression_count || 0
+      const impressionBonus = impressions > 0 ? calculateImpressionBonus(impressions) : 0
+
+      console.log(`[Review Submission] Impressions: ${impressions}, Bonus: $${impressionBonus}`)
+
       const { error: updateError } = await supabaseAdmin
         .from('job_submissions')
         .update({
-          social_approval_status: approvalStatus
+          social_approval_status: approvalStatus,
+          social_impression_count: impressions,
+          social_impression_bonus_usd: impressionBonus
         })
         .eq('id', submission_id)
 
@@ -222,16 +233,118 @@ export async function POST(
         throw new Error('Failed to approve submission')
       }
 
+      // === INSTANT PAYMENT (if enabled) ===
+      
+      if (job.uses_instant_payment) {
+        console.log('[Review Submission] Job uses instant payment - processing payment...')
+        
+        try {
+          // Get platform fee wallet and percentage
+          const platformFeeWallet = await getFeeWallet()
+          const platformFeePercentage = job.fee_percentage_at_creation || 0.05
+
+          if (!platformFeeWallet) {
+            throw new Error('Platform fee wallet not configured')
+          }
+
+          // Calculate base payment from follower tier
+          let basePayment = submission.social_payment_amount_usd || 0
+          
+          // If job uses follower tiers, recalculate based on actual follower count
+          if (job.social_follower_tiers && Array.isArray(job.social_follower_tiers)) {
+            const followerTiers = job.social_follower_tiers as FollowerTier[]
+            const actualFollowerCount = submission.social_follower_count || 0
+            
+            if (actualFollowerCount > 0) {
+              const tier = calculateFollowerTier(actualFollowerCount, followerTiers)
+              if (tier) {
+                basePayment = tier.base_payment_usd
+                console.log(`[Review Submission] Calculated payment from tier: $${basePayment}`)
+              }
+            }
+          }
+
+          const totalPayment = basePayment + impressionBonus
+          console.log(`[Review Submission] Payment: base=$${basePayment}, bonus=$${impressionBonus}, total=$${totalPayment}`)
+
+          if (totalPayment > 0) {
+            // Update submission to pending payment status
+            await supabaseAdmin
+              .from('job_submissions')
+              .update({ social_approval_status: 'approved_pending_payment' })
+              .eq('id', submission_id)
+
+            // Execute payment
+            const paymentResult = await executeInstantSubmissionPayment(connection, {
+              tokenMint: new PublicKey(job.escrow_token_mint || process.env.NEXT_PUBLIC_DEFAULT_TOKEN_MINT!),
+              workerWallet: new PublicKey(submission.worker_wallet),
+              platformFeeWallet: new PublicKey(platformFeeWallet),
+              basePaymentAmount: basePayment,
+              platformFeePercentage,
+              impressionBonusAmount: impressionBonus,
+              jobId: jobId,
+              jobTitle: job.title || 'Social Media Campaign'
+            })
+
+            if (!paymentResult.success) {
+              console.error('[Review Submission] Payment failed:', paymentResult.error)
+              
+              // Update submission to payment_failed status
+              await supabaseAdmin
+                .from('job_submissions')
+                .update({ 
+                  social_approval_status: 'payment_failed',
+                  social_payment_error: paymentResult.error
+                })
+                .eq('id', submission_id)
+              
+              throw new Error(`Payment failed: ${paymentResult.error}`)
+            }
+
+            console.log(`[Review Submission] ✅ Payment successful: ${paymentResult.txSignature}`)
+
+            // Update submission with payment details
+            await supabaseAdmin
+              .from('job_submissions')
+              .update({
+                social_approval_status: 'approved',
+                social_payment_amount_usd: totalPayment,
+                social_tx_signature: paymentResult.txSignature,
+                reviewed_at: new Date().toISOString()
+              })
+              .eq('id', submission_id)
+
+            // Update job's actual budget released
+            await supabaseAdmin
+              .from('jobs')
+              .update({
+                social_actual_budget_released: (job.social_actual_budget_released || 0) + totalPayment,
+                updated_at: new Date().toISOString()
+              })
+              .eq('id', jobId)
+          } else {
+            console.log('[Review Submission] No payment needed (amount is $0)')
+          }
+        } catch (paymentError: any) {
+          console.error('[Review Submission] Payment error:', paymentError)
+          // Don't fail the whole request - submission is still approved
+          // Payment can be retried via retry-payment endpoint
+        }
+      } else {
+        console.log('[Review Submission] Job uses manual payment system - no instant payment')
+      }
+
       // Notify worker (non-blocking)
       try {
         await notificationService.createNotification({
           userWallet: submission.worker_wallet,
-          type: 'job_completed', // Reusing existing type
+          type: 'social_submission_approved',
           actorWallet: job.poster_wallet,
           referenceId: jobId,
           referenceType: 'job',
           metadata: {
             job_title: job.title,
+            project_id: job.project_id, // For proper navigation
             submission_id: submission_id,
             action: 'approved',
             is_social_media_job: true,

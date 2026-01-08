@@ -21,6 +21,7 @@ interface ContestJobSidebarProps {
   onSubmitClick?: () => void
   // Poster actions
   onEditClick?: () => void
+  onExtendDeadlineClick?: () => void
   onCancelClick?: () => void
 }
 
@@ -33,6 +34,7 @@ export default function ContestJobSidebar({
   checkingEligibility = false,
   onSubmitClick,
   onEditClick,
+  onExtendDeadlineClick,
   onCancelClick
 }: ContestJobSidebarProps) {
   
@@ -410,6 +412,33 @@ export default function ContestJobSidebar({
                     }}
                   >
                     ✏️ Edit Contest
+                  </Button>
+                )}
+                
+                {/* Extend Deadline - available for open, assigned, submitted */}
+                {isPoster && ['open', 'assigned', 'submitted'].includes(job.status) && !job.contest_winners_selected_at && onExtendDeadlineClick && (
+                  <Button
+                    fullWidth
+                    variant="outlined"
+                    onClick={onExtendDeadlineClick}
+                    startIcon={<AccessTimeIcon />}
+                    sx={{
+                      color: '#7C4DFF',
+                      borderColor: '#E5DEFF',
+                      bgcolor: 'rgba(124, 77, 255, 0.04)',
+                      py: 1.2,
+                      borderRadius: 'var(--radius-card, 16px)',
+                      fontFamily: 'var(--font-body, Satoshi, sans-serif)',
+                      fontSize: '14px',
+                      fontWeight: 600,
+                      textTransform: 'none',
+                      '&:hover': {
+                        bgcolor: 'rgba(124, 77, 255, 0.08)',
+                        borderColor: '#7C4DFF'
+                      }
+                    }}
+                  >
+                    Extend Deadline
                   </Button>
                 )}
                 

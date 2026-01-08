@@ -24,6 +24,7 @@ import { RequestRevisionModal } from '@/components/jobs/RequestRevisionModal'
 import { SubmitRevisionModal } from '@/components/jobs/SubmitRevisionModal'
 import { OpenRevisionDisputeModal } from '@/components/jobs/OpenRevisionDisputeModal'
 import { JobActivityTimeline } from '@/components/jobs/JobActivityTimeline'
+import ExtendDeadlineDialog from '@/components/jobs/ExtendDeadlineDialog'
 import { supabase } from '@/lib/supabase'
 import { getLatestRevisionRequest, getRevisionHistory, parseRevisionOffering, formatRevisionOffering } from '@/lib/revisions'
 import { usePosterDisplayName } from '@/lib/usePosterDisplayName'
@@ -194,6 +195,7 @@ export default function JobDetailPage() {
   const [showApplyModal, setShowApplyModal] = useState(false)
   const [showSubmitWorkModal, setShowSubmitWorkModal] = useState(false)
   const [showEditModal, setShowEditModal] = useState(false)
+  const [showExtendDeadlineDialog, setShowExtendDeadlineDialog] = useState(false)
   const [showCancelConfirm, setShowCancelConfirm] = useState(false)
   const [showDisputeModal, setShowDisputeModal] = useState(false)
   const [cancelling, setCancelling] = useState(false)
@@ -2012,6 +2014,8 @@ export default function JobDetailPage() {
           </Card>
         )}
 
+        {/* Regular Job Detail UI (excluding social media jobs) */}
+        {!job.is_social_media_job && (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {/* Main Content - Left Column (2/3 width) */}
           <div className="lg:col-span-2 space-y-6">
@@ -2850,6 +2854,7 @@ export default function JobDetailPage() {
                 checkingEligibility={checkingContestEligibility}
                 onSubmitClick={() => setContestSubmissionModalOpen(true)}
                 onEditClick={handleEdit}
+                onExtendDeadlineClick={() => setShowExtendDeadlineDialog(true)}
                 onCancelClick={handleCancel}
               />
             )}
@@ -3021,6 +3026,34 @@ export default function JobDetailPage() {
                     >
                       ✏️ Edit Job
                     </MuiButton>
+                    
+                    {/* Extend Deadline - only for contest/social jobs (they have deadlines from creation) */}
+                    {(job.is_contest || job.is_social_media_job) && (
+                      <MuiButton
+                        fullWidth
+                        variant="outlined"
+                        onClick={() => setShowExtendDeadlineDialog(true)}
+                        startIcon={<CalendarTodayIcon />}
+                        sx={{
+                          color: '#7C4DFF',
+                          borderColor: '#E5DEFF',
+                          bgcolor: 'rgba(124, 77, 255, 0.04)',
+                          py: 1.2,
+                          borderRadius: 'var(--radius-card, 16px)',
+                          fontFamily: 'var(--font-body, Satoshi, sans-serif)',
+                          fontSize: '14px',
+                          fontWeight: 600,
+                          textTransform: 'none',
+                          '&:hover': {
+                            bgcolor: 'rgba(124, 77, 255, 0.08)',
+                            borderColor: '#7C4DFF'
+                          }
+                        }}
+                      >
+                        Extend Deadline
+                      </MuiButton>
+                    )}
+                    
                     <MuiButton
                       fullWidth
                       variant="outlined"
@@ -3049,6 +3082,33 @@ export default function JobDetailPage() {
                 {/* If job is Assigned and user IS poster */}
                 {job.status === 'assigned' && isPoster && (
                   <div className="space-y-3">
+                    {/* Extend Deadline - show when there IS a deadline */}
+                    {(job.hard_deadline || job.worker_committed_completion || job.is_contest || job.is_social_media_job) && (
+                      <MuiButton
+                        fullWidth
+                        variant="outlined"
+                        onClick={() => setShowExtendDeadlineDialog(true)}
+                        startIcon={<CalendarTodayIcon />}
+                        sx={{
+                          color: '#7C4DFF',
+                          borderColor: '#E5DEFF',
+                          bgcolor: 'rgba(124, 77, 255, 0.04)',
+                          py: 1.2,
+                          borderRadius: 'var(--radius-card, 16px)',
+                          fontFamily: 'var(--font-body, Satoshi, sans-serif)',
+                          fontSize: '14px',
+                          fontWeight: 600,
+                          textTransform: 'none',
+                          '&:hover': {
+                            bgcolor: 'rgba(124, 77, 255, 0.08)',
+                            borderColor: '#7C4DFF'
+                          }
+                        }}
+                      >
+                        Extend Deadline
+                      </MuiButton>
+                    )}
+                    
                     <Button
                       variant="outline"
                       onClick={() => setShowReassignDialog(true)}
@@ -3118,6 +3178,33 @@ export default function JobDetailPage() {
                     >
                       Request Revision
                     </MuiButton>
+                    
+                    {/* Extend Deadline Button - show when there IS a deadline */}
+                    {(job.hard_deadline || job.worker_committed_completion || job.is_contest || job.is_social_media_job) && (
+                      <MuiButton
+                        fullWidth
+                        variant="outlined"
+                        onClick={() => setShowExtendDeadlineDialog(true)}
+                        startIcon={<CalendarTodayIcon />}
+                        sx={{
+                          color: '#7C4DFF',
+                          borderColor: '#E5DEFF',
+                          bgcolor: 'rgba(124, 77, 255, 0.04)',
+                          py: 1.2,
+                          borderRadius: 'var(--radius-card, 16px)',
+                          fontFamily: 'var(--font-body, Satoshi, sans-serif)',
+                          fontSize: '14px',
+                          fontWeight: 600,
+                          textTransform: 'none',
+                          '&:hover': {
+                            bgcolor: 'rgba(124, 77, 255, 0.08)',
+                            borderColor: '#7C4DFF'
+                          }
+                        }}
+                      >
+                        Extend Deadline
+                      </MuiButton>
+                    )}
                     
                     {/* Open Dispute Link - Subtle text button (matches submission section) */}
                     <MuiButton
@@ -3228,6 +3315,7 @@ export default function JobDetailPage() {
             )}
           </div>
         </div>
+        )}
 
         {/* 5. Applications Section (Regular Jobs Only) */}
         {!job.is_contest && !job.is_social_media_job && (
@@ -4307,7 +4395,7 @@ export default function JobDetailPage() {
       )}
 
       {/* Job Application Modal */}
-      {job && project && publicKey && (
+      {job && project && publicKey && !job.is_social_media_job && (
         <JobApplicationModal
           isOpen={showApplyModal}
           onClose={() => setShowApplyModal(false)}
@@ -4792,6 +4880,28 @@ export default function JobDetailPage() {
             }}
           />
         </>
+      )}
+
+      {/* Extend Deadline Dialog */}
+      {job && project && publicKey && (
+        <ExtendDeadlineDialog
+          open={showExtendDeadlineDialog}
+          onClose={() => setShowExtendDeadlineDialog(false)}
+          jobId={job.id}
+          jobTitle={job.title}
+          currentDeadline={
+            job.is_social_media_job ? job.social_submission_deadline :
+            job.is_contest ? job.contest_submission_deadline :
+            job.worker_committed_completion || job.hard_deadline || job.poster_desired_completion
+          }
+          isContest={job.is_contest}
+          isSocialJob={job.is_social_media_job}
+          deadlineType={job.hard_deadline ? 'hard_deadline' : 'poster_desired'}
+          onSuccess={() => {
+            fetchJobData() // Refresh job data
+            toast.success('Deadline extended successfully! Participants have been notified.')
+          }}
+        />
       )}
     </div>
   )

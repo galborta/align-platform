@@ -7,7 +7,6 @@ import { VerificationProvider } from '@/contexts/VerificationContext'
 import { LayoutClient } from '@/components/LayoutClient'
 import { Toaster } from 'react-hot-toast'
 import { QueryProvider } from '@/components/providers/QueryProvider'
-import { GlobalErrorHandler } from '@/components/ErrorBoundary'
 
 // Space Grotesk for headings/display text
 const spaceGrotesk = Space_Grotesk({ subsets: ['latin'], variable: '--font-display' })
@@ -31,7 +30,6 @@ export default function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning>
       <body className={`${spaceGrotesk.variable} font-body`} suppressHydrationWarning>
-        <GlobalErrorHandler />
         <QueryProvider>
           <ThemeProvider>
             <WalletConfigProvider>

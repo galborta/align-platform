@@ -795,6 +795,15 @@ export function CreateJobModal({
         // Handle payment amount change and escrow adjustment
         const newAmount = parseFloat(paymentAmount)
         const oldAmount = existingJob.payment_amount_tokens
+        
+        console.log('[Edit Job] Payment change check:', {
+          newAmount,
+          oldAmount,
+          applicationCount,
+          paymentAmountString: paymentAmount,
+          isDifferent: newAmount !== oldAmount
+        })
+        
         const paymentChanged = applicationCount === 0 && !isNaN(newAmount) && newAmount !== oldAmount
 
         if (paymentChanged) {

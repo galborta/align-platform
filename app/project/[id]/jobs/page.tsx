@@ -6,7 +6,7 @@ import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { AppHeader } from '@/components/AppHeader'
 import { CreateJobModal } from '@/components/CreateJobModal'
-import CreateSocialMediaJobModal from '@/components/jobs/CreateSocialMediaJobModal'
+import { SocialJobCreationWizard } from '@/components/jobs/social'
 import { DraftRecoveryBanner } from '@/components/DraftRecoveryBanner'
 import JobCard from '@/components/JobCard'
 import Dialog from '@mui/material/Dialog'
@@ -83,6 +83,7 @@ export default function ProjectJobsPage() {
   const [showJobTypeSelector, setShowJobTypeSelector] = useState(false)
   const [showSocialMediaModal, setShowSocialMediaModal] = useState(false)
   const [selectedJobType, setSelectedJobType] = useState<'regular' | 'contest'>('regular')
+  const [tokenPrice, setTokenPrice] = useState<number>(0.01)
   
   // Advanced filter states
   const [statusFilter, setStatusFilter] = useState<string>('all')
@@ -185,6 +186,19 @@ export default function ProjectJobsPage() {
 
       if (projectError) throw projectError
       setProject(projectData)
+
+      // Fetch token price for social media campaigns
+      if (projectData.token_mint) {
+        try {
+          const { getTokenPriceUsd } = await import('@/lib/helius')
+          const price = await getTokenPriceUsd(projectData.token_mint)
+          if (price !== null) {
+            setTokenPrice(price)
+          }
+        } catch (err) {
+          console.error('Error fetching token price:', err)
+        }
+      }
 
       // Fetch jobs with application counts
       const jobsData = await getProjectJobs(projectId)
@@ -851,26 +865,20 @@ export default function ProjectJobsPage() {
 
       {/* Create Social Media Job Modal */}
       {project && publicKey && (
-        <CreateSocialMediaJobModal
-          open={showSocialMediaModal}
-          onClose={() => setShowSocialMediaModal(false)}
+        <SocialJobCreationWizard
           projectId={project.id}
-          posterWallet={publicKey.toString()}
-          tokenMint={project.token_mint}
-          tokenSymbol={project.token_symbol}
-          onJobCreated={() => {
+          isOpen={showSocialMediaModal}
+          onClose={() => setShowSocialMediaModal(false)}
+          onSuccess={(jobId) => {
             setShowSocialMediaModal(false)
             // Refresh jobs list
             fetchData(params.id as string)
+            router.push(`/project/${project.id}/jobs/${jobId}`)
           }}
-          onSwitchToRegular={() => {
-            setSelectedJobType('regular')
-            setShowCreateModal(true)
-          }}
-          onSwitchToContest={() => {
-            setSelectedJobType('contest')
-            setShowCreateModal(true)
-          }}
+          tokenMint={project.token_mint}
+          tokenSymbol={project.token_symbol}
+          tokenPrice={tokenPrice}
+          posterWallet={publicKey.toString()}
         />
       )}
     </div>
