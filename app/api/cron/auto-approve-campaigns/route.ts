@@ -44,10 +44,11 @@ const supabaseAdmin = createClient<Database>(
  *    {
  *      "crons": [{
  *        "path": "/api/cron/auto-approve-campaigns",
- *        "schedule": "*/5 * * * *"
+ *        "schedule": "every 5 minutes"
  *      }]
  *    }
  *    ```
+ *    (Or use cron syntax: "star-slash-5 star star star star" - replace with actual symbols)
  * 2. Add CRON_SECRET to environment variables
  * 
  * @param request - Incoming request with Authorization header

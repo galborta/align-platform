@@ -1,3 +1,5 @@
+'use client'
+
 import BudgetOverflowModal from '@/components/jobs/social/BudgetOverflowModal'
 import { useState } from 'react'
 import { Container, Typography, Box, Button, Alert } from '@mui/material'
