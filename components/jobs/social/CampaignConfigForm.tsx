@@ -686,7 +686,7 @@ export default function CampaignConfigForm({
           }
           helperText={
             errors.campaignGuidelines || 
-            `${campaignGuidelines.length}/500 characters`
+            `${campaignGuidelines.length} characters`
           }
           error={!!errors.campaignGuidelines}
           sx={{
@@ -709,7 +709,6 @@ export default function CampaignConfigForm({
               }
             }
           }}
-          inputProps={{ maxLength: 500 }}
         />
       </Box>
 
