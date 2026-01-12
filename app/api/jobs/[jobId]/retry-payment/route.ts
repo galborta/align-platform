@@ -253,18 +253,37 @@ export async function POST(
 
     // Use stored payment amounts (already calculated during approval)
     const basePayment = submission.social_base_payment_amount_tokens || 0
-    const impressionBonus = submission.social_impression_bonus_usd || 0
+    const impressionBonusUSD = submission.social_impression_bonus_usd || 0
+    
+    // Convert impression bonus from USD to tokens using escrow rate
+    const escrowTokens = job.escrow_amount_tokens || 0
+    const budgetUSD = job.social_total_budget_usd || 0
+    
+    if (escrowTokens <= 0 || budgetUSD <= 0) {
+      throw new Error('Invalid escrow or budget configuration for token conversion')
+    }
+    
+    const usdToTokenRate = escrowTokens / budgetUSD
+    const impressionBonus = impressionBonusUSD * usdToTokenRate
+    
     const totalPayment = basePayment + impressionBonus
-    const platformFeePercentage = job.fee_percentage_at_creation || 0.05
+    let platformFeePercentage = job.fee_percentage_at_creation || 0.05
+    
+    // Safety check: fee should be a decimal between 0 and 1
+    if (platformFeePercentage > 1) {
+      console.warn(`[Retry Payment] ⚠️ Invalid fee percentage: ${platformFeePercentage}. Converting from percentage to decimal.`)
+      platformFeePercentage = platformFeePercentage / 100
+    }
+    
     const platformFee = basePayment * platformFeePercentage
     const totalFromEscrow = totalPayment + platformFee
 
     console.log(`[Retry Payment] Payment breakdown:`)
-    console.log(`  - Base: $${basePayment}`)
-    console.log(`  - Bonus: $${impressionBonus}`)
-    console.log(`  - Total: $${totalPayment}`)
-    console.log(`  - Fee: $${platformFee.toFixed(2)}`)
-    console.log(`  - From escrow: $${totalFromEscrow.toFixed(2)}`)
+    console.log(`  - Base: ${basePayment} tokens ($${submission.social_base_payment_amount_usd})`)
+    console.log(`  - Bonus: ${impressionBonus} tokens ($${impressionBonusUSD})`)
+    console.log(`  - Total: ${totalPayment} tokens`)
+    console.log(`  - Fee: ${platformFee.toFixed(2)} tokens`)
+    console.log(`  - From escrow: ${totalFromEscrow.toFixed(2)} tokens`)
 
     if (totalPayment <= 0) {
       console.error('[Retry Payment] Invalid stored payment amount')
@@ -393,14 +412,16 @@ export async function POST(
       console.log(`[Retry Payment] ✅ Payment successful: ${paymentResult.txSignature}`)
 
       // Update submission to 'approved' (payment confirmed)
+      const totalPaymentUSD = (submission.social_base_payment_amount_usd || 0) + impressionBonusUSD
+      
       await supabaseAdmin
         .from('job_submissions')
         .update({
           social_approval_status: 'approved',
           social_payment_released: true,
           social_payment_tx_signature: paymentResult.txSignature,
-          social_payment_amount_usd: totalPayment,
-          social_payment_amount_tokens: totalPayment, // 1:1 for now
+          social_payment_amount_usd: totalPaymentUSD,
+          social_payment_amount_tokens: totalPayment,
           social_payment_retry_count: currentRetryCount + (paymentResult.retryAttempts || 0),
           social_payment_failed_reason: null, // Clear error message
           updated_at: new Date().toISOString()

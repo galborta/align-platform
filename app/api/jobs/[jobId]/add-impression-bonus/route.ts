@@ -282,7 +282,14 @@ export async function POST(
 
     console.log('[Add Bonus] Step 7: Calculating payment...')
 
-    const platformFeePercentage = job.fee_percentage_at_creation || 0.05
+    let platformFeePercentage = job.fee_percentage_at_creation || 0.05
+    
+    // Safety check: fee should be a decimal between 0 and 1
+    if (platformFeePercentage > 1) {
+      console.warn(`[Add Bonus] ⚠️ Invalid fee percentage: ${platformFeePercentage}. Converting from percentage to decimal.`)
+      platformFeePercentage = platformFeePercentage / 100
+    }
+    
     const platformFee = bonus_amount_usd * platformFeePercentage
     const totalFromEscrow = bonus_amount_usd + platformFee
 
@@ -356,13 +363,26 @@ export async function POST(
       throw new Error('Platform fee wallet not configured')
     }
 
+    // Convert USD bonus to tokens using escrow rate
+    const escrowTokens = job.escrow_amount_tokens || 0
+    const budgetUSD = job.social_total_budget_usd || 0
+    
+    if (escrowTokens <= 0 || budgetUSD <= 0) {
+      throw new Error('Invalid escrow or budget configuration for token conversion')
+    }
+    
+    const usdToTokenRate = escrowTokens / budgetUSD
+    const bonusAmountInTokens = bonus_amount_usd * usdToTokenRate
+    
+    console.log(`[Add Bonus] Token conversion: rate=${usdToTokenRate}, bonus=${bonusAmountInTokens} tokens ($${bonus_amount_usd} USD)`)
+
     const paymentResult = await executeInstantSubmissionPayment(connection, {
       tokenMint: new PublicKey(job.escrow_token_mint || process.env.NEXT_PUBLIC_DEFAULT_TOKEN_MINT!),
       workerWallet: new PublicKey(submission.worker_wallet),
       platformFeeWallet: new PublicKey(platformFeeWallet),
       basePaymentAmount: 0, // No base payment, only bonus
       platformFeePercentage,
-      impressionBonusAmount: bonus_amount_usd,
+      impressionBonusAmount: bonusAmountInTokens,
       decimals: 9, // Most Solana tokens
       submissionId: submission_id,
       jobId

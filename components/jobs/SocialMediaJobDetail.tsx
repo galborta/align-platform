@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useCallback } from 'react'
 import {
   Box,
   Typography,
@@ -37,6 +37,9 @@ import LockIcon from '@mui/icons-material/Lock'
 import MoneyIcon from '@mui/icons-material/AttachMoney'
 import WarningIcon from '@mui/icons-material/Warning'
 import RefreshIcon from '@mui/icons-material/Refresh'
+import CalendarTodayIcon from '@mui/icons-material/CalendarToday'
+import EditIcon from '@mui/icons-material/Edit'
+import CancelIcon from '@mui/icons-material/Cancel'
 
 // Follower tier utilities
 import { 
@@ -63,13 +66,19 @@ interface SocialMediaJobDetailProps {
   projectName?: string
   tokenSymbol?: string
   onSubmissionSuccess?: () => void
+  onEditClick?: () => void
+  onExtendDeadlineClick?: () => void
+  onCancelClick?: () => void
 }
 
 export default function SocialMediaJobDetail({
   job: initialJob,
   projectName,
   tokenSymbol = 'tokens',
-  onSubmissionSuccess
+  onSubmissionSuccess,
+  onEditClick,
+  onExtendDeadlineClick,
+  onCancelClick
 }: SocialMediaJobDetailProps) {
   const { publicKey, signMessage: walletSignMessage } = useWallet()
   const { displayNameOrWallet, hasDisplayName } = usePosterDisplayName(initialJob.poster_wallet)
@@ -136,7 +145,7 @@ export default function SocialMediaJobDetail({
 
     console.log(`[JobDetail] Setting up real-time subscription for job ${job.id}`)
 
-    const channel = supabase
+    const jobChannel = supabase
       .channel(`job-${job.id}`)
       .on('postgres_changes', {
         event: 'UPDATE',
@@ -148,61 +157,92 @@ export default function SocialMediaJobDetail({
         setJob(payload.new as Job)
       })
       .subscribe()
+
+    // Subscribe to submission updates if user has a wallet
+    let submissionChannel: ReturnType<typeof supabase.channel> | null = null
+    if (publicKey) {
+      submissionChannel = supabase
+        .channel(`job-submissions-${job.id}`)
+        .on('postgres_changes', {
+          event: '*',
+          schema: 'public',
+          table: 'job_submissions',
+          filter: `job_id=eq.${job.id}`
+        }, (payload) => {
+          console.log('[JobDetail] Received real-time submission update:', payload)
+          
+          // Update user's submission if it's their wallet
+          if (payload.new && 'worker_wallet' in payload.new && payload.new.worker_wallet === publicKey.toString()) {
+            console.log('[JobDetail] Updating user submission:', payload.new)
+            setUserSubmission(payload.new as any)
+          }
+          
+          // Refresh all submissions list
+          if (payload.eventType === 'UPDATE' || payload.eventType === 'INSERT') {
+            fetchSubmissions()
+          }
+        })
+        .subscribe()
+    }
     
     return () => {
-      console.log(`[JobDetail] Cleaning up real-time subscription for job ${job.id}`)
-      supabase.removeChannel(channel)
+      console.log(`[JobDetail] Cleaning up real-time subscriptions for job ${job.id}`)
+      supabase.removeChannel(jobChannel)
+      if (submissionChannel) {
+        supabase.removeChannel(submissionChannel)
+      }
     }
-  }, [job.id, usesInstantPayment])
+  }, [job.id, usesInstantPayment, publicKey])
 
-  // Fetch submission data
-  useEffect(() => {
-    const fetchSubmissions = async () => {
-      setLoading(true)
-      try {
-        // Get total submission count
-        const { count } = await supabase
-          .from('job_submissions')
-          .select('*', { count: 'exact', head: true })
-          .eq('job_id', job.id)
+  // Fetch submission data function (extracted so it can be called from multiple places)
+  const fetchSubmissions = useCallback(async () => {
+    setLoading(true)
+    try {
+      // Get total submission count
+      const { count } = await supabase
+        .from('job_submissions')
+        .select('*', { count: 'exact', head: true })
+        .eq('job_id', job.id)
 
-        setSubmissionCount(count || 0)
+      setSubmissionCount(count || 0)
 
-        // Check if user has submitted
-        if (publicKey) {
-          const { data: existingSubmission } = await supabase
-            .from('job_submissions')
-            .select('*')
-            .eq('job_id', job.id)
-            .eq('worker_wallet', publicKey.toString())
-            .maybeSingle()
-
-          setUserSubmission(existingSubmission)
-          
-          // If user has submission, calculate their tier
-          if (existingSubmission && existingSubmission.social_follower_count && followerTiers.length > 0) {
-            const tier = calculateFollowerTier(existingSubmission.social_follower_count, followerTiers)
-            setUserFollowerTier(tier)
-          }
-        }
-
-        // Fetch all submissions (for display)
-        const { data: submissions } = await supabase
+      // Check if user has submitted
+      if (publicKey) {
+        const { data: existingSubmission } = await supabase
           .from('job_submissions')
           .select('*')
           .eq('job_id', job.id)
-          .order('submitted_at', { ascending: false })
+          .eq('worker_wallet', publicKey.toString())
+          .maybeSingle()
 
-        setAllSubmissions(submissions || [])
-      } catch (error) {
-        console.error('Error fetching submission data:', error)
-      } finally {
-        setLoading(false)
+        setUserSubmission(existingSubmission)
+        
+        // If user has submission, calculate their tier
+        if (existingSubmission && existingSubmission.social_follower_count && followerTiers.length > 0) {
+          const tier = calculateFollowerTier(existingSubmission.social_follower_count, followerTiers)
+          setUserFollowerTier(tier)
+        }
       }
-    }
 
-    fetchSubmissions()
+      // Fetch all submissions (for display)
+      const { data: submissions } = await supabase
+        .from('job_submissions')
+        .select('*')
+        .eq('job_id', job.id)
+        .order('submitted_at', { ascending: true })
+
+      setAllSubmissions(submissions || [])
+    } catch (error) {
+      console.error('Error fetching submission data:', error)
+    } finally {
+      setLoading(false)
+    }
   }, [job.id, publicKey, followerTiers])
+
+  // Fetch submission data on mount and when dependencies change
+  useEffect(() => {
+    fetchSubmissions()
+  }, [fetchSubmissions])
 
   const handleCopyUrl = (url: string) => {
     navigator.clipboard.writeText(url)
@@ -244,8 +284,12 @@ export default function SocialMediaJobDetail({
   const paidCount = job.social_approved_paid_count || 0
   const budgetPercentage = totalBudget > 0 ? (remainingBudget / totalBudget) * 100 : 0
   
-  // Calculate pending submissions value
+  // Calculate pending and approved submissions
   const pendingSubmissions = allSubmissions.filter(s => s.social_approval_status === 'pending')
+  const approvedSubmissions = allSubmissions.filter(
+    s => s.social_approval_status === 'approved' || s.social_approval_status === 'auto_approved'
+  ).sort((a, b) => new Date(b.submitted_at).getTime() - new Date(a.submitted_at).getTime())
+  
   const pendingSubmissionsValue = pendingSubmissions.reduce((sum, submission) => {
     if (submission.social_follower_count && followerTiers.length > 0) {
       const tier = calculateFollowerTier(submission.social_follower_count, followerTiers)
@@ -694,7 +738,24 @@ export default function SocialMediaJobDetail({
                         {submission.worker_wallet.slice(0, 4)}...{submission.worker_wallet.slice(-4)}
                       </Typography>
                       
-                      {submission.social_approval_status === 'approved_pending_payment' ? (
+                      {/* Status and payment display */}
+                      {submission.social_payment_amount_tokens ? (
+                        <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 0.5 }}>
+                          <Chip
+                            label="✓ Paid"
+                            size="small"
+                            sx={{
+                              bgcolor: 'var(--accent-success, #36C170)',
+                              color: '#FFFFFF',
+                              fontWeight: 600,
+                              fontSize: '11px'
+                            }}
+                          />
+                          <Typography variant="caption" sx={{ color: 'var(--accent-success, #36C170)', fontWeight: 700 }}>
+                            {submission.social_payment_amount_tokens.toFixed(2)} {tokenSymbol}
+                          </Typography>
+                        </Box>
+                      ) : submission.social_approval_status === 'approved_pending_payment' ? (
                         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                           <CircularProgress size={16} sx={{ color: 'var(--accent-primary, #7C4DFF)' }} />
                           <Typography variant="caption" sx={{ color: 'var(--accent-primary, #7C4DFF)', fontWeight: 600 }}>
@@ -705,7 +766,7 @@ export default function SocialMediaJobDetail({
                         <Chip
                           label={
                             submission.social_approval_status === 'approved' || submission.social_approval_status === 'auto_approved'
-                              ? '✓ Paid'
+                              ? '✓ Approved'
                               : submission.social_approval_status === 'approved_failed'
                                 ? 'Payment Failed'
                                 : submission.social_approval_status === 'denied'
@@ -731,7 +792,6 @@ export default function SocialMediaJobDetail({
                     <Typography variant="caption" sx={{ color: 'var(--text-secondary, #6F7280)' }}>
                       Submitted {formatDistanceToNow(new Date(submission.submitted_at!), { addSuffix: true })}
                       {submission.social_follower_count && ` • ${submission.social_follower_count.toLocaleString()} followers`}
-                      {submission.social_payment_amount_usd && ` • $${submission.social_payment_amount_usd.toFixed(2)}`}
                     </Typography>
                     {submission.social_tweet_link && (
                       <Box sx={{ mt: 1 }}>
@@ -743,6 +803,44 @@ export default function SocialMediaJobDetail({
                         >
                           View Tweet →
                         </MuiLink>
+                      </Box>
+                    )}
+                    
+                    {/* Denial Reason - Show for denied submissions */}
+                    {submission.social_approval_status === 'denied' && submission.social_denial_reason && (
+                      <Box 
+                        sx={{ 
+                          mt: 1.5,
+                          p: 1.5,
+                          bgcolor: 'rgba(244, 67, 54, 0.1)',
+                          border: '1px solid rgba(244, 67, 54, 0.3)',
+                          borderRadius: '8px'
+                        }}
+                      >
+                        <Typography 
+                          variant="caption" 
+                          sx={{ 
+                            color: '#D32F2F',
+                            fontWeight: 600,
+                            display: 'block',
+                            mb: 0.5,
+                            fontSize: '11px',
+                            textTransform: 'uppercase',
+                            letterSpacing: '0.5px'
+                          }}
+                        >
+                          ❌ Denial Reason
+                        </Typography>
+                        <Typography 
+                          variant="body2" 
+                          sx={{ 
+                            color: '#D32F2F',
+                            fontSize: '13px',
+                            lineHeight: 1.5
+                          }}
+                        >
+                          {submission.social_denial_reason}
+                        </Typography>
                       </Box>
                     )}
                   </Box>
@@ -757,6 +855,7 @@ export default function SocialMediaJobDetail({
               job={job}
               submissions={allSubmissions}
               currentUserWallet={publicKey.toString()}
+              tokenSymbol={tokenSymbol}
             />
           )}
 
@@ -1028,10 +1127,10 @@ export default function SocialMediaJobDetail({
                       fontWeight: 700
                     }}
                   >
-                    ${remainingBudget.toFixed(0)}
+                    {remainingBudget.toFixed(0)} {tokenSymbol}
                   </Typography>
                   <Typography variant="body2" sx={{ color: 'var(--text-secondary, #6F7280)' }}>
-                    of ${totalBudget.toFixed(0)}
+                    of {totalBudget.toFixed(0)} {tokenSymbol}
                   </Typography>
                 </Box>
                 
@@ -1105,6 +1204,113 @@ export default function SocialMediaJobDetail({
                   </Box>
                 </Paper>
               )}
+
+            </Paper>
+          )}
+
+          {/* Poster Actions */}
+          {isPoster && job.status === 'open' && (onEditClick || onExtendDeadlineClick || onCancelClick) && (
+            <Paper
+              sx={{
+                p: 'var(--space-lg, 24px)',
+                bgcolor: 'var(--card-background, #FFFFFF)',
+                borderRadius: 'var(--radius-card-lg, 24px)',
+                boxShadow: 'var(--shadow-card, 0 20px 40px 0 rgba(15, 23, 42, 0.06))'
+              }}
+            >
+              <Typography
+                variant="h6"
+                sx={{
+                  fontFamily: 'var(--font-heading, Space Grotesk, sans-serif)',
+                  fontWeight: 600,
+                  color: 'var(--text-primary, #1A1A1E)',
+                  mb: 2
+                }}
+              >
+                ⚙️ Campaign Actions
+              </Typography>
+
+              <Divider sx={{ mb: 2, bgcolor: 'var(--border-subtle, #E5E7F0)' }} />
+
+              <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
+                {onEditClick && (
+                  <Button
+                    fullWidth
+                    variant="outlined"
+                    startIcon={<EditIcon />}
+                    onClick={onEditClick}
+                    sx={{
+                      color: '#7C4DFF',
+                      borderColor: '#E5DEFF',
+                      bgcolor: 'rgba(124, 77, 255, 0.04)',
+                      py: 1.2,
+                      borderRadius: 'var(--radius-card, 16px)',
+                      fontFamily: 'var(--font-body, Satoshi, sans-serif)',
+                      fontSize: '14px',
+                      fontWeight: 600,
+                      textTransform: 'none',
+                      '&:hover': {
+                        bgcolor: 'rgba(124, 77, 255, 0.08)',
+                        borderColor: '#7C4DFF'
+                      }
+                    }}
+                  >
+                    Edit Campaign
+                  </Button>
+                )}
+
+                {onExtendDeadlineClick && (
+                  <Button
+                    fullWidth
+                    variant="outlined"
+                    startIcon={<CalendarTodayIcon />}
+                    onClick={onExtendDeadlineClick}
+                    sx={{
+                      color: '#7C4DFF',
+                      borderColor: '#E5DEFF',
+                      bgcolor: 'rgba(124, 77, 255, 0.04)',
+                      py: 1.2,
+                      borderRadius: 'var(--radius-card, 16px)',
+                      fontFamily: 'var(--font-body, Satoshi, sans-serif)',
+                      fontSize: '14px',
+                      fontWeight: 600,
+                      textTransform: 'none',
+                      '&:hover': {
+                        bgcolor: 'rgba(124, 77, 255, 0.08)',
+                        borderColor: '#7C4DFF'
+                      }
+                    }}
+                  >
+                    Extend Deadline
+                  </Button>
+                )}
+
+                {onCancelClick && (
+                  <Button
+                    fullWidth
+                    variant="outlined"
+                    startIcon={<CancelIcon />}
+                    onClick={onCancelClick}
+                    sx={{
+                      color: '#EF4444',
+                      borderColor: '#FEE2E2',
+                      bgcolor: 'rgba(239, 68, 68, 0.04)',
+                      py: 1.2,
+                      borderRadius: 'var(--radius-card, 16px)',
+                      fontFamily: 'var(--font-body, Satoshi, sans-serif)',
+                      fontSize: '14px',
+                      fontWeight: 600,
+                      textTransform: 'none',
+                      '&:hover': {
+                        bgcolor: 'rgba(239, 68, 68, 0.08)',
+                        borderColor: '#EF4444'
+                      }
+                    }}
+                  >
+                    Cancel Campaign
+                  </Button>
+                )}
+              </Box>
             </Paper>
           )}
 

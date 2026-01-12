@@ -22,6 +22,51 @@ import { formatDistanceToNow } from 'date-fns'
 import AdjustFollowerCountModal from './AdjustFollowerCountModal'
 import DenySubmissionModal from './DenySubmissionModal'
 
+// ==================== HELPERS ====================
+
+/**
+ * Format follower count for display as a tier range
+ * Since we only store the tier's min_followers, we show the range they selected
+ */
+function formatFollowerCountDisplay(count: number): string {
+  // Standard tier breakpoints (matches common social media job tiers)
+  // When someone submits, we store the min value of their tier
+  // So we need to show the range, not just the min
+  
+  if (count === 0) {
+    return '< 1K followers'
+  }
+  if (count === 1000) {
+    return '1K-5K followers'
+  }
+  if (count === 5000) {
+    return '5K-20K followers'
+  }
+  if (count === 20000) {
+    return '20K-100K followers'
+  }
+  if (count === 100000) {
+    return '100K+ followers'
+  }
+  
+  // For adjusted/custom values (not tier minimums), show as a range around the number
+  if (count < 1000) {
+    return `${count}-1K followers`
+  }
+  if (count < 5000) {
+    return `${(count / 1000).toFixed(1)}K-5K followers`
+  }
+  if (count < 20000) {
+    return `${(count / 1000).toFixed(1)}K-20K followers`
+  }
+  if (count < 100000) {
+    return `${(count / 1000).toFixed(0)}K-100K followers`
+  }
+  
+  // For very large numbers, just format nicely
+  return `${(count / 1000).toFixed(0)}K+ followers`
+}
+
 // ==================== TYPES ====================
 
 interface SubmissionReviewCardProps {
@@ -34,6 +79,9 @@ interface SubmissionReviewCardProps {
     social_approval_status: 'pending' | 'approved' | 'denied' | 'auto_approved'
     social_denial_reason: string | null
     submitted_at: string
+    social_payment_amount_tokens: number | null
+    social_payment_amount_usd: number | null
+              social_payment_tx_signature: string | null
   }
   estimatedPayment: {
     payment_amount_tokens: number
@@ -42,6 +90,7 @@ interface SubmissionReviewCardProps {
   } | null
   jobId: string
   posterWallet: string
+  tokenSymbol?: string
   onApprove: (impressionCount: number) => void
   onDeny: () => void
   onAdjustFollowers: () => void
@@ -54,6 +103,7 @@ export default function SubmissionReviewCard({
   estimatedPayment,
   jobId,
   posterWallet,
+  tokenSymbol = 'NUB',
   onApprove,
   onDeny,
   onAdjustFollowers
@@ -161,7 +211,7 @@ export default function SubmissionReviewCard({
                   fontSize: '14px'
                 }}
               >
-                Reported Followers: {submission.social_follower_count.toLocaleString()}
+                Reported Followers: {formatFollowerCountDisplay(submission.social_follower_count)}
               </Typography>
               {submission.social_follower_count_verified && submission.social_follower_count !== submission.social_follower_count_verified && (
                 <Tooltip title="Follower count was adjusted">
@@ -178,7 +228,7 @@ export default function SubmissionReviewCard({
                   fontWeight: 600
                 }}
               >
-                Verified Followers: {(submission.social_follower_count_verified ?? submission.social_follower_count).toLocaleString()}
+                Verified Followers: {formatFollowerCountDisplay(submission.social_follower_count_verified ?? submission.social_follower_count)}
               </Typography>
               {isPending && (
                 <Tooltip title="Adjust follower count">
@@ -198,6 +248,100 @@ export default function SubmissionReviewCard({
               )}
             </Box>
           </Box>
+
+          {/* Payment Status - Show for approved/denied submissions */}
+          {(submission.social_approval_status === 'approved' || submission.social_approval_status === 'auto_approved') && submission.social_payment_amount_tokens && (
+            <Box 
+              sx={{ 
+                mt: 2,
+                mb: 2,
+                p: 2, 
+                bgcolor: 'rgba(54, 193, 112, 0.1)', 
+                borderRadius: 'var(--radius-card, 16px)',
+                border: '1px solid var(--accent-success, #36C170)'
+              }}
+            >
+              <Typography 
+                variant="body2" 
+                sx={{ 
+                  color: 'var(--accent-success, #36C170)', 
+                  fontWeight: 700,
+                  fontSize: '15px',
+                  mb: 0.5
+                }}
+              >
+                ✅ Payment Approved
+              </Typography>
+              <Typography 
+                variant="h6" 
+                sx={{ 
+                  color: 'var(--accent-success, #36C170)', 
+                  fontWeight: 700,
+                  fontFamily: 'var(--font-heading, Space Grotesk, sans-serif)'
+                }}
+              >
+                {submission.social_payment_amount_tokens.toFixed(2)} {tokenSymbol}
+              </Typography>
+              <Typography 
+                variant="caption" 
+                sx={{ 
+                  color: 'var(--text-muted, #A3A7B5)',
+                  display: 'block'
+                }}
+              >
+                ${submission.social_payment_amount_usd?.toFixed(2) || '0.00'} USD
+              </Typography>
+              {submission.social_tx_signature && (
+                <Typography 
+                  variant="caption" 
+                  sx={{ 
+                    color: 'var(--text-secondary, #6F7280)',
+                    display: 'block',
+                    mt: 0.5,
+                    fontFamily: 'var(--font-mono, monospace)'
+                  }}
+                >
+                  Tx: {submission.social_tx_signature.slice(0, 12)}...
+                </Typography>
+              )}
+            </Box>
+          )}
+
+          {submission.social_approval_status === 'denied' && (
+            <Box 
+              sx={{ 
+                mt: 2,
+                mb: 2,
+                p: 2, 
+                bgcolor: 'rgba(239, 68, 68, 0.1)', 
+                borderRadius: 'var(--radius-card, 16px)',
+                border: '1px solid var(--accent-error, #EF4444)'
+              }}
+            >
+              <Typography 
+                variant="body2" 
+                sx={{ 
+                  color: 'var(--accent-error, #EF4444)', 
+                  fontWeight: 700,
+                  fontSize: '15px',
+                  mb: 0.5
+                }}
+              >
+                ❌ Submission Rejected
+              </Typography>
+              {submission.social_denial_reason && (
+                <Typography 
+                  variant="body2" 
+                  sx={{ 
+                    color: 'var(--text-secondary, #6F7280)',
+                    fontSize: '14px'
+                  }}
+                >
+                  Reason: {submission.social_denial_reason}
+                </Typography>
+              )}
+            </Box>
+          )}
 
           {/* Tweet link */}
           <Box sx={{ mb: 2 }}>

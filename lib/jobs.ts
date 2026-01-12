@@ -252,6 +252,11 @@ export async function createSocialJob(jobData: {
         social_payments_distributed: false,
         social_min_followers_required: jobData.social_min_followers_required || null,
         
+        // Initialize instant payment budget tracking fields
+        social_remaining_budget_tokens: jobData.social_total_budget_tokens,
+        social_locked_budget_tokens: 0,
+        social_approved_paid_count: 0,
+        
         // Escrow fields
         escrow_locked: jobData.escrow_locked || false,
         escrow_tx_signature: jobData.escrow_tx_signature || null,

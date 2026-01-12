@@ -335,6 +335,10 @@ export async function POST(request: Request) {
       social_actual_budget_released: 0,
       social_payments_distributed: false,
       social_min_followers_required: social_min_followers_required || null,
+      // Initialize instant payment budget tracking fields
+      social_remaining_budget_tokens: social_total_budget_tokens,
+      social_locked_budget_tokens: 0,
+      social_approved_paid_count: 0,
       // Enable instant payment system for all new social jobs
       uses_instant_payment: true
     }

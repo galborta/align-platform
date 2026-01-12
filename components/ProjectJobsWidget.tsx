@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
-import { Box, Typography, Chip, CircularProgress, Dialog, DialogTitle, DialogContent } from '@mui/material'
+import { Box, Typography, Chip, CircularProgress, Dialog, DialogTitle, DialogContent, LinearProgress } from '@mui/material'
 import WorkOutlineIcon from '@mui/icons-material/WorkOutline'
 import ArrowForwardIcon from '@mui/icons-material/ArrowForward'
 import AddIcon from '@mui/icons-material/Add'
@@ -26,8 +26,12 @@ interface ProjectJobsWidgetProps {
   tokenMint: string
 }
 
-// Helper function to get payment amount (handles both regular jobs and contests)
+// Helper function to get payment amount (handles regular jobs, contests, and social jobs)
 const getPaymentAmount = (job: Job): number => {
+  if (job.is_social_media_job) {
+    // For social jobs, return remaining budget
+    return job.social_remaining_budget_tokens || 0
+  }
   if (job.is_contest && Array.isArray(job.contest_winner_prizes)) {
     // For contests, calculate total prize pool from contest_winner_prizes
     return (job.contest_winner_prizes as Array<{ position: number; amount_tokens: number; amount_usd: number }>)
@@ -363,6 +367,21 @@ export function ProjectJobsWidget({ projectId, tokenSymbol, tokenMint }: Project
                       }}
                     />
                   )}
+
+                  {/* Social Campaign Badge */}
+                  {job.is_social_media_job && (
+                    <Chip
+                      label="📱 Social"
+                      size="small"
+                      sx={{
+                        bgcolor: 'var(--accent-primary-soft)',
+                        color: 'var(--accent-primary)',
+                        fontSize: '11px',
+                        fontWeight: 500,
+                        height: 20,
+                      }}
+                    />
+                  )}
                 </Box>
 
                 {/* Title */}
@@ -382,23 +401,84 @@ export function ProjectJobsWidget({ projectId, tokenSymbol, tokenMint }: Project
                   {job.title}
                 </Typography>
 
+                {/* Social Job Progress & Stats */}
+                {job.is_social_media_job && (
+                  <Box sx={{ mb: 1 }}>
+                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 0.5 }}>
+                      <Typography
+                        sx={{
+                          fontFamily: 'var(--font-body)',
+                          fontSize: '11px',
+                          color: 'var(--text-secondary)',
+                        }}
+                      >
+                        Budget: {(job.social_remaining_budget_tokens || 0).toLocaleString()} {tokenSymbol} remaining
+                      </Typography>
+                      <Typography
+                        sx={{
+                          fontFamily: 'var(--font-body)',
+                          fontSize: '11px',
+                          fontWeight: 600,
+                          color: 'var(--accent-primary)',
+                        }}
+                      >
+                        {job.social_total_budget_tokens > 0 
+                          ? Math.round(((job.social_total_budget_tokens - (job.social_remaining_budget_tokens || 0)) / job.social_total_budget_tokens) * 100)
+                          : 0
+                        }%
+                      </Typography>
+                    </Box>
+                    <LinearProgress
+                      variant="determinate"
+                      value={job.social_total_budget_tokens > 0 
+                        ? ((job.social_total_budget_tokens - (job.social_remaining_budget_tokens || 0)) / job.social_total_budget_tokens) * 100
+                        : 0
+                      }
+                      sx={{
+                        height: 4,
+                        borderRadius: 1,
+                        bgcolor: 'rgba(124, 77, 255, 0.15)',
+                        '& .MuiLinearProgress-bar': {
+                          bgcolor: 'var(--accent-primary)',
+                          borderRadius: 1,
+                        }
+                      }}
+                    />
+                    <Box sx={{ display: 'flex', gap: 1, mt: 0.5 }}>
+                      <Typography
+                        sx={{
+                          fontFamily: 'var(--font-body)',
+                          fontSize: '10px',
+                          color: 'var(--accent-success)',
+                          fontWeight: 500,
+                        }}
+                      >
+                        ✓ {job.social_approved_paid_count || 0} participants paid
+                      </Typography>
+                    </Box>
+                  </Box>
+                )}
+
                 {/* Payment & Meta */}
                 <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <Typography
-                    sx={{
-                      fontFamily: 'var(--font-heading)',
-                      fontWeight: 700,
-                      fontSize: 'var(--text-body-small)',
-                      color: 'var(--accent-primary)',
-                    }}
-                  >
-                    {job.is_contest ? '🏆 ' : ''}{getPaymentAmount(job).toLocaleString()} {tokenSymbol}
-                  </Typography>
+                  {!job.is_social_media_job && (
+                    <Typography
+                      sx={{
+                        fontFamily: 'var(--font-heading)',
+                        fontWeight: 700,
+                        fontSize: 'var(--text-body-small)',
+                        color: 'var(--accent-primary)',
+                      }}
+                    >
+                      {job.is_contest ? '🏆 ' : ''}{getPaymentAmount(job).toLocaleString()} {tokenSymbol}
+                    </Typography>
+                  )}
                   <Typography
                     sx={{
                       fontFamily: 'var(--font-body)',
                       fontSize: 'var(--text-caption)',
                       color: 'var(--text-muted)',
+                      ml: job.is_social_media_job ? 'auto' : 0,
                     }}
                   >
                     {formatDistanceToNow(new Date(job.created_at), { addSuffix: true })}

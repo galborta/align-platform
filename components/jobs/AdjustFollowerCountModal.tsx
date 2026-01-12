@@ -1,18 +1,23 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import {
   Dialog,
   DialogTitle,
   DialogContent,
   DialogActions,
   Button,
-  TextField,
   Typography,
   Box,
-  Alert
+  Alert,
+  MenuItem,
+  Select,
+  FormControl,
+  InputLabel,
+  CircularProgress
 } from '@mui/material'
 import { supabase } from '@/lib/supabase'
+import { formatTierDisplay, type FollowerTier } from '@/lib/social-media-jobs-follower-tiers'
 
 // ==================== TYPES ====================
 
@@ -38,19 +43,44 @@ export default function AdjustFollowerCountModal({
   jobId,
   posterWallet
 }: AdjustFollowerCountModalProps) {
-  const [verifiedCount, setVerifiedCount] = useState(submission.social_follower_count_verified)
-  const [reason, setReason] = useState('')
+  const [selectedTierMinFollowers, setSelectedTierMinFollowers] = useState<number>(submission.social_follower_count_verified)
+  const [followerTiers, setFollowerTiers] = useState<FollowerTier[]>([])
   const [loading, setLoading] = useState(false)
+  const [loadingTiers, setLoadingTiers] = useState(true)
   const [error, setError] = useState('')
 
-  const handleSubmit = async () => {
-    if (verifiedCount < 0) {
-      setError('Follower count cannot be negative')
-      return
+  // Fetch job's follower tiers
+  useEffect(() => {
+    const fetchFollowerTiers = async () => {
+      try {
+        setLoadingTiers(true)
+        const { data: job, error: jobError } = await supabase
+          .from('jobs')
+          .select('social_follower_tiers')
+          .eq('id', jobId)
+          .single()
+
+        if (jobError) throw jobError
+        if (!job?.social_follower_tiers) {
+          throw new Error('Job does not have follower tiers configured')
+        }
+
+        setFollowerTiers(job.social_follower_tiers as FollowerTier[])
+      } catch (err: any) {
+        setError(err.message || 'Failed to load follower tiers')
+      } finally {
+        setLoadingTiers(false)
+      }
     }
 
-    if (verifiedCount === submission.social_follower_count_verified) {
-      setError('Please enter a different count to adjust')
+    if (open) {
+      fetchFollowerTiers()
+    }
+  }, [open, jobId])
+
+  const handleSubmit = async () => {
+    if (selectedTierMinFollowers === submission.social_follower_count_verified) {
+      setError('Please select a different tier to adjust')
       return
     }
 
@@ -74,15 +104,14 @@ export default function AdjustFollowerCountModal({
         },
         body: JSON.stringify({
           submission_id: submission.id,
-          verified_follower_count: verifiedCount,
-          adjustment_reason: reason || undefined,
+          verified_follower_count: selectedTierMinFollowers,
           poster_wallet: posterWallet
         })
       })
 
       if (!response.ok) {
         const data = await response.json()
-        throw new Error(data.error || 'Failed to adjust follower count')
+        throw new Error(data.error || 'Failed to adjust follower tier')
       }
 
       // Close and refresh
@@ -119,7 +148,7 @@ export default function AdjustFollowerCountModal({
           pb: 2
         }}
       >
-        Adjust Follower Count
+        Adjust Follower Tier
       </DialogTitle>
 
       <DialogContent sx={{ mt: 3 }}>
@@ -144,15 +173,6 @@ export default function AdjustFollowerCountModal({
               {submission.worker_wallet.slice(0, 8)}...{submission.worker_wallet.slice(-6)}
             </Box>
           </Typography>
-          <Typography 
-            variant="body2" 
-            sx={{ 
-              color: 'var(--text-secondary, #6F7280)',
-              fontSize: '14px'
-            }}
-          >
-            Reported: <Box component="span" sx={{ fontWeight: 600 }}>{submission.social_follower_count.toLocaleString()}</Box> followers
-          </Typography>
         </Box>
 
         <Alert 
@@ -167,78 +187,53 @@ export default function AdjustFollowerCountModal({
             }
           }}
         >
-          If you've verified their actual follower count differs from what was reported, 
-          you can adjust it here. This will affect payment calculations.
+          Select the verified follower tier for this worker. This will affect their payment amount.
         </Alert>
 
-        <TextField
-          fullWidth
-          type="number"
-          label="Verified Follower Count"
-          value={verifiedCount}
-          onChange={(e) => setVerifiedCount(parseInt(e.target.value) || 0)}
-          inputProps={{ min: 0 }}
-          sx={{ 
-            mb: 2,
-            '& .MuiOutlinedInput-root': {
-              borderRadius: '12px',
-              bgcolor: 'var(--subtle-background, #F7F8FB)',
-              '& fieldset': {
-                borderColor: 'var(--border-subtle, #E5E7F0)'
+        {loadingTiers ? (
+          <Box sx={{ display: 'flex', justifyContent: 'center', py: 3 }}>
+            <CircularProgress size={32} sx={{ color: 'var(--accent-primary, #7C4DFF)' }} />
+          </Box>
+        ) : (
+          <FormControl 
+            fullWidth
+            sx={{
+              '& .MuiOutlinedInput-root': {
+                borderRadius: '12px',
+                bgcolor: 'var(--subtle-background, #F7F8FB)',
+                '& fieldset': {
+                  borderColor: 'var(--border-subtle, #E5E7F0)'
+                },
+                '&:hover fieldset': {
+                  borderColor: 'var(--accent-primary, #7C4DFF)'
+                },
+                '&.Mui-focused fieldset': {
+                  borderColor: 'var(--accent-primary, #7C4DFF)'
+                }
               },
-              '&:hover fieldset': {
-                borderColor: 'var(--accent-primary, #7C4DFF)'
-              },
-              '&.Mui-focused fieldset': {
-                borderColor: 'var(--accent-primary, #7C4DFF)'
+              '& .MuiInputLabel-root': {
+                color: 'var(--text-secondary, #6F7280)',
+                fontSize: '14px',
+                '&.Mui-focused': {
+                  color: 'var(--accent-primary, #7C4DFF)'
+                }
               }
-            },
-            '& .MuiInputLabel-root': {
-              color: 'var(--text-secondary, #6F7280)',
-              fontSize: '14px',
-              '&.Mui-focused': {
-                color: 'var(--accent-primary, #7C4DFF)'
-              }
-            }
-          }}
-        />
-
-        <TextField
-          fullWidth
-          label="Reason for Adjustment (Optional)"
-          value={reason}
-          onChange={(e) => setReason(e.target.value)}
-          placeholder="e.g., Checked profile - actual count is..."
-          multiline
-          rows={2}
-          helperText="Optional explanation for the adjustment"
-          sx={{
-            '& .MuiOutlinedInput-root': {
-              borderRadius: '12px',
-              bgcolor: 'var(--subtle-background, #F7F8FB)',
-              '& fieldset': {
-                borderColor: 'var(--border-subtle, #E5E7F0)'
-              },
-              '&:hover fieldset': {
-                borderColor: 'var(--accent-primary, #7C4DFF)'
-              },
-              '&.Mui-focused fieldset': {
-                borderColor: 'var(--accent-primary, #7C4DFF)'
-              }
-            },
-            '& .MuiInputLabel-root': {
-              color: 'var(--text-secondary, #6F7280)',
-              fontSize: '14px',
-              '&.Mui-focused': {
-                color: 'var(--accent-primary, #7C4DFF)'
-              }
-            },
-            '& .MuiFormHelperText-root': {
-              color: 'var(--text-muted, #A3A7B5)',
-              fontSize: '12px'
-            }
-          }}
-        />
+            }}
+          >
+            <InputLabel>Verified Follower Tier</InputLabel>
+            <Select
+              value={selectedTierMinFollowers}
+              onChange={(e) => setSelectedTierMinFollowers(e.target.value as number)}
+              label="Verified Follower Tier"
+            >
+              {followerTiers.map((tier) => (
+                <MenuItem key={tier.min_followers} value={tier.min_followers}>
+                  {formatTierDisplay(tier)}
+                </MenuItem>
+              ))}
+            </Select>
+          </FormControl>
+        )}
 
         {error && (
           <Alert 
@@ -303,7 +298,7 @@ export default function AdjustFollowerCountModal({
             }
           }}
         >
-          {loading ? 'Updating...' : 'Update Count'}
+          {loading ? 'Updating...' : 'Update Tier'}
         </Button>
       </DialogActions>
     </Dialog>

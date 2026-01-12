@@ -82,6 +82,14 @@ export interface AssetVoteWithAsset extends AssetVote {
   }
 }
 
+export interface SocialJobPaymentWithJob extends JobSubmission {
+  job: {
+    id: string
+    title: string
+    project_id: string
+  }
+}
+
 /**
  * Container for all raw activity data fetched from database
  */
@@ -96,6 +104,7 @@ export interface RawActivityData {
   assetVotes: AssetVoteWithAsset[]
   tips: ChatTip[]
   karmaMilestones: WalletKarma[]
+  socialJobPayments: SocialJobPaymentWithJob[]
 }
 
 /**
@@ -137,7 +146,8 @@ export async function fetchInitialFeed(
     assetsRes,
     assetVotesRes,
     tipsRes,
-    karmaRes
+    karmaRes,
+    socialJobPaymentsRes
   ] = await Promise.all([
     // 1. Jobs posted
     supabase
@@ -300,6 +310,30 @@ export async function fetchInitialFeed(
       .then(res => {
         if (res.error) console.error('Error fetching karma milestones:', res.error)
         return res
+      }),
+
+    // 11. Social job payments (approved submissions with payment data)
+    supabase
+      .from('job_submissions')
+      .select(`
+        id,
+        worker_wallet,
+        social_approval_status,
+        social_payment_amount_tokens,
+        social_payment_amount_usd,
+        reviewed_at,
+        job:jobs!inner(id, title, project_id, is_social_media_job)
+      `)
+      .eq('jobs.project_id', projectId)
+      .eq('jobs.is_social_media_job', true)
+      .in('social_approval_status', ['approved', 'auto_approved'])
+      .not('social_payment_amount_tokens', 'is', null)
+      .not('reviewed_at', 'is', null)
+      .order('reviewed_at', { ascending: false })
+      .range(offset, offset + limitPerTable - 1)
+      .then(res => {
+        if (res.error) console.error('Error fetching social job payments:', res.error)
+        return res
       })
   ])
 
@@ -315,7 +349,8 @@ export async function fetchInitialFeed(
     assets: (assetsRes.data as PendingAsset[]) || [],
     assetVotes: (assetVotesRes.data as any[]) || [],
     tips: (tipsRes.data as ChatTip[]) || [],
-    karmaMilestones: (karmaRes.data as WalletKarma[]) || []
+    karmaMilestones: (karmaRes.data as WalletKarma[]) || [],
+    socialJobPayments: (socialJobPaymentsRes.data as any[]) || []
   }
 }
 
@@ -355,7 +390,8 @@ export async function fetchPaginatedFeed(
     assetsRes,
     assetVotesRes,
     tipsRes,
-    karmaRes
+    karmaRes,
+    socialJobPaymentsRes
   ] = await Promise.all([
     // Jobs posted before timestamp
     supabase
@@ -527,6 +563,31 @@ export async function fetchPaginatedFeed(
       .then(res => {
         if (res.error) console.error('Error fetching paginated karma:', res.error)
         return res
+      }),
+
+    // Social job payments before timestamp
+    supabase
+      .from('job_submissions')
+      .select(`
+        id,
+        worker_wallet,
+        social_approval_status,
+        social_payment_amount_tokens,
+        social_payment_amount_usd,
+        reviewed_at,
+        job:jobs!inner(id, title, project_id, is_social_media_job)
+      `)
+      .eq('jobs.project_id', projectId)
+      .eq('jobs.is_social_media_job', true)
+      .in('social_approval_status', ['approved', 'auto_approved'])
+      .not('social_payment_amount_tokens', 'is', null)
+      .not('reviewed_at', 'is', null)
+      .lt('reviewed_at', beforeTimestamp)
+      .order('reviewed_at', { ascending: false })
+      .limit(limit)
+      .then(res => {
+        if (res.error) console.error('Error fetching paginated social job payments:', res.error)
+        return res
       })
   ])
 
@@ -540,7 +601,8 @@ export async function fetchPaginatedFeed(
     assets: (assetsRes.data as PendingAsset[]) || [],
     assetVotes: (assetVotesRes.data as any[]) || [],
     tips: (tipsRes.data as ChatTip[]) || [],
-    karmaMilestones: (karmaRes.data as WalletKarma[]) || []
+    karmaMilestones: (karmaRes.data as WalletKarma[]) || [],
+    socialJobPayments: (socialJobPaymentsRes.data as any[]) || []
   }
 }
 

@@ -36,6 +36,8 @@ export type ActivityType =
   | 'job_revision_submitted'
   // Contest Activities
   | 'submission_comment'
+  // Social Job Activities
+  | 'social_job_payment'
   // Asset Activities
   | 'asset_submitted'
   | 'asset_upvoted'

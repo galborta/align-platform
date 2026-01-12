@@ -61,8 +61,20 @@ export function useActionSignature() {
   const signAction = useCallback(async (
     params: ActionSignatureParams
   ): Promise<SignedAction> => {
-    if (!publicKey || !signMessage) {
-      throw new Error('Wallet not connected')
+    if (!publicKey) {
+      throw new Error('Wallet not connected - no public key')
+    }
+    
+    if (!signMessage) {
+      throw new Error('Wallet does not support message signing. Please use Phantom, Solflare, or another compatible wallet.')
+    }
+
+    // Validate publicKey is valid
+    try {
+      publicKey.toBase58() // This will throw if invalid
+    } catch (keyError) {
+      console.error('[useActionSignature] Invalid public key:', keyError)
+      throw new Error('Wallet connection is invalid. Please disconnect and reconnect your wallet.')
     }
 
     // Generate the message
@@ -70,6 +82,7 @@ export function useActionSignature() {
     
     console.log('[useActionSignature] Generating signature:')
     console.log('  Wallet (publicKey):', publicKey.toBase58())
+    console.log('  signMessage available:', typeof signMessage)
     console.log('  Message preview:', message.substring(0, 200))
 
     // Request signature from wallet
@@ -89,8 +102,12 @@ export function useActionSignature() {
       }
     } catch (error) {
       // User rejected signature or wallet error
+      console.error('[useActionSignature] Signature error:', error)
+      
       if (error instanceof Error) {
         const errorMsg = error.message.toLowerCase()
+        
+        // User cancelled
         if (
           errorMsg.includes('rejected') ||
           errorMsg.includes('cancelled') ||
@@ -98,8 +115,21 @@ export function useActionSignature() {
         ) {
           throw new Error('Signature request cancelled by user')
         }
+        
+        // Invalid account/connection state
+        if (errorMsg.includes('invalid account') || errorMsg.includes('account') && errorMsg.includes('invalid')) {
+          throw new Error('Wallet connection is stale. Please disconnect and reconnect your wallet, then try again.')
+        }
+        
+        // Wallet doesn't support signing
+        if (errorMsg.includes('not supported') || errorMsg.includes('undefined')) {
+          throw new Error(`Wallet does not support message signing. Please use a different wallet (Phantom, Solflare, etc.)`)
+        }
+        
+        // Include the actual error message for better debugging
+        throw new Error(`Failed to sign message: ${error.message}`)
       }
-      throw new Error('Failed to sign message')
+      throw new Error('Failed to sign message: Unknown error')
     }
   }, [publicKey, signMessage])
 

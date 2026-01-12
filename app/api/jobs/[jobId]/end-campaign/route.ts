@@ -234,7 +234,13 @@ export async function POST(
       console.log(`[End Campaign] Found ${pendingSubmissions.length} pending submissions to auto-approve`)
 
       const platformFeeWallet = await getFeeWallet()
-      const platformFeePercentage = job.fee_percentage_at_creation || 0.05
+      let platformFeePercentage = job.fee_percentage_at_creation || 0.05
+      
+      // Safety check: fee should be a decimal between 0 and 1
+      if (platformFeePercentage > 1) {
+        console.warn(`[End Campaign] ⚠️ Invalid fee percentage: ${platformFeePercentage}. Converting from percentage to decimal.`)
+        platformFeePercentage = platformFeePercentage / 100
+      }
 
       if (!platformFeeWallet) {
         console.error('[End Campaign] Platform fee wallet not configured - cannot process payments')
@@ -245,9 +251,22 @@ export async function POST(
             console.log(`[End Campaign] Processing pending submission ${submission.id}...`)
 
             // Calculate base payment
-            const basePayment = submission.social_payment_amount_usd || 0
+            const basePaymentUSD = submission.social_payment_amount_usd || 0
             
-            if (basePayment > 0) {
+            if (basePaymentUSD > 0) {
+              // Convert USD to tokens using escrow rate
+              const escrowTokens = job.escrow_amount_tokens || 0
+              const budgetUSD = job.social_total_budget_usd || 0
+              
+              if (escrowTokens <= 0 || budgetUSD <= 0) {
+                throw new Error('Invalid escrow or budget configuration for token conversion')
+              }
+              
+              const usdToTokenRate = escrowTokens / budgetUSD
+              const basePaymentInTokens = basePaymentUSD * usdToTokenRate
+              
+              console.log(`[End Campaign] Token conversion: ${basePaymentInTokens} tokens ($${basePaymentUSD} USD)`)
+              
               // Update to pending payment status
               await supabaseAdmin
                 .from('job_submissions')
@@ -259,7 +278,7 @@ export async function POST(
                 tokenMint: new PublicKey(job.escrow_token_mint || process.env.NEXT_PUBLIC_DEFAULT_TOKEN_MINT!),
                 workerWallet: new PublicKey(submission.worker_wallet),
                 platformFeeWallet: new PublicKey(platformFeeWallet),
-                basePaymentAmount: basePayment,
+                basePaymentAmount: basePaymentInTokens,
                 platformFeePercentage,
                 impressionBonusAmount: 0,
                 jobId: jobId,
@@ -274,7 +293,7 @@ export async function POST(
                   .from('job_submissions')
                   .update({
                     social_approval_status: 'auto_approved',
-                    social_tx_signature: paymentResult.txSignature,
+                    social_payment_tx_signature: paymentResult.txSignature,
                     reviewed_at: new Date().toISOString()
                   })
                   .eq('id', submission.id)
@@ -375,7 +394,14 @@ export async function POST(
         throw new Error('Platform fee wallet not configured')
       }
 
-      const platformFeePercentage = job.fee_percentage_at_creation || 0.05
+      let platformFeePercentage = job.fee_percentage_at_creation || 0.05
+      
+      // Safety check: fee should be a decimal between 0 and 1
+      if (platformFeePercentage > 1) {
+        console.warn(`[End Campaign - Bonuses] ⚠️ Invalid fee percentage: ${platformFeePercentage}. Converting from percentage to decimal.`)
+        platformFeePercentage = platformFeePercentage / 100
+      }
+      
       const remainingBudget = job.social_remaining_budget_tokens || 0
       const lockedBudget = job.social_locked_budget_tokens || 0
       let availableBudget = remainingBudget - lockedBudget
@@ -407,17 +433,30 @@ export async function POST(
             continue
           }
 
+          // Convert USD bonus to tokens using escrow rate
+          const escrowTokens = job.escrow_amount_tokens || 0
+          const budgetUSD = job.social_total_budget_usd || 0
+          
+          if (escrowTokens <= 0 || budgetUSD <= 0) {
+            throw new Error('Invalid escrow or budget configuration for token conversion')
+          }
+          
+          const usdToTokenRate = escrowTokens / budgetUSD
+          const bonusAmountInTokens = bonusAmount * usdToTokenRate
+          
           // Calculate total needed
-          const platformFee = bonusAmount * platformFeePercentage
-          const totalFromEscrow = bonusAmount + platformFee
+          const platformFee = bonusAmountInTokens * platformFeePercentage
+          const totalFromEscrow = bonusAmountInTokens + platformFee
+
+          console.log(`[End Campaign] Bonus conversion: ${bonusAmountInTokens} tokens ($${bonusAmount} USD)`)
 
           // Check budget
           if (totalFromEscrow > availableBudget) {
-            console.error(`[End Campaign] Insufficient budget for bonus (need $${totalFromEscrow}, have $${availableBudget})`)
+            console.error(`[End Campaign] Insufficient budget for bonus (need ${totalFromEscrow} tokens, have ${availableBudget} tokens)`)
             bonusResults.push({
               submission_id: submissionId,
               success: false,
-              error: `Insufficient budget (need $${totalFromEscrow.toFixed(2)}, have $${availableBudget.toFixed(2)})`
+              error: `Insufficient budget (need ${totalFromEscrow.toFixed(2)} tokens, have ${availableBudget.toFixed(2)} tokens)`
             })
             continue
           }
@@ -429,7 +468,7 @@ export async function POST(
             platformFeeWallet: new PublicKey(platformFeeWallet),
             basePaymentAmount: 0, // Only bonus
             platformFeePercentage,
-            impressionBonusAmount: bonusAmount,
+            impressionBonusAmount: bonusAmountInTokens,
             decimals: 9,
             submissionId,
             jobId

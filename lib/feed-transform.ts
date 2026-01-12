@@ -339,6 +339,31 @@ export function transformToFeedItems(data: RawActivityData): FeedItem[] {
     }
   })
 
+  // ==================== SOCIAL JOB PAYMENT ACTIVITIES ====================
+
+  // Social job payments (approved submissions with payment data)
+  data.socialJobPayments.forEach(payment => {
+    try {
+      const jobData = (payment as any).job
+      if (!jobData || !jobData.is_social_media_job) return
+
+      items.push({
+        id: `social_job_payment_${payment.id}`,
+        type: 'social_job_payment',
+        timestamp: new Date(payment.reviewed_at || payment.submitted_at || new Date()),
+        data: {
+          workerWallet: payment.worker_wallet,
+          jobId: jobData.id,
+          jobTitle: jobData.title,
+          amountTokens: payment.social_payment_amount_tokens,
+          amountUsd: payment.social_payment_amount_usd
+        }
+      })
+    } catch (error) {
+      console.error('Error transforming social job payment:', payment.id, error)
+    }
+  })
+
   // Sort by timestamp descending (newest first)
   return items.sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime())
 }

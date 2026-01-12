@@ -835,7 +835,10 @@ export default function JobDetailPage() {
   const { signAction } = useActionSignature()
 
   const handleCancelJob = async () => {
-    if (!job || !publicKey) return
+    if (!job || !publicKey) {
+      toast.error('Wallet not connected')
+      return
+    }
 
     setCancelling(true)
     try {
@@ -843,8 +846,13 @@ export default function JobDetailPage() {
       // Or for contests with no submissions after deadline (existing logic)
       const skipKarmaPenalty = job.is_contest && contestSubmissions.length === 0
 
+      console.log('[Cancel Job] Requesting signature...')
+      console.log('  Wallet:', publicKey.toBase58())
+      console.log('  Job ID:', job.id)
+
       // Sign once for both refund and cancel operations
-      toast.loading('Please sign to authorize action...', { id: 'action' })
+      toast.loading('Please sign the message in your wallet...', { id: 'action' })
+      
       const signedAction = await signAction({
         action: 'Cancel job and refund',
         resourceId: job.id,
@@ -1555,6 +1563,9 @@ export default function JobDetailPage() {
             projectName={project.name}
             tokenSymbol={project.token_symbol || 'tokens'}
             onSubmissionSuccess={() => fetchJobData()}
+            onEditClick={isPoster ? handleEdit : undefined}
+            onExtendDeadlineClick={isPoster ? () => setShowExtendDeadlineDialog(true) : undefined}
+            onCancelClick={isPoster ? handleCancel : undefined}
           />
         )}
 

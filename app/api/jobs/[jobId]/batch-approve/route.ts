@@ -266,7 +266,13 @@ export async function POST(
     console.log('[Batch Approval] Step 6: Calculating payments...')
 
     const followerTiers = job.social_follower_tiers as FollowerTier[]
-    const platformFeePercentage = job.fee_percentage_at_creation || 0.05
+    let platformFeePercentage = job.fee_percentage_at_creation || 0.05
+    
+    // Safety check: fee should be a decimal between 0 and 1
+    if (platformFeePercentage > 1) {
+      console.warn(`[Batch Approval] ⚠️ Invalid fee percentage: ${platformFeePercentage}. Converting from percentage to decimal.`)
+      platformFeePercentage = platformFeePercentage / 100
+    }
 
     interface PaymentPlan {
       submission_id: string
@@ -441,13 +447,28 @@ export async function POST(
         // Step 9b: Execute payment
         console.log(`[Batch Approval] → Executing payment transaction...`)
 
+        // Convert USD amounts to tokens using escrow rate
+        const escrowTokens = job.escrow_amount_tokens || 0
+        const budgetUSD = job.social_total_budget_usd || 0
+        
+        if (escrowTokens <= 0 || budgetUSD <= 0) {
+          throw new Error('Invalid escrow or budget configuration for token conversion')
+        }
+        
+        const usdToTokenRate = escrowTokens / budgetUSD
+        const basePaymentInTokens = plan.base_payment * usdToTokenRate
+        const impressionBonusInTokens = plan.impression_bonus * usdToTokenRate
+        const totalPaymentInTokens = plan.total_payment * usdToTokenRate
+        
+        console.log(`[Batch Approval] Token conversion: rate=${usdToTokenRate}, base=${basePaymentInTokens} tokens, bonus=${impressionBonusInTokens} tokens`)
+
         const paymentResult = await executeInstantSubmissionPayment(connection, {
           tokenMint: new PublicKey(job.escrow_token_mint || process.env.NEXT_PUBLIC_DEFAULT_TOKEN_MINT!),
           workerWallet: new PublicKey(plan.worker_wallet),
           platformFeeWallet: new PublicKey(platformFeeWallet),
-          basePaymentAmount: plan.base_payment,
+          basePaymentAmount: basePaymentInTokens,
           platformFeePercentage,
-          impressionBonusAmount: plan.impression_bonus,
+          impressionBonusAmount: impressionBonusInTokens,
           decimals: 9, // Most Solana tokens
           submissionId: plan.submission_id,
           jobId
@@ -465,7 +486,7 @@ export async function POST(
               social_payment_released: true,
               social_payment_tx_signature: paymentResult.txSignature,
               social_payment_amount_usd: plan.total_payment,
-              social_payment_amount_tokens: plan.total_payment, // 1:1 for now
+              social_payment_amount_tokens: totalPaymentInTokens,
               updated_at: new Date().toISOString()
             })
             .eq('id', plan.submission_id)

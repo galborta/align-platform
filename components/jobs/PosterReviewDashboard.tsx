@@ -36,6 +36,9 @@ interface Submission {
   social_approval_status: 'pending' | 'approved' | 'denied' | 'auto_approved'
   social_denial_reason: string | null
   submitted_at: string
+  social_payment_amount_tokens: number | null
+  social_payment_amount_usd: number | null
+  social_payment_tx_signature: string | null
 }
 
 interface PosterReviewDashboardProps {
@@ -52,6 +55,7 @@ interface PosterReviewDashboardProps {
   }
   submissions: Submission[]
   currentUserWallet: string
+  tokenSymbol?: string
 }
 
 // ==================== COMPONENT ====================
@@ -59,7 +63,8 @@ interface PosterReviewDashboardProps {
 export default function PosterReviewDashboard({
   job,
   submissions,
-  currentUserWallet
+  currentUserWallet,
+  tokenSymbol = 'NUB'
 }: PosterReviewDashboardProps) {
   const [filter, setFilter] = useState<'all' | 'pending' | 'approved' | 'denied'>('all')
   const [sortBy, setSortBy] = useState<'most_followers' | 'least_followers' | 'newest' | 'oldest'>('most_followers')
@@ -510,6 +515,7 @@ export default function PosterReviewDashboard({
                 estimatedPayment={payment || null}
                 jobId={job.id}
                 posterWallet={currentUserWallet}
+                tokenSymbol={tokenSymbol}
                 onApprove={async (impressionCount: number) => {
                   // Will implement API call
                   await handleApproveSubmission(submission.id, impressionCount)

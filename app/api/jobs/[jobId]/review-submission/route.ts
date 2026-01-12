@@ -241,7 +241,13 @@ export async function POST(
         try {
           // Get platform fee wallet and percentage
           const platformFeeWallet = await getFeeWallet()
-          const platformFeePercentage = job.fee_percentage_at_creation || 0.05
+          let platformFeePercentage = job.fee_percentage_at_creation || 0.05
+          
+          // Safety check: fee should be a decimal between 0 and 1
+          if (platformFeePercentage > 1) {
+            console.warn(`[Review Submission] ⚠️ Invalid fee percentage: ${platformFeePercentage}. Converting from percentage to decimal.`)
+            platformFeePercentage = platformFeePercentage / 100
+          }
 
           if (!platformFeeWallet) {
             throw new Error('Platform fee wallet not configured')
@@ -268,6 +274,20 @@ export async function POST(
           console.log(`[Review Submission] Payment: base=$${basePayment}, bonus=$${impressionBonus}, total=$${totalPayment}`)
 
           if (totalPayment > 0) {
+            // Convert USD amounts to tokens using escrow rate
+            const escrowTokens = job.escrow_amount_tokens || 0
+            const budgetUSD = job.social_total_budget_usd || 0
+            
+            if (escrowTokens <= 0 || budgetUSD <= 0) {
+              throw new Error('Invalid escrow or budget configuration for token conversion')
+            }
+            
+            const usdToTokenRate = escrowTokens / budgetUSD
+            const basePaymentInTokens = basePayment * usdToTokenRate
+            const impressionBonusInTokens = impressionBonus * usdToTokenRate
+            
+            console.log(`[Review Submission] Token conversion: rate=${usdToTokenRate}, base=${basePaymentInTokens} tokens, bonus=${impressionBonusInTokens} tokens`)
+
             // Update submission to pending payment status
             await supabaseAdmin
               .from('job_submissions')
@@ -279,9 +299,9 @@ export async function POST(
               tokenMint: new PublicKey(job.escrow_token_mint || process.env.NEXT_PUBLIC_DEFAULT_TOKEN_MINT!),
               workerWallet: new PublicKey(submission.worker_wallet),
               platformFeeWallet: new PublicKey(platformFeeWallet),
-              basePaymentAmount: basePayment,
+              basePaymentAmount: basePaymentInTokens,
               platformFeePercentage,
-              impressionBonusAmount: impressionBonus,
+              impressionBonusAmount: impressionBonusInTokens,
               jobId: jobId,
               jobTitle: job.title || 'Social Media Campaign'
             })
@@ -304,24 +324,40 @@ export async function POST(
             console.log(`[Review Submission] ✅ Payment successful: ${paymentResult.txSignature}`)
 
             // Update submission with payment details
-            await supabaseAdmin
+            const totalPaymentInTokens = basePaymentInTokens + impressionBonusInTokens
+            
+            const { error: paymentUpdateError } = await supabaseAdmin
               .from('job_submissions')
               .update({
                 social_approval_status: 'approved',
                 social_payment_amount_usd: totalPayment,
-                social_tx_signature: paymentResult.txSignature,
+                social_payment_amount_tokens: totalPaymentInTokens,
+                social_base_payment_amount_usd: basePayment,
+                social_base_payment_amount_tokens: basePaymentInTokens,
+                social_payment_tx_signature: paymentResult.txSignature,
                 reviewed_at: new Date().toISOString()
               })
               .eq('id', submission_id)
 
-            // Update job's actual budget released
+            if (paymentUpdateError) {
+              console.error('[Review Submission] ❌ Failed to update submission with payment details:', paymentUpdateError)
+              throw new Error(`Failed to update submission: ${paymentUpdateError.message}`)
+            }
+
+            console.log('[Review Submission] ✅ Submission updated with payment details')
+
+            // Update job's budget tracking and payment counts
             await supabaseAdmin
               .from('jobs')
               .update({
                 social_actual_budget_released: (job.social_actual_budget_released || 0) + totalPayment,
+                social_remaining_budget_tokens: (job.social_remaining_budget_tokens || 0) - totalPaymentInTokens,
+                social_approved_paid_count: (job.social_approved_paid_count || 0) + 1,
                 updated_at: new Date().toISOString()
               })
               .eq('id', jobId)
+            
+            console.log(`[Review Submission] ✅ Budget updated: -${totalPaymentInTokens.toFixed(2)} tokens, remaining: ${((job.social_remaining_budget_tokens || 0) - totalPaymentInTokens).toFixed(2)} tokens`)
           } else {
             console.log('[Review Submission] No payment needed (amount is $0)')
           }

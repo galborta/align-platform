@@ -258,7 +258,7 @@ export default function SocialMediaJobCard({
               fontSize: '12px',
             }}
           >
-            💰 Budget Pool (Tiered)
+            💰 Budget Remaining
           </Typography>
           <Typography
             sx={{
@@ -269,7 +269,7 @@ export default function SocialMediaJobCard({
               lineHeight: 1.2
             }}
           >
-            {minBudget.toLocaleString()} - {maxBudget.toLocaleString()} {tokenSymbol}
+            {(job.social_remaining_budget_tokens || 0).toLocaleString()} {tokenSymbol}
           </Typography>
           <Typography
             variant="caption"
@@ -278,8 +278,54 @@ export default function SocialMediaJobCard({
               fontFamily: 'var(--font-body, Satoshi, sans-serif)',
             }}
           >
-            ~${minBudgetUsd.toFixed(0)} - ${maxBudgetUsd.toFixed(0)} USD
+            of {maxBudget.toLocaleString()} {tokenSymbol} total
           </Typography>
+
+          {/* Budget Progress Bar */}
+          <Box sx={{ mt: 1.5 }}>
+            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 0.5 }}>
+              <Typography
+                variant="caption"
+                sx={{
+                  color: 'var(--text-secondary, #6F7280)',
+                  fontFamily: 'var(--font-body, Satoshi, sans-serif)',
+                  fontSize: '11px',
+                }}
+              >
+                Budget Used
+              </Typography>
+              <Typography
+                variant="caption"
+                sx={{
+                  color: 'var(--accent-primary, #7C4DFF)',
+                  fontFamily: 'var(--font-body, Satoshi, sans-serif)',
+                  fontWeight: 600,
+                  fontSize: '11px',
+                }}
+              >
+                {maxBudget > 0 
+                  ? Math.round(((maxBudget - (job.social_remaining_budget_tokens || 0)) / maxBudget) * 100)
+                  : 0
+                }%
+              </Typography>
+            </Box>
+            <LinearProgress
+              variant="determinate"
+              value={maxBudget > 0 
+                ? ((maxBudget - (job.social_remaining_budget_tokens || 0)) / maxBudget) * 100
+                : 0
+              }
+              sx={{
+                height: 6,
+                borderRadius: 1,
+                bgcolor: 'rgba(124, 77, 255, 0.15)',
+                '& .MuiLinearProgress-bar': {
+                  bgcolor: 'var(--accent-primary, #7C4DFF)',
+                  borderRadius: 1,
+                }
+              }}
+            />
+          </Box>
 
           {/* Current Active Tier */}
           {activeTier && submissionCount > 0 && (
