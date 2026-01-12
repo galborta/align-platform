@@ -24,8 +24,6 @@ const TITLE_MAX_LENGTH = 100
 const BUDGET_MIN = 50
 const BUDGET_MAX = 50000
 
-const GUIDELINES_MAX_LENGTH = 500
-
 const REQUIRED_TIER_COUNT = 6
 
 const TWEET_URL_PATTERN = /^https?:\/\/(www\.)?(twitter\.com|x\.com)\/\w+\/status\/\d+/i
@@ -183,19 +181,10 @@ export function validateTiers(tiers: BudgetTier[]): ValidationResult {
 
 /**
  * Validates campaign guidelines
- * Requirements: Max 500 characters (optional field)
+ * Requirements: No character limit (optional field)
  */
 export function validateGuidelines(guidelines: string): ValidationResult {
-  const trimmed = guidelines.trim()
-  
-  if (trimmed.length > GUIDELINES_MAX_LENGTH) {
-    return {
-      valid: false,
-      error: `Guidelines must be ${GUIDELINES_MAX_LENGTH} characters or less`,
-      field: 'campaignGuidelines'
-    }
-  }
-  
+  // Guidelines are optional and have no character limit
   return { valid: true }
 }
 
