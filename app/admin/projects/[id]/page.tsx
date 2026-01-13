@@ -229,6 +229,14 @@ export default function AdminProjectPage() {
   const [jobFormData, setJobFormData] = useState<Partial<Job>>({})
   const [processingJobAction, setProcessingJobAction] = useState(false)
   const [loadingJobs, setLoadingJobs] = useState(false)
+  
+  // Job submissions management state
+  const [viewingJobSubmissions, setViewingJobSubmissions] = useState<string | null>(null)
+  const [jobSubmissions, setJobSubmissions] = useState<any[]>([])
+  const [loadingSubmissions, setLoadingSubmissions] = useState(false)
+  const [deletingSubmission, setDeletingSubmission] = useState<string | null>(null)
+  const [submissionToDelete, setSubmissionToDelete] = useState<any | null>(null)
+  const [deleteSubmissionConfirmOpen, setDeleteSubmissionConfirmOpen] = useState(false)
 
   // Team & Wallets tab state
   const [editingTeamWallet, setEditingTeamWallet] = useState<TeamWallet | null>(null)
@@ -837,6 +845,96 @@ export default function AdminProjectPage() {
     } finally {
       setProcessingJobAction(false)
     }
+  }
+
+  // Job Submissions Management Handlers
+  const fetchJobSubmissions = async (jobId: string) => {
+    setLoadingSubmissions(true)
+    try {
+      const { data, error } = await supabase
+        .from('job_submissions')
+        .select('*')
+        .eq('job_id', jobId)
+        .order('submitted_at', { ascending: false })
+      
+      if (error) throw error
+      setJobSubmissions(data || [])
+    } catch (error: any) {
+      console.error('Error fetching job submissions:', error)
+      toast.error('Failed to load submissions')
+    } finally {
+      setLoadingSubmissions(false)
+    }
+  }
+
+  const handleViewSubmissions = async (jobId: string) => {
+    setViewingJobSubmissions(jobId)
+    await fetchJobSubmissions(jobId)
+  }
+
+  const handleCloseSubmissions = () => {
+    setViewingJobSubmissions(null)
+    setJobSubmissions([])
+  }
+
+  const openDeleteSubmissionConfirm = (submission: any) => {
+    setSubmissionToDelete(submission)
+    setDeleteSubmissionConfirmOpen(true)
+  }
+
+  const handleDeleteSubmission = async () => {
+    if (!submissionToDelete) return
+    
+    const submissionId = submissionToDelete.id
+    setDeletingSubmission(submissionId)
+    
+    try {
+      const { error } = await supabase
+        .from('job_submissions')
+        .delete()
+        .eq('id', submissionId)
+      
+      if (error) throw error
+      
+      toast.success('Submission deleted successfully')
+      
+      // Refresh submissions list
+      if (viewingJobSubmissions) {
+        await fetchJobSubmissions(viewingJobSubmissions)
+      }
+      
+      setDeleteSubmissionConfirmOpen(false)
+      setSubmissionToDelete(null)
+    } catch (error: any) {
+      console.error('Error deleting submission:', error)
+      toast.error(error.message || 'Failed to delete submission')
+    } finally {
+      setDeletingSubmission(null)
+    }
+  }
+
+  const getSubmissionStatusLabel = (submission: any) => {
+    // For social media jobs
+    if (submission.social_approval_status) {
+      return submission.social_approval_status
+    }
+    // For contest jobs
+    if (submission.is_selected_winner) {
+      return `Winner (Position ${submission.winner_position})`
+    }
+    // For regular jobs
+    return 'Submitted'
+  }
+
+  const getSubmissionStatusColor = (submission: any) => {
+    const status = submission.social_approval_status
+    if (status === 'approved') return 'success'
+    if (status === 'denied') return 'error'
+    if (status === 'pending') return 'warning'
+    if (status === 'approved_pending_payment') return 'info'
+    if (status === 'approved_failed') return 'error'
+    if (submission.is_selected_winner) return 'secondary'
+    return 'default'
   }
 
   // Team Wallet Management Handlers
@@ -6724,6 +6822,13 @@ export default function AdminProjectPage() {
                                       <MuiButton
                                         size="small"
                                         variant="outlined"
+                                        onClick={() => handleViewSubmissions(job.id)}
+                                      >
+                                        📋 Submissions
+                                      </MuiButton>
+                                      <MuiButton
+                                        size="small"
+                                        variant="outlined"
                                         startIcon={<EditIcon />}
                                         onClick={() => {
                                           setEditingJob(job)
@@ -6867,6 +6972,229 @@ export default function AdminProjectPage() {
                           disabled={processingJobAction}
                         >
                           {processingJobAction ? <CircularProgress size={20} /> : 'Delete Job'}
+                        </MuiButton>
+                      </DialogActions>
+                    </Dialog>
+
+                    {/* Job Submissions Modal */}
+                    <Dialog
+                      open={viewingJobSubmissions !== null}
+                      onClose={handleCloseSubmissions}
+                      maxWidth="lg"
+                      fullWidth
+                    >
+                      <DialogTitle>
+                        <div className="flex items-center justify-between">
+                          <span>Job Submissions</span>
+                          {viewingJobSubmissions && (
+                            <Chip 
+                              label={`${jobSubmissions.length} submission${jobSubmissions.length !== 1 ? 's' : ''}`}
+                              color="primary"
+                              size="small"
+                            />
+                          )}
+                        </div>
+                      </DialogTitle>
+                      <DialogContent>
+                        {loadingSubmissions ? (
+                          <div className="flex justify-center py-8">
+                            <CircularProgress />
+                          </div>
+                        ) : jobSubmissions.length === 0 ? (
+                          <Alert severity="info">
+                            No submissions found for this job.
+                          </Alert>
+                        ) : (
+                          <div className="space-y-3">
+                            {jobSubmissions.map((submission) => (
+                              <Card key={submission.id} className="p-4">
+                                <div className="flex items-start justify-between gap-4">
+                                  {/* Submission Details */}
+                                  <div className="flex-1 space-y-2">
+                                    <div className="flex items-center gap-2">
+                                      <Chip 
+                                        label={getSubmissionStatusLabel(submission)}
+                                        color={getSubmissionStatusColor(submission) as any}
+                                        size="small"
+                                      />
+                                      {submission.social_payment_tx_signature && (
+                                        <Chip label="✓ Paid" color="success" size="small" variant="outlined" />
+                                      )}
+                                    </div>
+                                    
+                                    <div className="text-sm space-y-1">
+                                      <p className="flex items-center gap-2">
+                                        <strong>Worker:</strong>
+                                        <span className="font-mono text-xs">
+                                          {submission.worker_wallet?.slice(0, 6)}...{submission.worker_wallet?.slice(-4)}
+                                        </span>
+                                        <button onClick={() => copyToClipboard(submission.worker_wallet)}>
+                                          <ContentCopyIcon sx={{ fontSize: 14 }} />
+                                        </button>
+                                      </p>
+                                      
+                                      <p>
+                                        <strong>Submitted:</strong>{' '}
+                                        {submission.submitted_at 
+                                          ? formatDistanceToNow(new Date(submission.submitted_at), { addSuffix: true })
+                                          : 'N/A'}
+                                      </p>
+                                      
+                                      {submission.message && (
+                                        <p>
+                                          <strong>Message:</strong> {submission.message}
+                                        </p>
+                                      )}
+                                      
+                                      {/* Social Media Job Fields */}
+                                      {submission.social_tweet_link && (
+                                        <p>
+                                          <strong>Tweet:</strong>{' '}
+                                          <a 
+                                            href={submission.social_tweet_link} 
+                                            target="_blank" 
+                                            rel="noopener noreferrer"
+                                            className="text-blue-600 hover:underline"
+                                          >
+                                            View Tweet
+                                          </a>
+                                        </p>
+                                      )}
+                                      
+                                      {submission.social_follower_count && (
+                                        <p>
+                                          <strong>Followers:</strong> {submission.social_follower_count.toLocaleString()}
+                                        </p>
+                                      )}
+                                      
+                                      {submission.social_payment_amount_usd && (
+                                        <p>
+                                          <strong>Payment:</strong> ${submission.social_payment_amount_usd.toFixed(2)} 
+                                          {submission.social_payment_amount_tokens && 
+                                            ` (${submission.social_payment_amount_tokens} tokens)`
+                                          }
+                                        </p>
+                                      )}
+                                      
+                                      {/* Contest Job Fields */}
+                                      {submission.is_selected_winner && (
+                                        <>
+                                          <p>
+                                            <strong>Winner Position:</strong> {submission.winner_position}
+                                          </p>
+                                          {submission.prize_amount_usd && (
+                                            <p>
+                                              <strong>Prize:</strong> ${submission.prize_amount_usd.toFixed(2)}
+                                              {submission.prize_amount_tokens && 
+                                                ` (${submission.prize_amount_tokens} tokens)`
+                                              }
+                                            </p>
+                                          )}
+                                        </>
+                                      )}
+                                      
+                                      {submission.social_denial_reason && (
+                                        <p className="text-red-600">
+                                          <strong>Denial Reason:</strong> {submission.social_denial_reason}
+                                        </p>
+                                      )}
+                                      
+                                      {submission.external_links && submission.external_links.length > 0 && (
+                                        <div>
+                                          <strong>Links:</strong>
+                                          <ul className="list-disc list-inside">
+                                            {submission.external_links.map((link: string, idx: number) => (
+                                              <li key={idx}>
+                                                <a 
+                                                  href={link} 
+                                                  target="_blank" 
+                                                  rel="noopener noreferrer"
+                                                  className="text-blue-600 hover:underline text-xs"
+                                                >
+                                                  {link}
+                                                </a>
+                                              </li>
+                                            ))}
+                                          </ul>
+                                        </div>
+                                      )}
+                                      
+                                      {submission.image_urls && submission.image_urls.length > 0 && (
+                                        <div>
+                                          <strong>Images:</strong> {submission.image_urls.length} attached
+                                        </div>
+                                      )}
+                                    </div>
+                                  </div>
+                                  
+                                  {/* Actions */}
+                                  <div>
+                                    <MuiButton
+                                      size="small"
+                                      variant="outlined"
+                                      color="error"
+                                      startIcon={<DeleteIcon />}
+                                      onClick={() => openDeleteSubmissionConfirm(submission)}
+                                      disabled={deletingSubmission === submission.id}
+                                    >
+                                      {deletingSubmission === submission.id ? (
+                                        <CircularProgress size={16} />
+                                      ) : (
+                                        'Delete'
+                                      )}
+                                    </MuiButton>
+                                  </div>
+                                </div>
+                              </Card>
+                            ))}
+                          </div>
+                        )}
+                      </DialogContent>
+                      <DialogActions>
+                        <MuiButton onClick={handleCloseSubmissions}>
+                          Close
+                        </MuiButton>
+                      </DialogActions>
+                    </Dialog>
+
+                    {/* Delete Submission Confirmation Dialog */}
+                    <Dialog
+                      open={deleteSubmissionConfirmOpen}
+                      onClose={() => setDeleteSubmissionConfirmOpen(false)}
+                      maxWidth="sm"
+                    >
+                      <DialogTitle>Confirm Deletion</DialogTitle>
+                      <DialogContent>
+                        <Alert severity="warning" sx={{ mb: 2 }}>
+                          <AlertTitle>Warning: This action cannot be undone</AlertTitle>
+                        </Alert>
+                        <p className="font-body text-text-secondary">
+                          Are you sure you want to delete this submission from{' '}
+                          <strong className="font-mono">
+                            {submissionToDelete?.worker_wallet?.slice(0, 6)}...
+                            {submissionToDelete?.worker_wallet?.slice(-4)}
+                          </strong>?
+                        </p>
+                        {submissionToDelete?.social_payment_tx_signature && (
+                          <Alert severity="error" sx={{ mt: 2 }}>
+                            This submission has already been paid. Deleting it will not reverse the payment.
+                          </Alert>
+                        )}
+                      </DialogContent>
+                      <DialogActions>
+                        <MuiButton 
+                          onClick={() => setDeleteSubmissionConfirmOpen(false)}
+                          disabled={deletingSubmission !== null}
+                        >
+                          Cancel
+                        </MuiButton>
+                        <MuiButton 
+                          onClick={handleDeleteSubmission}
+                          color="error"
+                          variant="contained"
+                          disabled={deletingSubmission !== null}
+                        >
+                          {deletingSubmission ? <CircularProgress size={20} /> : 'Delete Submission'}
                         </MuiButton>
                       </DialogActions>
                     </Dialog>
