@@ -14,7 +14,7 @@
  * 
  * NEW (Follower-based, instant payments):
  * - Tiers define PER-PERSON payment based on follower count
- * - Example: "0-1K followers = $10 each", "1K-5K followers = $25 each"
+ * - Example: "500-1K followers = $10 each", "1K-5K followers = $25 each"
  * - Workers paid instantly when approved based on their tier
  * 
  * **Benefits:**
@@ -37,9 +37,9 @@
  * 
  * @example
  * ```typescript
- * // Micro influencers: 0-1,000 followers get $10
+ * // Micro influencers: 500-1,000 followers get $10
  * const microTier: FollowerTier = {
- *   min_followers: 0,
+ *   min_followers: 500,
  *   max_followers: 1000,
  *   base_payment_usd: 10,
  *   tier_name: "Micro"
@@ -55,15 +55,15 @@
  * ```
  */
 export interface FollowerTier {
-  /** Minimum follower count for this tier (inclusive). First tier starts at 0. */
+  /** Minimum follower count for this tier (inclusive). First tier starts at 500. */
   min_followers: number
   
   /** 
    * Maximum follower count for this tier (inclusive), or null for open-ended tiers.
    * 
    * Boundary handling: Someone with exactly max_followers falls INTO this tier.
-   * Example: If tier is 0-1000, someone with 1000 followers gets this tier.
-   * Next tier must start at 1001.
+ * Example: If tier is 500-1000, someone with 1000 followers gets this tier.
+ * Next tier must start at 1001.
    */
   max_followers: number | null
   
@@ -89,19 +89,19 @@ export interface FollowerTier {
  * Validates that follower tiers follow all required rules
  * 
  * Follower tiers must form a continuous range with no gaps, ensuring every
- * possible follower count (0 to infinity) maps to exactly one tier.
+ * possible follower count (500 to infinity) maps to exactly one tier.
  * 
  * **Validation Rules:**
  * 
  * 1. **At least one tier required** - Cannot create a job with no tiers
  * 
- * 2. **First tier must start at 0** - Minimum follower count is 0
- *    (Accounts with 0 followers still qualify)
+ * 2. **First tier must start at 500** - Minimum follower count is 500
+ *    (Prevents new account exploitation; requires established accounts)
  * 
  * 3. **Tiers must be continuous** - No gaps between tiers
  *    - If tier 1 ends at 1000, tier 2 must start at 1001
- *    - Example: `[0-1000, 1001-5000, 5001-10000, 10001+]` ✓
- *    - Example: `[0-1000, 1500-5000, ...]` ✗ (gap at 1001-1499)
+ *    - Example: `[500-1000, 1001-5000, 5001-10000, 10001+]` ✓
+ *    - Example: `[500-1000, 1500-5000, ...]` ✗ (gap at 1001-1499)
  * 
  * 4. **Only last tier can be open-ended** - Final tier has `max_followers = null`
  *    - This represents "10,000+" or "unlimited" style tiers
@@ -120,7 +120,7 @@ export interface FollowerTier {
  * ```typescript
  * // Valid tier configuration
  * const validTiers: FollowerTier[] = [
- *   { min_followers: 0,     max_followers: 1000,  base_payment_usd: 10,  tier_name: "Micro" },
+ *   { min_followers: 500,   max_followers: 1000,  base_payment_usd: 10,  tier_name: "Micro" },
  *   { min_followers: 1001,  max_followers: 5000,  base_payment_usd: 25,  tier_name: "Small" },
  *   { min_followers: 5001,  max_followers: 10000, base_payment_usd: 50,  tier_name: "Mid" },
  *   { min_followers: 10001, max_followers: null,  base_payment_usd: 100, tier_name: "Macro" },
@@ -133,7 +133,7 @@ export interface FollowerTier {
  * ```typescript
  * // Invalid: Gap between tier 1 (ends at 1000) and tier 2 (starts at 1500)
  * const invalidTiers: FollowerTier[] = [
- *   { min_followers: 0,    max_followers: 1000, base_payment_usd: 10, tier_name: "Micro" },
+ *   { min_followers: 500,  max_followers: 1000, base_payment_usd: 10, tier_name: "Micro" },
  *   { min_followers: 1500, max_followers: null, base_payment_usd: 25, tier_name: "Small" },
  * ]
  * 
@@ -145,16 +145,16 @@ export interface FollowerTier {
  * 
  * @example
  * ```typescript
- * // Invalid: First tier starts at 100 instead of 0
+ * // Invalid: First tier starts at 100 instead of 500
  * const invalidTiers: FollowerTier[] = [
  *   { min_followers: 100,  max_followers: 1000, base_payment_usd: 10, tier_name: "Small" },
  *   { min_followers: 1001, max_followers: null, base_payment_usd: 25, tier_name: "Large" },
  * ]
  * 
  * validateFollowerTiers(invalidTiers)
- * // Throws: "First tier must start at 0 followers, but starts at 100.
- * //         This would leave follower counts 0-99 without a tier.
- * //         All accounts must qualify for at least one tier."
+ * // Throws: "First tier must start at 500 followers, but starts at 100.
+ * //         Accounts with fewer than 500 followers cannot participate to prevent exploitation.
+ * //         Minimum 500 followers required to prevent new account exploitation."
  * ```
  */
 export function validateFollowerTiers(tiers: FollowerTier[]): void {
@@ -171,13 +171,13 @@ export function validateFollowerTiers(tiers: FollowerTier[]): void {
     (a, b) => a.min_followers - b.min_followers
   )
 
-  // Rule 2: First tier must start at 0 followers
+  // Rule 2: First tier must start at 500 followers (prevent new account exploitation)
   const firstTier = sortedTiers[0]
-  if (firstTier.min_followers !== 0) {
+  if (firstTier.min_followers !== 500) {
     throw new Error(
-      `First tier must start at 0 followers, but starts at ${firstTier.min_followers.toLocaleString()}. ` +
-      `This would leave follower counts 0-${(firstTier.min_followers - 1).toLocaleString()} without a tier. ` +
-      'All accounts must qualify for at least one tier.'
+      `First tier must start at 500 followers, but starts at ${firstTier.min_followers.toLocaleString()}. ` +
+      `${firstTier.min_followers < 500 ? 'Accounts with fewer than 500 followers cannot participate to prevent exploitation.' : `This would leave follower counts 500-${(firstTier.min_followers - 1).toLocaleString()} without a tier.`} ` +
+      'Minimum 500 followers required to prevent new account exploitation.'
     )
   }
 
@@ -254,10 +254,10 @@ export function validateFollowerTiers(tiers: FollowerTier[]): void {
  * The function finds the tier whose follower range contains the given count.
  * 
  * **Boundary Handling:**
- * - Boundaries are INCLUSIVE: If tier is 0-1000, then 1000 falls IN this tier
+ * - Boundaries are INCLUSIVE: If tier is 500-1000, then 1000 falls IN this tier
  * - Next tier starts at max + 1: If tier ends at 1000, next starts at 1001
- * - Someone with 0 followers falls in first tier (0-1000)
- * - Someone with exactly 1000 followers falls in first tier (0-1000)
+ * - Someone with 500 followers falls in first tier (500-1000)
+ * - Someone with exactly 1000 followers falls in first tier (500-1000)
  * - Someone with 1001 followers falls in second tier (1001-5000)
  * 
  * **How it works:**
@@ -272,14 +272,14 @@ export function validateFollowerTiers(tiers: FollowerTier[]): void {
  * @example
  * ```typescript
  * const tiers: FollowerTier[] = [
- *   { min_followers: 0,     max_followers: 1000,  base_payment_usd: 10,  tier_name: "Micro" },
+ *   { min_followers: 500,   max_followers: 1000,  base_payment_usd: 10,  tier_name: "Micro" },
  *   { min_followers: 1001,  max_followers: 5000,  base_payment_usd: 25,  tier_name: "Small" },
  *   { min_followers: 5001,  max_followers: 10000, base_payment_usd: 50,  tier_name: "Mid" },
  *   { min_followers: 10001, max_followers: null,  base_payment_usd: 100, tier_name: "Macro" },
  * ]
  * 
- * calculateFollowerTier(0, tiers)      // → Micro tier ($10) - edge case: 0 followers
- * calculateFollowerTier(500, tiers)    // → Micro tier ($10)
+ * calculateFollowerTier(500, tiers)    // → Micro tier ($10) - boundary: exactly min
+ * calculateFollowerTier(750, tiers)    // → Micro tier ($10)
  * calculateFollowerTier(1000, tiers)   // → Micro tier ($10) - boundary: exactly max
  * calculateFollowerTier(1001, tiers)   // → Small tier ($25) - boundary: exactly min
  * calculateFollowerTier(3500, tiers)   // → Small tier ($25)
@@ -376,12 +376,12 @@ export function calculateFollowerTier(
  * @example
  * ```typescript
  * formatFollowerTierRange({ 
- *   min_followers: 0, 
+ *   min_followers: 500, 
  *   max_followers: 1000, 
  *   base_payment_usd: 10,
  *   tier_name: "Micro" 
  * })
- * // → "0-1,000 followers"
+ * // → "500-1,000 followers"
  * 
  * formatFollowerTierRange({ 
  *   min_followers: 1001, 
@@ -410,7 +410,7 @@ export function calculateFollowerTier(
  * }))
  * 
  * // Display as:
- * // "Micro (0-1,000 followers): $10"
+ * // "Micro (500-1,000 followers): $10"
  * // "Small (1,001-5,000 followers): $25"
  * // "Mid (5,001-10,000 followers): $50"
  * // "Macro (10,001+ followers): $100"
@@ -422,7 +422,7 @@ export function formatFollowerTierRange(tier: FollowerTier): string {
     return `${tier.min_followers.toLocaleString()}+ followers`
   }
   
-  // Bounded tier: "0-1,000 followers" or "1,001-5,000 followers"
+  // Bounded tier: "500-1,000 followers" or "1,001-5,000 followers"
   return `${tier.min_followers.toLocaleString()}-${tier.max_followers.toLocaleString()} followers`
 }
 
@@ -438,12 +438,12 @@ export function formatFollowerTierRange(tier: FollowerTier): string {
  * @example
  * ```typescript
  * formatTierDisplay({ 
- *   min_followers: 0, 
+ *   min_followers: 500, 
  *   max_followers: 1000, 
  *   base_payment_usd: 10,
  *   tier_name: "Micro" 
  * })
- * // → "Micro (0-1,000 followers): $10"
+ * // → "Micro (500-1,000 followers): $10"
  * 
  * formatTierDisplay({ 
  *   min_followers: 10001, 

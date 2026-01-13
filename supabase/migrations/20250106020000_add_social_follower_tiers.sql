@@ -4,8 +4,9 @@
 --              for the new instant payment system. This enables per-person payments based
 --              on follower count instead of batch proportional payments.
 --
--- Architecture: Follower tiers define fixed per-person payments (e.g., "0-1000 followers = $10")
+-- Architecture: Follower tiers define fixed per-person payments (e.g., "500-1000 followers = $10")
 --              instead of total budget pools (e.g., "1-10 people = $500 total").
+--              Minimum 500 followers required to prevent new account exploitation.
 
 -- ==================== ADD FOLLOWER TIERS FIELD ====================
 
@@ -20,7 +21,7 @@ ADD COLUMN uses_instant_payment BOOLEAN DEFAULT FALSE;
 -- ==================== ADD COMMENTS ====================
 
 COMMENT ON COLUMN jobs.social_follower_tiers IS 
-  'Follower-based payment tiers for instant payment system. Array of tier objects: [{min_followers, max_followers, base_payment_usd, tier_name}]. Example: [{"min_followers": 0, "max_followers": 1000, "base_payment_usd": 10, "tier_name": "Micro"}]. Workers paid instantly based on their follower tier upon approval.';
+  'Follower-based payment tiers for instant payment system. Array of tier objects: [{min_followers, max_followers, base_payment_usd, tier_name}]. Example: [{"min_followers": 500, "max_followers": 1000, "base_payment_usd": 10, "tier_name": "Micro"}]. Workers paid instantly based on their follower tier upon approval. Minimum 500 followers required to prevent new account exploitation.';
 
 COMMENT ON COLUMN jobs.uses_instant_payment IS 
   'Whether this job uses the instant payment system (true) or legacy batch payment system (false). All new jobs with social_follower_tiers use instant payment. Legacy jobs without follower tiers use batch payment until they complete.';

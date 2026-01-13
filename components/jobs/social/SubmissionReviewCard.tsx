@@ -66,7 +66,8 @@ function getFollowerRangeDisplay(followerCount: number): string {
   if (followerCount >= 20000) return '20K-100K'
   if (followerCount >= 5000) return '5K-20K'
   if (followerCount >= 1000) return '1K-5K'
-  return '<1K'
+  if (followerCount >= 500) return '500-1K'
+  return '<500' // Below minimum
 }
 
 // ==================== COMPONENT ====================

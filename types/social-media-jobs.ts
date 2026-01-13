@@ -45,9 +45,9 @@ export interface BudgetTier {
  * 
  * @example
  * ```typescript
- * // Micro influencers: 0-1,000 followers get $10 each
+ * // Micro influencers: 500-1,000 followers get $10 each
  * {
- *   min_followers: 0,
+ *   min_followers: 500,
  *   max_followers: 1000,
  *   base_payment_usd: 10,
  *   tier_name: "Micro"
@@ -63,7 +63,7 @@ export interface BudgetTier {
  * ```
  */
 export interface FollowerTier {
-  /** Minimum follower count for this tier (inclusive). First tier starts at 0. */
+  /** Minimum follower count for this tier (inclusive). First tier starts at 500. */
   min_followers: number
   /** 
    * Maximum follower count for this tier (inclusive), or null for open-ended tiers.

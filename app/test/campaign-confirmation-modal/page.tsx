@@ -15,7 +15,7 @@ export default function CampaignConfirmationModalTestPage() {
     totalBudget: 300,
     durationDays: 7,
     followerTiers: [
-      { min_followers: 0, max_followers: 1000, price_usd: 8 },
+      { min_followers: 500, max_followers: 1000, price_usd: 8 },
       { min_followers: 1001, max_followers: 5000, price_usd: 15 },
       { min_followers: 5001, max_followers: 20000, price_usd: 25 },
       { min_followers: 20001, max_followers: 50000, price_usd: 40 },
@@ -32,7 +32,7 @@ export default function CampaignConfirmationModalTestPage() {
     totalBudget: 500,
     durationDays: 14,
     followerTiers: [
-      { min_followers: 0, max_followers: 1000, price_usd: 10 },
+      { min_followers: 500, max_followers: 1000, price_usd: 10 },
       { min_followers: 1001, max_followers: 5000, price_usd: 20 },
       { min_followers: 5001, max_followers: 20000, price_usd: 35 },
       { min_followers: 20001, max_followers: 50000, price_usd: 55 },
@@ -260,7 +260,7 @@ export default function CampaignConfirmationModalTestPage() {
               'Duration shows correct number of days and end date',
               'Impression bonuses status displays (Enabled/Disabled)',
               'All 6 payment tiers are listed with correct labels',
-              'Tier labels format correctly (0-1K, 1K-5K, etc.)',
+              'Tier labels format correctly (500-1K, 1K-5K, etc.)',
               'Platform fee is calculated as 5% of budget',
               'Total charge = budget + fee',
               'Warning message about budget lock is displayed',

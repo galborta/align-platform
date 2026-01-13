@@ -24,7 +24,7 @@ interface FixedFollowerTier {
  * These ranges are not editable - only prices can be changed
  */
 const FIXED_FOLLOWER_TIERS: FixedFollowerTier[] = [
-  { label: '0-1K followers', min_followers: 0, max_followers: 1000, defaultPrice: 8 },
+  { label: '500-1K followers', min_followers: 500, max_followers: 1000, defaultPrice: 8 },
   { label: '1K-5K followers', min_followers: 1001, max_followers: 5000, defaultPrice: 15 },
   { label: '5K-20K followers', min_followers: 5001, max_followers: 20000, defaultPrice: 25 },
   { label: '20K-50K followers', min_followers: 20001, max_followers: 50000, defaultPrice: 40 },

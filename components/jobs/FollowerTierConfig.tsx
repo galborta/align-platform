@@ -66,7 +66,7 @@ export default function FollowerTierConfig({
 
   /**
    * Add a new tier with smart defaults
-   * - First tier starts at 0 followers
+   * - First tier starts at 500 followers (prevents new account exploitation)
    * - Each new tier starts where the previous one ended + 1
    * - New tier becomes open-ended (max = null), previous becomes bounded
    */
@@ -79,7 +79,7 @@ export default function FollowerTierConfig({
     const newTiers = [...tiers]
     
     // Calculate the starting point for the new tier
-    let newMinFollowers = 0
+    let newMinFollowers = 500
     let tierName = 'Tier'
     
     if (tiers.length > 0) {

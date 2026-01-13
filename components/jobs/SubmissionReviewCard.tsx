@@ -33,8 +33,8 @@ function formatFollowerCountDisplay(count: number): string {
   // When someone submits, we store the min value of their tier
   // So we need to show the range, not just the min
   
-  if (count === 0) {
-    return '< 1K followers'
+  if (count === 500) {
+    return '500-1K followers'
   }
   if (count === 1000) {
     return '1K-5K followers'
@@ -291,18 +291,29 @@ export default function SubmissionReviewCard({
               >
                 ${submission.social_payment_amount_usd?.toFixed(2) || '0.00'} USD
               </Typography>
-              {submission.social_tx_signature && (
-                <Typography 
-                  variant="caption" 
-                  sx={{ 
-                    color: 'var(--text-secondary, #6F7280)',
-                    display: 'block',
-                    mt: 0.5,
-                    fontFamily: 'var(--font-mono, monospace)'
-                  }}
-                >
-                  Tx: {submission.social_tx_signature.slice(0, 12)}...
-                </Typography>
+              {submission.social_payment_tx_signature && (
+                <Box sx={{ mt: 1 }}>
+                  <Typography 
+                    component="a"
+                    href={`https://solscan.io/tx/${submission.social_payment_tx_signature}?cluster=mainnet`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    sx={{ 
+                      color: 'var(--accent-success, #36C170)',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: 0.5,
+                      fontSize: '13px',
+                      fontFamily: 'var(--font-mono, monospace)',
+                      textDecoration: 'none',
+                      '&:hover': {
+                        textDecoration: 'underline'
+                      }
+                    }}
+                  >
+                    🔗 View Transaction: {submission.social_payment_tx_signature.slice(0, 8)}...{submission.social_payment_tx_signature.slice(-6)}
+                  </Typography>
+                </Box>
               )}
             </Box>
           )}

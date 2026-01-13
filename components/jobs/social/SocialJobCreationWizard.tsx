@@ -255,7 +255,7 @@ export default function SocialJobCreationWizard({
       social_total_budget_tokens: totalBudgetTokens,
       social_total_budget_usd: data.totalBudget,
       social_budget_tiers: data.followerTiers,
-      social_min_followers_required: data.followerTiers[0]?.min_followers || 0,
+      social_min_followers_required: data.followerTiers[0]?.min_followers || 500,
       social_payments_distributed: false,
       campaign_duration_days: data.durationDays, // Required by API
       // Regular job fields (required by schema but not used for social jobs)

@@ -77,21 +77,21 @@ Complete implementation of the instant payment system for social media jobs, all
 
 2. **`calculateFollowerTier(followerCount, tiers)`:**
    - Finds applicable tier for a given follower count
-   - Handles edge cases (0 followers, boundary values, open-ended tiers)
+   - Handles edge cases (500 minimum followers, boundary values, open-ended tiers)
    - Returns null if no matching tier found
 
 3. **`validateFollowerTiers(tiers)`:**
    - Ensures tiers are continuous with no gaps
-   - First tier must start at 0 followers
+   - First tier must start at 500 followers (prevents new account exploitation)
    - Last tier must be open-ended (max = null)
    - Throws descriptive errors with context
    - Warns if payments don't increase with follower count
 
 4. **`formatFollowerTierRange(tier)`:**
-   - Returns human-readable range: "0-1,000 followers" or "10,001+ followers"
+   - Returns human-readable range: "500-1,000 followers" or "10,001+ followers"
 
 5. **`formatTierDisplay(tier)`:**
-   - Returns full tier info: "Micro (0-1,000 followers): $10"
+   - Returns full tier info: "Micro (500-1,000 followers): $10"
 
 **Features:**
 - ✅ Comprehensive JSDoc comments with examples
