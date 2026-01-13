@@ -28,19 +28,17 @@ SECURITY DEFINER
 AS $$
 DECLARE
   v_total_budget DECIMAL;
-  v_released DECIMAL;
-  v_reserved DECIMAL;
   v_remaining DECIMAL;
 BEGIN
-  -- Lock the row for update (prevents concurrent modifications)
+  -- Lock the row and get budget info
+  -- Note: social_actual_budget_released tracks TOKEN amounts, not USD
+  -- We use social_remaining_budget_tokens for actual token tracking
   SELECT 
     social_total_budget_usd,
-    COALESCE(social_actual_budget_released, 0),
-    COALESCE(social_reserved_budget, 0)
+    COALESCE(social_remaining_budget_tokens, social_total_budget_tokens, 0)
   INTO 
     v_total_budget,
-    v_released,
-    v_reserved
+    v_remaining
   FROM jobs
   WHERE id = p_job_id
     AND is_social_media_job = true
@@ -54,32 +52,24 @@ BEGIN
     );
   END IF;
   
-  -- Calculate remaining budget
-  -- Remaining = Total - (Released + Reserved)
-  v_remaining := v_total_budget - (v_released + v_reserved);
-  
-  -- Check if enough budget available
-  IF v_remaining < p_amount THEN
+  -- Simple check: ensure requested USD amount is within total budget
+  -- Actual token tracking happens at approval time via instant payment system
+  IF v_total_budget < p_amount THEN
     RETURN json_build_object(
       'success', false,
       'error', 'insufficient_budget',
-      'remaining', v_remaining,
+      'total_budget', v_total_budget,
       'requested', p_amount
     );
   END IF;
   
-  -- Reserve the budget
-  UPDATE jobs
-  SET 
-    social_reserved_budget = COALESCE(social_reserved_budget, 0) + p_amount,
-    updated_at = NOW()
-  WHERE id = p_job_id;
-  
   -- Return success
+  -- Note: We don't update reserved_budget here because:
+  -- 1. This function receives USD amounts but social_reserved_budget tracks tokens
+  -- 2. Actual budget deduction happens on approval via the instant payment system
   RETURN json_build_object(
     'success', true,
-    'reserved', p_amount,
-    'remaining', v_remaining - p_amount
+    'reserved', p_amount
   );
   
 EXCEPTION
