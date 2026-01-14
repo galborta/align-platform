@@ -110,6 +110,12 @@ export default function SocialMediaJobDetail({
   const [showSubmitModal, setShowSubmitModal] = useState(false)
   const [copiedUrl, setCopiedUrl] = useState(false)
   
+  // Pagination state for submissions list
+  const [currentOffset, setCurrentOffset] = useState(0)
+  const [loadingMore, setLoadingMore] = useState(false)
+  const [hasMoreSubmissions, setHasMoreSubmissions] = useState(true)
+  const SUBMISSIONS_PER_PAGE = 50
+  
   // User's follower tier (calculated if wallet connected)
   const [userFollowerTier, setUserFollowerTier] = useState<FollowerTier | null>(null)
   
@@ -183,9 +189,10 @@ export default function SocialMediaJobDetail({
             setUserSubmission(payload.new as any)
           }
           
-          // Refresh all submissions list
+          // Refresh all submissions list (reset to first page for real-time updates)
           if (payload.eventType === 'UPDATE' || payload.eventType === 'INSERT') {
-            fetchSubmissions()
+            setCurrentOffset(0)
+            fetchSubmissions(0, false)
           }
         })
         .subscribe()
@@ -200,20 +207,28 @@ export default function SocialMediaJobDetail({
     }
   }, [job.id, usesInstantPayment, publicKey])
 
-  // Fetch submission data function (extracted so it can be called from multiple places)
-  const fetchSubmissions = useCallback(async () => {
-      setLoading(true)
+  // Fetch submission data function with pagination support
+  const fetchSubmissions = useCallback(async (offset = 0, append = false) => {
+      // Set loading state based on whether it's initial load or pagination
+      if (offset === 0) {
+        setLoading(true)
+      } else {
+        setLoadingMore(true)
+      }
+      
       try {
-        // Get total submission count
-        const { count } = await supabase
-          .from('job_submissions')
-          .select('*', { count: 'exact', head: true })
-          .eq('job_id', job.id)
+        // Get total submission count (only on initial load)
+        if (offset === 0) {
+          const { count } = await supabase
+            .from('job_submissions')
+            .select('*', { count: 'exact', head: true })
+            .eq('job_id', job.id)
 
-        setSubmissionCount(count || 0)
+          setSubmissionCount(count || 0)
+        }
 
-        // Check if user has submitted
-        if (publicKey) {
+        // Check if user has submitted (only on initial load)
+        if (offset === 0 && publicKey) {
           const { data: existingSubmission } = await supabase
             .from('job_submissions')
             .select('*')
@@ -230,20 +245,31 @@ export default function SocialMediaJobDetail({
           }
         }
 
-        // Fetch all submissions (for display)
+        // Fetch submissions with pagination - optimized to select only needed fields
         const { data: submissions } = await supabase
           .from('job_submissions')
-          .select('*')
+          .select('id, worker_wallet, social_approval_status, social_payment_amount_tokens, submitted_at, social_follower_count, social_tweet_link, social_payment_tx_signature, social_denial_reason')
           .eq('job_id', job.id)
-        .order('submitted_at', { ascending: true })
+          .order('submitted_at', { ascending: true })
+          .range(offset, offset + SUBMISSIONS_PER_PAGE - 1)
 
-        setAllSubmissions(submissions || [])
+        // Update submissions list (append or replace)
+        if (append) {
+          setAllSubmissions(prev => [...prev, ...(submissions || [])])
+        } else {
+          setAllSubmissions(submissions || [])
+        }
+        
+        // Update pagination state
+        setHasMoreSubmissions((submissions?.length || 0) === SUBMISSIONS_PER_PAGE)
+        
       } catch (error) {
         console.error('Error fetching submission data:', error)
       } finally {
         setLoading(false)
+        setLoadingMore(false)
       }
-  }, [job.id, publicKey, followerTiers])
+  }, [job.id, publicKey, followerTiers, SUBMISSIONS_PER_PAGE])
 
   // Fetch submission data on mount and when dependencies change
   useEffect(() => {
@@ -258,29 +284,19 @@ export default function SocialMediaJobDetail({
   }
 
   const handleSubmissionSuccess = () => {
-    // Refetch submissions
-    const refetch = async () => {
-      const { count } = await supabase
-        .from('job_submissions')
-        .select('*', { count: 'exact', head: true })
-        .eq('job_id', job.id)
-
-      setSubmissionCount(count || 0)
-
-      if (publicKey) {
-        const { data: existingSubmission } = await supabase
-          .from('job_submissions')
-          .select('*')
-          .eq('job_id', job.id)
-          .eq('worker_wallet', publicKey.toString())
-          .maybeSingle()
-
-        setUserSubmission(existingSubmission)
-      }
-    }
-    refetch()
+    // Refetch submissions (reset to first page)
+    setCurrentOffset(0)
+    fetchSubmissions(0, false)
     setShowSubmitModal(false)
     onSubmissionSuccess?.()
+  }
+
+  // Handle loading more submissions
+  const handleLoadMore = () => {
+    if (loadingMore || !hasMoreSubmissions) return
+    const nextOffset = currentOffset + SUBMISSIONS_PER_PAGE
+    setCurrentOffset(nextOffset)
+    fetchSubmissions(nextOffset, true)
   }
 
   // ==================== BUDGET CALCULATIONS ====================
@@ -872,6 +888,50 @@ export default function SocialMediaJobDetail({
                     )}
                   </Box>
                 ))}
+                
+                {/* Load More Button */}
+                {hasMoreSubmissions && allSubmissions.length < submissionCount && (
+                  <Box sx={{ display: 'flex', justifyContent: 'center', mt: 3 }}>
+                    <Button
+                      onClick={handleLoadMore}
+                      disabled={loadingMore}
+                      variant="outlined"
+                      sx={{
+                        minWidth: 200,
+                        borderColor: 'var(--accent-primary, #7C4DFF)',
+                        color: 'var(--accent-primary, #7C4DFF)',
+                        '&:hover': {
+                          borderColor: 'var(--accent-primary, #7C4DFF)',
+                          bgcolor: 'rgba(124, 77, 255, 0.08)'
+                        }
+                      }}
+                    >
+                      {loadingMore ? (
+                        <>
+                          <CircularProgress size={16} sx={{ mr: 1, color: 'var(--accent-primary, #7C4DFF)' }} />
+                          Loading...
+                        </>
+                      ) : (
+                        `Load More (${submissionCount - allSubmissions.length} remaining)`
+                      )}
+                    </Button>
+                  </Box>
+                )}
+                
+                {/* All submissions loaded message */}
+                {allSubmissions.length > 0 && allSubmissions.length === submissionCount && (
+                  <Box sx={{ display: 'flex', justifyContent: 'center', mt: 3 }}>
+                    <Typography 
+                      variant="body2" 
+                      sx={{ 
+                        color: 'var(--text-secondary, #6F7280)',
+                        fontStyle: 'italic'
+                      }}
+                    >
+                      All {submissionCount} submissions loaded
+                    </Typography>
+                  </Box>
+                )}
               </Box>
             </Paper>
           )}
