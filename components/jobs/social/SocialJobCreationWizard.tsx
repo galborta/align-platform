@@ -28,6 +28,7 @@ import {
 } from '@/lib/solana/escrow-transfer'
 import { validateMinimumUsdValue } from '@/lib/helius'
 import { addDays } from 'date-fns'
+import { isLocalhost } from '@/lib/environment'
 
 // ==================== TYPES ====================
 
@@ -75,6 +76,7 @@ export default function SocialJobCreationWizard({
   const [formData, setFormData] = useState<CampaignFormData | null>(null)
   const [createdJobId, setCreatedJobId] = useState<string | null>(null)
   const [error, setError] = useState<ErrorState | null>(null)
+  const [publishToProduction, setPublishToProduction] = useState(false)
 
   // ==================== HANDLERS ====================
 
@@ -91,6 +93,7 @@ export default function SocialJobCreationWizard({
     setFormData(null)
     setCreatedJobId(null)
     setError(null)
+    setPublishToProduction(false)
   }
 
   const handleTypeSelect = (type: SocialJobType) => {
@@ -264,7 +267,9 @@ export default function SocialJobCreationWizard({
       payment_amount_usd: data.totalBudget,
       assignment_mode: 'review',
       status: 'open',
-      token_symbol: tokenSymbol
+      token_symbol: tokenSymbol,
+      // Environment filtering
+      forceProduction: publishToProduction
     }
 
     const response = await fetch('/api/jobs/social/create', {
@@ -364,6 +369,8 @@ export default function SocialJobCreationWizard({
           campaignType={campaignType}
           onConfirm={handleConfirm}
           onBack={handleConfirmationBack}
+          publishToProduction={publishToProduction}
+          onPublishToProductionChange={setPublishToProduction}
         />
       )}
 

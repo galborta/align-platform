@@ -11,12 +11,15 @@ import {
   IconButton,
   useTheme,
   useMediaQuery,
-  Divider
+  Divider,
+  Checkbox,
+  FormControlLabel
 } from '@mui/material'
 import CloseIcon from '@mui/icons-material/Close'
 import WarningAmberIcon from '@mui/icons-material/WarningAmber'
 import { format, addDays } from 'date-fns'
 import { CampaignFormData } from './CampaignConfigForm'
+import { isLocalhost } from '@/lib/environment'
 
 // ==================== TYPES ====================
 
@@ -26,6 +29,8 @@ interface CampaignConfirmationModalProps {
   campaignType: 'retweet' | 'original_tweet'
   onConfirm: () => void
   onBack: () => void
+  publishToProduction?: boolean
+  onPublishToProductionChange?: (value: boolean) => void
 }
 
 // ==================== CONSTANTS ====================
@@ -39,7 +44,9 @@ export default function CampaignConfirmationModal({
   formData,
   campaignType,
   onConfirm,
-  onBack
+  onBack,
+  publishToProduction = false,
+  onPublishToProductionChange
 }: CampaignConfirmationModalProps) {
   const theme = useTheme()
   const isMobile = useMediaQuery(theme.breakpoints.down('sm'))
@@ -494,6 +501,38 @@ export default function CampaignConfirmationModal({
           </Box>
         </Box>
       </DialogContent>
+
+      {/* Environment Filtering Checkbox (Localhost Only) */}
+      {isLocalhost() && onPublishToProductionChange && (
+        <Box sx={{ px: 3, pb: 2 }}>
+          <Box sx={{ p: 2, backgroundColor: '#FFF9E6', borderRadius: 1, border: '1px solid #FFE699' }}>
+            <FormControlLabel
+              control={
+                <Checkbox
+                  checked={publishToProduction}
+                  onChange={(e) => onPublishToProductionChange(e.target.checked)}
+                  sx={{
+                    color: '#FF9800',
+                    '&.Mui-checked': {
+                      color: '#FF9800',
+                    },
+                  }}
+                />
+              }
+              label={
+                <Box>
+                  <Typography sx={{ fontWeight: 600, color: '#111827', fontSize: '14px' }}>
+                    Publish to Production
+                  </Typography>
+                  <Typography sx={{ fontSize: '12px', color: '#6B7280' }}>
+                    Check this to make this campaign visible on the live site. Leave unchecked for localhost testing only.
+                  </Typography>
+                </Box>
+              }
+            />
+          </Box>
+        </Box>
+      )}
 
       {/* Actions */}
       <Box
