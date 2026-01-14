@@ -3,6 +3,7 @@ import { createClient } from '@supabase/supabase-js'
 import { Connection, PublicKey } from '@solana/web3.js'
 import { Database } from '@/types/database'
 import { requireVerifiedWallet } from '@/lib/middleware'
+import { getEnvironment } from '@/lib/environment'
 
 // Create Supabase client with service role for server-side operations
 const supabaseAdmin = createClient<Database>(
@@ -78,7 +79,9 @@ export async function POST(request: Request) {
       contest_winner_prizes,
       contest_submission_deadline,
       contest_winner_selection_deadline,
-      contest_submissions_visible
+      contest_submissions_visible,
+      // Environment filtering
+      forceProduction
     } = body
 
     // Validate required fields
@@ -235,7 +238,9 @@ export async function POST(request: Request) {
       contest_winner_prizes: is_contest ? contest_winner_prizes : null,
       contest_submission_deadline: is_contest ? contest_submission_deadline : null,
       contest_winner_selection_deadline: is_contest ? contest_winner_selection_deadline : null,
-      contest_submissions_visible: is_contest ? (contest_submissions_visible ?? true) : true
+      contest_submissions_visible: is_contest ? (contest_submissions_visible ?? true) : true,
+      // Environment filtering
+      environment: getEnvironment(forceProduction)
     }
     
     let job

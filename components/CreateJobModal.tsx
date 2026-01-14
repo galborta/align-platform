@@ -54,6 +54,7 @@ import EditIcon from '@mui/icons-material/Edit'
 import CheckIcon from '@mui/icons-material/Check'
 import CloseIcon from '@mui/icons-material/Close'
 import { uploadJobAttachment, getFilenameFromUrl, getFileIcon } from '@/lib/job-attachments'
+import { isLocalhost } from '@/lib/environment'
 
 interface CreateJobModalProps {
   isOpen: boolean
@@ -161,6 +162,9 @@ export function CreateJobModal({
   const [usdValue, setUsdValue] = useState<number | null>(null)
   const [tokenPrice, setTokenPrice] = useState<number | null>(null)
   const [priceError, setPriceError] = useState(false)
+  
+  // Environment filtering
+  const [publishToProduction, setPublishToProduction] = useState(false)
 
   // Reset form when modal closes or populate when editing
   useEffect(() => {
@@ -1163,6 +1167,8 @@ export function CreateJobModal({
               assignment_mode: 'review',
               poster_desired_completion: contestSubmissionDeadline!.toISOString(),
               token_symbol: tokenSymbol,
+              // Environment filtering
+              forceProduction: publishToProduction,
             })
           })
           
@@ -1197,6 +1203,8 @@ export function CreateJobModal({
               contest_winner_selection_deadline: null,
               contest_submissions_visible: true,
               token_symbol: tokenSymbol,
+              // Environment filtering
+              forceProduction: publishToProduction,
             })
           })
           
@@ -3070,6 +3078,36 @@ export function CreateJobModal({
               Next: Prize Settings →
             </Button>
           </div>
+        )}
+
+        {/* Environment Filtering Checkbox (Localhost Only) */}
+        {isLocalhost() && mode === 'create' && (
+          <Box sx={{ mb: 0, p: 2, backgroundColor: '#FFF9E6', borderRadius: 1, border: '1px solid #FFE699', width: '100%' }}>
+            <FormControlLabel
+              control={
+                <Checkbox
+                  checked={publishToProduction}
+                  onChange={(e) => setPublishToProduction(e.target.checked)}
+                  sx={{
+                    color: '#FF9800',
+                    '&.Mui-checked': {
+                      color: '#FF9800',
+                    },
+                  }}
+                />
+              }
+              label={
+                <Box>
+                  <Typography sx={{ fontWeight: 600, color: '#111827', fontSize: '14px' }}>
+                    Publish to Production
+                  </Typography>
+                  <Typography sx={{ fontSize: '12px', color: '#6B7280' }}>
+                    Check this to make this {jobType === 'contest' ? 'contest' : 'job'} visible on the live site. Leave unchecked for localhost testing only.
+                  </Typography>
+                </Box>
+              }
+            />
+          </Box>
         )}
 
         {/* Contest Step 2 Actions */}

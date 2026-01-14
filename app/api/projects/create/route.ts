@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase'
 import { validateEditorWallets } from '@/lib/wallet-validation'
+import { getEnvironment } from '@/lib/environment'
 
 export async function POST(request: NextRequest) {
   try {
@@ -22,6 +23,7 @@ export async function POST(request: NextRequest) {
       teamWallets = [], // Legacy support
       projectWallets = [], // New field name
       editorWallets = [],
+      forceProduction,
     } = body
     
     // Use projectWallets if provided, otherwise fall back to teamWallets (backwards compatibility)
@@ -103,6 +105,7 @@ export async function POST(request: NextRequest) {
         telegram: telegram || null, // Store telegram directly in projects table
         domains: website ? [website] : null, // Store website as first domain in domains array
         status: 'live', // Set to live immediately so it appears on homepage
+        environment: getEnvironment(forceProduction), // Environment filtering
       })
       .select()
       .single()

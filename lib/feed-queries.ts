@@ -10,6 +10,7 @@
 
 import { supabase } from './supabase'
 import { Database } from '@/types/database'
+import { getEnvironmentFilter } from './environment'
 
 // Type aliases for cleaner code
 type Job = Database['public']['Tables']['jobs']['Row']
@@ -154,6 +155,7 @@ export async function fetchInitialFeed(
       .from('jobs')
       .select('id, poster_wallet, title, category, status, created_at, completed_at, assigned_to')
       .eq('project_id', projectId)
+      .match(getEnvironmentFilter())
       .order('created_at', { ascending: false })
       .range(offset, offset + limitPerTable - 1)
       .then(res => {
@@ -171,6 +173,7 @@ export async function fetchInitialFeed(
         job:jobs!inner(id, title, project_id)
       `)
       .eq('jobs.project_id', projectId)
+      .match(getEnvironmentFilter())
       .order('created_at', { ascending: false })
       .range(offset, offset + limitPerTable - 1)
       .then(res => {

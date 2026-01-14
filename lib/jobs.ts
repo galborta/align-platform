@@ -1,5 +1,6 @@
 import { supabase } from './supabase'
 import { Database } from '@/types/database'
+import { getEnvironmentFilter } from './environment'
 import { notificationService } from '@/lib/services/notificationService'
 import { requireVerifiedWallet } from '@/lib/middleware'
 import type { BudgetTier, SocialJobType } from '@/types/social-jobs'

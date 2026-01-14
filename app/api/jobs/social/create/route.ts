@@ -9,6 +9,7 @@ import {
   validateBudgetTiers,
   calculateSocialJobDeadlines
 } from '@/lib/social-jobs'
+import { getEnvironment } from '@/lib/environment'
 
 // Create Supabase client with service role for server-side operations
 const supabaseAdmin = createClient<Database>(
@@ -92,7 +93,8 @@ export async function POST(request: Request) {
       escrow_amount_tokens,
       escrow_token_mint,
       fee_percentage_at_creation,
-      token_symbol
+      token_symbol,
+      forceProduction
     } = body
 
     // ==================== VALIDATION ====================
@@ -340,7 +342,9 @@ export async function POST(request: Request) {
       social_locked_budget_tokens: 0,
       social_approved_paid_count: 0,
       // Enable instant payment system for all new social jobs
-      uses_instant_payment: true
+      uses_instant_payment: true,
+      // Environment filtering
+      environment: getEnvironment(forceProduction)
     }
     
     let job

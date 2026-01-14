@@ -12,6 +12,7 @@ import { validateSolanaAddress } from '@/lib/token-validation'
 import { rateLimit } from '@/lib/rate-limit'
 import { ADMIN_WALLETS } from '@/lib/admin-auth'
 import { notificationService } from '@/lib/services/notificationService'
+import { getEnvironment } from '@/lib/environment'
 
 // ==================== TYPES ====================
 
@@ -23,6 +24,7 @@ interface CreateSubmissionRequest {
   tokenName: string
   role: string
   message?: string
+  forceProduction?: boolean
 }
 
 interface CreateSubmissionResponse {
@@ -315,7 +317,7 @@ export async function POST(request: NextRequest) {
       )
     }
     
-    const { name, email, contractAddress, tokenSymbol, tokenName, role, message } = body
+    const { name, email, contractAddress, tokenSymbol, tokenName, role, message, forceProduction } = body
     
     console.log('[Create Submission] New submission request received')
     console.log(`[Create Submission] Email: ${email?.slice(0, 3)}...@...`)
@@ -493,7 +495,8 @@ export async function POST(request: NextRequest) {
         token_name: tokenName,
         role: role,
         message: message?.trim() || null,
-        status: 'pending'
+        status: 'pending',
+        environment: getEnvironment(forceProduction)
       }])
       .select('id')
       .single()
