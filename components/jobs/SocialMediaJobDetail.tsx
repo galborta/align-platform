@@ -55,6 +55,9 @@ import SubmissionModal from './social/SubmissionModal'
 // Poster review dashboard
 import PosterReviewDashboard from './PosterReviewDashboard'
 
+// Campaign management modal
+import CampaignManagementModal from './CampaignManagementModal'
+
 // Display name hook
 import { usePosterDisplayName } from '@/lib/usePosterDisplayName'
 
@@ -85,6 +88,9 @@ export default function SocialMediaJobDetail({
   
   // Job state (can be updated via real-time)
   const [job, setJob] = useState<Job>(initialJob)
+  
+  // Campaign management modal state
+  const [showManagementModal, setShowManagementModal] = useState(false)
   
   // Wrapper for signing messages
   const signMessage = async (message: string): Promise<string> => {
@@ -196,47 +202,47 @@ export default function SocialMediaJobDetail({
 
   // Fetch submission data function (extracted so it can be called from multiple places)
   const fetchSubmissions = useCallback(async () => {
-    setLoading(true)
-    try {
-      // Get total submission count
-      const { count } = await supabase
-        .from('job_submissions')
-        .select('*', { count: 'exact', head: true })
-        .eq('job_id', job.id)
+      setLoading(true)
+      try {
+        // Get total submission count
+        const { count } = await supabase
+          .from('job_submissions')
+          .select('*', { count: 'exact', head: true })
+          .eq('job_id', job.id)
 
-      setSubmissionCount(count || 0)
+        setSubmissionCount(count || 0)
 
-      // Check if user has submitted
-      if (publicKey) {
-        const { data: existingSubmission } = await supabase
+        // Check if user has submitted
+        if (publicKey) {
+          const { data: existingSubmission } = await supabase
+            .from('job_submissions')
+            .select('*')
+            .eq('job_id', job.id)
+            .eq('worker_wallet', publicKey.toString())
+            .maybeSingle()
+
+          setUserSubmission(existingSubmission)
+          
+          // If user has submission, calculate their tier
+          if (existingSubmission && existingSubmission.social_follower_count && followerTiers.length > 0) {
+            const tier = calculateFollowerTier(existingSubmission.social_follower_count, followerTiers)
+            setUserFollowerTier(tier)
+          }
+        }
+
+        // Fetch all submissions (for display)
+        const { data: submissions } = await supabase
           .from('job_submissions')
           .select('*')
           .eq('job_id', job.id)
-          .eq('worker_wallet', publicKey.toString())
-          .maybeSingle()
-
-        setUserSubmission(existingSubmission)
-        
-        // If user has submission, calculate their tier
-        if (existingSubmission && existingSubmission.social_follower_count && followerTiers.length > 0) {
-          const tier = calculateFollowerTier(existingSubmission.social_follower_count, followerTiers)
-          setUserFollowerTier(tier)
-        }
-      }
-
-      // Fetch all submissions (for display)
-      const { data: submissions } = await supabase
-        .from('job_submissions')
-        .select('*')
-        .eq('job_id', job.id)
         .order('submitted_at', { ascending: true })
 
-      setAllSubmissions(submissions || [])
-    } catch (error) {
-      console.error('Error fetching submission data:', error)
-    } finally {
-      setLoading(false)
-    }
+        setAllSubmissions(submissions || [])
+      } catch (error) {
+        console.error('Error fetching submission data:', error)
+      } finally {
+        setLoading(false)
+      }
   }, [job.id, publicKey, followerTiers])
 
   // Fetch submission data on mount and when dependencies change
@@ -806,6 +812,27 @@ export default function SocialMediaJobDetail({
                       </Box>
                     )}
                     
+                    {/* Transaction Link - Show for paid submissions */}
+                    {submission.social_payment_tx_signature && (
+                      <Box sx={{ mt: 1 }}>
+                        <MuiLink
+                          href={`https://solscan.io/tx/${submission.social_payment_tx_signature}?cluster=mainnet`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          sx={{ 
+                            fontSize: '12px', 
+                            color: 'var(--accent-success, #36C170)',
+                            fontFamily: 'var(--font-mono, monospace)',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: 0.5
+                          }}
+                        >
+                          🔗 View Transaction: {submission.social_payment_tx_signature.slice(0, 8)}...{submission.social_payment_tx_signature.slice(-6)}
+                        </MuiLink>
+                      </Box>
+                    )}
+                    
                     {/* Denial Reason - Show for denied submissions */}
                     {submission.social_approval_status === 'denied' && submission.social_denial_reason && (
                       <Box 
@@ -1234,29 +1261,54 @@ export default function SocialMediaJobDetail({
 
               <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
                 {onEditClick && (
-                  <Button
-                    fullWidth
-                    variant="outlined"
-                    startIcon={<EditIcon />}
-                    onClick={onEditClick}
-                    sx={{
-                      color: '#7C4DFF',
-                      borderColor: '#E5DEFF',
-                      bgcolor: 'rgba(124, 77, 255, 0.04)',
-                      py: 1.2,
-                      borderRadius: 'var(--radius-card, 16px)',
-                      fontFamily: 'var(--font-body, Satoshi, sans-serif)',
-                      fontSize: '14px',
-                      fontWeight: 600,
-                      textTransform: 'none',
-                      '&:hover': {
-                        bgcolor: 'rgba(124, 77, 255, 0.08)',
-                        borderColor: '#7C4DFF'
-                      }
-                    }}
-                  >
-                    Edit Campaign
-                  </Button>
+                  <>
+                    <Button
+                      fullWidth
+                      variant="outlined"
+                      startIcon={<EditIcon />}
+                      onClick={onEditClick}
+                      sx={{
+                        color: '#7C4DFF',
+                        borderColor: '#E5DEFF',
+                        bgcolor: 'rgba(124, 77, 255, 0.04)',
+                        py: 1.2,
+                        borderRadius: 'var(--radius-card, 16px)',
+                        fontFamily: 'var(--font-body, Satoshi, sans-serif)',
+                        fontSize: '14px',
+                        fontWeight: 600,
+                        textTransform: 'none',
+                        '&:hover': {
+                          bgcolor: 'rgba(124, 77, 255, 0.08)',
+                          borderColor: '#7C4DFF'
+                        }
+                      }}
+                    >
+                      Edit Campaign
+                    </Button>
+                    <Button
+                      fullWidth
+                      variant="outlined"
+                      startIcon={<MoneyIcon />}
+                      onClick={() => setShowManagementModal(true)}
+                      sx={{
+                        color: '#FB923C',
+                        borderColor: '#FFE4CC',
+                        bgcolor: 'rgba(251, 146, 60, 0.04)',
+                        py: 1.2,
+                        borderRadius: 'var(--radius-card, 16px)',
+                        fontFamily: 'var(--font-body, Satoshi, sans-serif)',
+                        fontSize: '14px',
+                        fontWeight: 600,
+                        textTransform: 'none',
+                        '&:hover': {
+                          bgcolor: 'rgba(251, 146, 60, 0.08)',
+                          borderColor: '#FB923C'
+                        }
+                      }}
+                    >
+                      Manage Payments
+                    </Button>
+                  </>
                 )}
 
                 {onExtendDeadlineClick && (
@@ -1582,6 +1634,18 @@ export default function SocialMediaJobDetail({
           }}
         />
       )}
+
+      {/* Campaign Management Modal */}
+      <CampaignManagementModal
+        open={showManagementModal}
+        onClose={() => setShowManagementModal(false)}
+        jobId={job.id}
+        jobTitle={job.title || 'Social Campaign'}
+        onSubmissionUpdated={() => {
+          // Refetch job data to update budget display
+          window.location.reload()
+        }}
+      />
     </Box>
   )
 }

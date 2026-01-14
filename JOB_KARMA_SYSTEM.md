@@ -2,7 +2,9 @@
 
 ## Overview
 
-The karma system has been extended to reward participation in the job marketplace. Job-related actions earn karma based on both token holdings (tier multipliers) and USD value of jobs.
+The karma system has been extended to reward participation in the job marketplace. Job-related actions earn karma based on USD value of jobs.
+
+**Updated January 2025:** Balanced karma multipliers for sustainable economy.
 
 ---
 
@@ -11,62 +13,76 @@ The karma system has been extended to reward participation in the job marketplac
 Added to `BASE_KARMA` in `/lib/karma.ts`:
 
 ```typescript
-POST_JOB: 50              // Posting a job
-APPLY_TO_JOB: 50          // Applying to a job
-UPVOTE_APPLICATION: 10    // Upvoting an application
-COMPLETE_JOB_POSTER: 0    // Calculated from USD value
-COMPLETE_JOB_WORKER: 0    // Calculated from USD value
+POST_JOB: 0               // Poster gets only completion karma
+APPLY_TO_JOB: 0           // Worker gets only completion karma
+SUBMIT_JOB_WORK: 50       // Flat reward for submitting work (NEW)
+UPVOTE_APPLICATION: 5     // Upvoting an application
+COMPLETE_JOB_POSTER: 0    // Calculated from USD value (USD × 5)
+COMPLETE_JOB_WORKER: 0    // Calculated from USD value (USD × 10)
 VOTE_ON_DISPUTE: 5        // Voting on a dispute
-CANCEL_JOB: -50           // Cancelling a job (penalty)
-FAIL_TO_DELIVER: -50      // Worker ghost/dispute lost (penalty)
+CANCEL_JOB: 0             // Calculated based on USD value
+FAIL_TO_DELIVER: 0        // Calculated based on USD value
 ```
 
 ---
 
 ## Karma Calculation Functions
 
-### 1. `calculateJobCompletionKarma(usdValue: number)`
+### 1. Submission Karma (NEW)
 
-Calculates karma for successful job completion (both poster and worker earn equally).
+Workers earn **50 karma** immediately when submitting work, regardless of approval status.
 
-**Formula:** `USD value × 50`
+**Purpose:** Encourages participation, rewards effort even if not selected.
+
+```typescript
+// Automatically awarded when submitting
+// - Social media jobs: On tweet submission
+// - Contest jobs: On entry submission
+// Worker earns: +50 karma immediately
+```
+
+### 2. `calculateJobCompletionKarma(usdValue: number, isWorker: boolean)`
+
+Calculates karma for successful job completion based on USD value.
+
+**Formulas:**
+- **Workers:** `USD value × 10`
+- **Posters:** `USD value × 5`
 
 **Examples:**
-- $10 job → 500 karma each
-- $50 job → 2,500 karma each
-- $100 job → 5,000 karma each
+- $10 job → Worker: 100 karma, Poster: 50 karma
+- $50 job → Worker: 500 karma, Poster: 250 karma
+- $100 job → Worker: 1,000 karma, Poster: 500 karma
 
 ```typescript
 import { calculateJobCompletionKarma } from '@/lib/karma'
 
 // When job completes successfully
 const jobUsdValue = 50
-const karmaEarned = calculateJobCompletionKarma(jobUsdValue) // 2,500
+const workerKarma = calculateJobCompletionKarma(jobUsdValue, true)   // 500
+const posterKarma = calculateJobCompletionKarma(jobUsdValue, false)  // 250
 
-// Award to both poster and worker
-await awardKarma(posterWallet, karmaEarned)
-await awardKarma(workerWallet, karmaEarned)
+// Award to both
+await awardKarma(workerWallet, workerKarma)
+await awardKarma(posterWallet, posterKarma)
 ```
 
 ---
 
-### 2. `calculateApplicationUpvoteBonusKarma(usdValue: number)`
+### 3. `calculateApplicationUpvoteBonusKarma(usdValue: number)`
 
 Bonus karma for voters who upvoted the winning application when the job completes successfully.
 
-**Formula:** `USD value × 10`
+**Formula:** Flat **25 karma** (prevents vote farming)
 
 **Examples:**
-- $10 job completes → +100 bonus per correct upvoter
-- $50 job completes → +500 bonus per correct upvoter
-- $100 job completes → +1,000 bonus per correct upvoter
+- Any job completes → +25 karma per correct upvoter
 
 ```typescript
 import { calculateApplicationUpvoteBonusKarma } from '@/lib/karma'
 
 // When job completes, reward voters who upvoted the winner
-const jobUsdValue = 50
-const bonusKarma = calculateApplicationUpvoteBonusKarma(jobUsdValue) // 500
+const bonusKarma = calculateApplicationUpvoteBonusKarma(jobUsdValue) // 25
 
 // Award to each voter who upvoted the winning application
 for (const voter of winningApplicationVoters) {
@@ -76,7 +92,7 @@ for (const voter of winningApplicationVoters) {
 
 ---
 
-### 3. `calculateDisputeVoteBonusKarma(usdValue: number)`
+### 4. `calculateDisputeVoteBonusKarma(usdValue: number)`
 
 Bonus karma for voters who voted on the winning side of a dispute.
 
@@ -313,18 +329,22 @@ async function handleJobCancellation(posterWallet: string, tokenPercentage: numb
 
 ## Karma Summary by Action Type
 
-### Fixed Base Actions (with tier multipliers)
-- **Post Job**: 50 × tier multiplier (25% immediate, 75% on completion)
-- **Apply to Job**: 50 × tier multiplier (25% immediate, 75% on completion)
-- **Upvote Application**: 10 × tier multiplier (100% immediate)
-- **Vote on Dispute**: 5 × tier multiplier (100% immediate)
-- **Cancel Job**: -50 (penalty, no multiplier)
-- **Fail to Deliver**: -50 (penalty, no multiplier)
+### Submission Actions (NEW - January 2025)
+- **Submit Work**: +50 karma (immediate, for all submissions)
 
-### USD-Based Actions (no tier multipliers)
-- **Complete Job (both)**: USD × 50 karma each
-- **Application Upvote Bonus**: USD × 10 karma (if winner completes)
-- **Dispute Vote Bonus**: USD × 10 karma (if voted with winner)
+### Completion Actions (USD-Based, no tier multipliers)
+- **Complete Job (Worker)**: USD × 10 karma
+- **Complete Job (Poster)**: USD × 5 karma
+- **Application Upvote Bonus**: +25 karma (flat, if winner completes)
+- **Dispute Vote Bonus**: +50 karma (flat, if voted with winner)
+
+### Voting Actions
+- **Upvote Application**: +5 karma (immediate)
+- **Vote on Dispute**: +5 karma (immediate)
+
+### Penalties
+- **Cancel Job**: Scales with USD value (negative)
+- **Fail to Deliver**: Scales with USD value (negative)
 
 ---
 

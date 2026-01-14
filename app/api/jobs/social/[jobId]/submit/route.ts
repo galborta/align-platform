@@ -341,6 +341,31 @@ export async function POST(
     
     console.log(`[Social Submit API] Submission created: ${submission.id}`)
     
+    // === AWARD SUBMISSION KARMA (NON-BLOCKING) ===
+    
+    try {
+      // Award submission karma (50 points)
+      await supabase.rpc('increment_karma_field_by_amount_for_project', {
+        p_wallet_address: wallet,
+        p_project_id: job.project_id,
+        p_field_name: 'total_karma_points',
+        p_amount: 50
+      })
+      
+      // Also increment applications counter
+      await supabase.rpc('increment_karma_field_by_amount_for_project', {
+        p_wallet_address: wallet,
+        p_project_id: job.project_id,
+        p_field_name: 'applications_submitted_count',
+        p_amount: 1
+      })
+      
+      console.log(`[Social Submit API] Awarded 50 karma to ${wallet.slice(0,8)}...`)
+    } catch (karmaError) {
+      console.error('[Social Submit API] Karma award error (non-critical):', karmaError)
+      // Non-blocking - submission was successful even if karma fails
+    }
+    
     // === 11. UPDATE JOB STATUS IF FIRST SUBMISSION ===
     
     if (job.status === 'open') {

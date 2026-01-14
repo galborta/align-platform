@@ -38,6 +38,7 @@ export const BASE_KARMA = {
   // Job System Karma - NEW SYSTEM (no base karma, only completion rewards)
   POST_JOB: 0,              // Poster gets only completion karma
   APPLY_TO_JOB: 0,          // Worker gets only completion karma
+  SUBMIT_JOB_WORK: 50,      // Flat reward for submitting work
   UPVOTE_APPLICATION: 5,    // Reduced from 10
   COMPLETE_JOB_POSTER: 0,   // Calculated separately
   COMPLETE_JOB_WORKER: 0,   // Calculated separately
@@ -167,25 +168,27 @@ export function checkBanStatus(
 
 /**
  * Calculate karma for job completion based on USD value
- * Worker earns: USD × 50
- * Poster earns: USD × 20
+ * Worker earns: USD × 10
+ * Poster earns: USD × 5
  * NEW SYSTEM (2024): No tier multipliers on job completion
+ * UPDATED (Jan 2025): Reduced multipliers for better balance
  */
 export function calculateJobCompletionKarma(usdValue: number, isWorker: boolean = true): number {
   if (isWorker) {
-    return Math.floor(usdValue * 50)  // Worker: full reward for doing the work
+    return Math.floor(usdValue * 10)  // Worker: balanced reward for doing the work
   } else {
-    return Math.floor(usdValue * 20)  // Poster: reduced reward for creating opportunity
+    return Math.floor(usdValue * 5)   // Poster: reduced reward for creating opportunity
   }
 }
 
 /**
  * Calculate bonus karma for correct application upvote
- * Flat 50 karma bonus if your pick wins and completes
+ * Flat 25 karma bonus if your pick wins and completes
  * NEW SYSTEM (2024): Flat bonus instead of USD-based to prevent voting farming
+ * UPDATED (Jan 2025): Reduced from 50 to 25 to prevent vote farming
  */
 export function calculateApplicationUpvoteBonusKarma(usdValue: number): number {
-  return 50  // Flat bonus regardless of job value
+  return 25  // Flat bonus regardless of job value
 }
 
 /**

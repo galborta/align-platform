@@ -210,6 +210,27 @@ export async function awardApplyToJobKarma(
 }
 
 /**
+ * Award karma when a worker submits work to a job
+ * Awards 50 karma immediately to encourage participation
+ * This is awarded regardless of whether the submission is approved
+ */
+export async function awardSubmissionKarma(params: {
+  workerWallet: string
+  projectId: string
+}) {
+  const { workerWallet, projectId } = params
+  
+  await awardKarma({
+    walletAddress: workerWallet,
+    projectId,
+    karmaAmount: 50,  // Flat reward for submitting work
+    incrementApplications: true
+  })
+  
+  return 50
+}
+
+/**
  * Award karma when a user upvotes an application
  * NEW SYSTEM: No tier multipliers - everyone earns same for same action
  */

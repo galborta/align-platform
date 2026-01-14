@@ -209,11 +209,20 @@ export default function ContestSubmissionModal({
 
       if (insertError) throw insertError
 
-      // Award karma for submission (non-blocking)
+      // Award submission karma (50 points + counter increment)
       try {
-        await supabase.rpc('increment_applications_submitted', {
-          wallet: userWallet,
-          project: job.project_id
+        await supabase.rpc('increment_karma_field_by_amount_for_project', {
+          p_wallet_address: userWallet,
+          p_project_id: job.project_id,
+          p_field_name: 'total_karma_points',
+          p_amount: 50
+        })
+        
+        await supabase.rpc('increment_karma_field_by_amount_for_project', {
+          p_wallet_address: userWallet,
+          p_project_id: job.project_id,
+          p_field_name: 'applications_submitted_count',
+          p_amount: 1
         })
       } catch (karmaError) {
         console.error('Failed to award karma:', karmaError)

@@ -293,8 +293,7 @@ export async function POST(
                   .from('job_submissions')
                   .update({
                     social_approval_status: 'auto_approved',
-                    social_payment_tx_signature: paymentResult.txSignature,
-                    reviewed_at: new Date().toISOString()
+                    social_payment_tx_signature: paymentResult.txSignature
                   })
                   .eq('id', submission.id)
 
@@ -330,8 +329,7 @@ export async function POST(
               await supabaseAdmin
                 .from('job_submissions')
                 .update({
-                  social_approval_status: 'auto_approved',
-                  reviewed_at: new Date().toISOString()
+                  social_approval_status: 'auto_approved'
                 })
                 .eq('id', submission.id)
 
@@ -443,7 +441,7 @@ export async function POST(
           
           const usdToTokenRate = escrowTokens / budgetUSD
           const bonusAmountInTokens = bonusAmount * usdToTokenRate
-          
+
           // Calculate total needed
           const platformFee = bonusAmountInTokens * platformFeePercentage
           const totalFromEscrow = bonusAmountInTokens + platformFee

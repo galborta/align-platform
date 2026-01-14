@@ -334,8 +334,7 @@ export async function POST(
                 social_payment_amount_tokens: totalPaymentInTokens,
                 social_base_payment_amount_usd: basePayment,
                 social_base_payment_amount_tokens: basePaymentInTokens,
-                social_payment_tx_signature: paymentResult.txSignature,
-                reviewed_at: new Date().toISOString()
+                social_payment_tx_signature: paymentResult.txSignature
               })
               .eq('id', submission_id)
 

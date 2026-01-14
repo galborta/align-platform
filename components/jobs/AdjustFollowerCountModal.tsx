@@ -196,29 +196,29 @@ export default function AdjustFollowerCountModal({
           </Box>
         ) : (
           <FormControl 
-            fullWidth
-            sx={{
-              '& .MuiOutlinedInput-root': {
-                borderRadius: '12px',
-                bgcolor: 'var(--subtle-background, #F7F8FB)',
-                '& fieldset': {
-                  borderColor: 'var(--border-subtle, #E5E7F0)'
-                },
-                '&:hover fieldset': {
-                  borderColor: 'var(--accent-primary, #7C4DFF)'
-                },
-                '&.Mui-focused fieldset': {
-                  borderColor: 'var(--accent-primary, #7C4DFF)'
-                }
+          fullWidth
+          sx={{ 
+            '& .MuiOutlinedInput-root': {
+              borderRadius: '12px',
+              bgcolor: 'var(--subtle-background, #F7F8FB)',
+              '& fieldset': {
+                borderColor: 'var(--border-subtle, #E5E7F0)'
               },
-              '& .MuiInputLabel-root': {
-                color: 'var(--text-secondary, #6F7280)',
-                fontSize: '14px',
-                '&.Mui-focused': {
-                  color: 'var(--accent-primary, #7C4DFF)'
-                }
+              '&:hover fieldset': {
+                borderColor: 'var(--accent-primary, #7C4DFF)'
+              },
+              '&.Mui-focused fieldset': {
+                borderColor: 'var(--accent-primary, #7C4DFF)'
               }
-            }}
+            },
+            '& .MuiInputLabel-root': {
+              color: 'var(--text-secondary, #6F7280)',
+              fontSize: '14px',
+              '&.Mui-focused': {
+                color: 'var(--accent-primary, #7C4DFF)'
+              }
+            }
+          }}
           >
             <InputLabel>Verified Follower Tier</InputLabel>
             <Select

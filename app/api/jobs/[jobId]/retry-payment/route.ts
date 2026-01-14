@@ -59,8 +59,15 @@ export async function POST(
   try {
     // Await params in Next.js 15+
     const { jobId } = await params
+    
+    // ==================== PARSE REQUEST BODY ====================
+    
+    const body = await request.json()
+    const { submission_id, poster_wallet } = body
+
     console.log(`\n${'='.repeat(80)}`)
     console.log(`[Retry Payment] Starting for job ${jobId}`)
+    console.log(`[Retry Payment] Submission: ${submission_id}`)
     console.log(`${'='.repeat(80)}`)
 
     // ==================== STEP 1: AUTHENTICATION ====================
@@ -91,27 +98,30 @@ export async function POST(
 
     console.log(`[Retry Payment] ✓ Authenticated user: ${user.id}`)
 
-    // Get user's wallet from profile
-    const { data: profile, error: profileError } = await supabaseAdmin
-      .from('user_profiles')
-      .select('wallet_address')
-      .eq('id', user.id)
-      .single()
+    // ==================== STEP 2: VALIDATE REQUEST ====================
 
-    if (profileError || !profile?.wallet_address) {
-      console.error('[Retry Payment] No wallet found for user:', profileError)
+    if (!submission_id || typeof submission_id !== 'string') {
       return NextResponse.json(
-        { error: 'No wallet address linked to account' },
-        { status: 403 }
+        { error: 'Missing or invalid submission_id' },
+        { status: 400 }
       )
     }
 
-    const posterWallet = profile.wallet_address
+    // Use wallet address from request body (provided by frontend)
+    if (!poster_wallet) {
+      console.error('[Retry Payment] Missing poster_wallet in request')
+      return NextResponse.json(
+        { error: 'Wallet address required' },
+        { status: 400 }
+      )
+    }
+
+    const posterWallet = poster_wallet
     console.log(`[Retry Payment] ✓ Poster wallet: ${posterWallet}`)
 
-    // ==================== STEP 2: RATE LIMITING ====================
+    // ==================== STEP 3: RATE LIMITING ====================
 
-    console.log('[Retry Payment] Step 2: Rate limiting check...')
+    console.log('[Retry Payment] Step 3: Rate limiting check...')
 
     // Use custom rate limit key for retry attempts
     const rateLimitKey = `${user.id}-retry-${jobId}`
@@ -128,22 +138,6 @@ export async function POST(
     }
 
     console.log('[Retry Payment] ✓ Rate limit check passed')
-
-    // ==================== STEP 3: REQUEST VALIDATION ====================
-
-    console.log('[Retry Payment] Step 3: Validating request body...')
-
-    const body = await request.json()
-    const { submission_id } = body
-
-    if (!submission_id || typeof submission_id !== 'string') {
-      return NextResponse.json(
-        { error: 'Missing or invalid submission_id' },
-        { status: 400 }
-      )
-    }
-
-    console.log(`[Retry Payment] ✓ Request valid: submission ${submission_id}`)
 
     // ==================== STEP 4: FETCH JOB & VALIDATE ====================
 
@@ -205,13 +199,24 @@ export async function POST(
     }
 
     console.log(`[Retry Payment] ✓ Submission found for worker: ${submission.worker_wallet.slice(0, 8)}`)
+    
+    // Debug: Log all payment-related fields
+    console.log(`[Retry Payment] Submission payment fields:`, {
+      social_payment_amount_usd: submission.social_payment_amount_usd,
+      social_payment_amount_tokens: submission.social_payment_amount_tokens,
+      social_base_payment_amount_usd: submission.social_base_payment_amount_usd,
+      social_base_payment_amount_tokens: submission.social_base_payment_amount_tokens,
+      social_follower_count: submission.social_follower_count,
+      social_follower_count_verified: submission.social_follower_count_verified
+    })
 
-    // Verify submission is in 'approved_failed' status
-    if (submission.social_approval_status !== 'approved_failed') {
+    // Verify submission is in 'approved_failed' or 'approved_pending_payment' status
+    const validStatuses = ['approved_failed', 'approved_pending_payment']
+    if (!validStatuses.includes(submission.social_approval_status)) {
       console.error(`[Retry Payment] Invalid status: ${submission.social_approval_status}`)
       return NextResponse.json(
         {
-          error: 'Cannot retry - submission is not in failed state',
+          error: 'Cannot retry - submission is not in a retryable state',
           current_status: submission.social_approval_status,
           message: submission.social_approval_status === 'approved' 
             ? 'This submission has already been paid'
@@ -223,7 +228,7 @@ export async function POST(
       )
     }
 
-    console.log('[Retry Payment] ✓ Submission is in failed state')
+    console.log(`[Retry Payment] ✓ Submission is in retryable state: ${submission.social_approval_status}`)
 
     // ==================== STEP 6: CHECK RETRY LIMIT ====================
 
@@ -247,15 +252,11 @@ export async function POST(
 
     console.log('[Retry Payment] ✓ Retry limit not exceeded')
 
-    // ==================== STEP 7: CALCULATE PAYMENT FROM STORED VALUES ====================
+    // ==================== STEP 7: CALCULATE PAYMENT ====================
 
-    console.log('[Retry Payment] Step 7: Calculating payment from stored values...')
+    console.log('[Retry Payment] Step 7: Calculating payment...')
 
-    // Use stored payment amounts (already calculated during approval)
-    const basePayment = submission.social_base_payment_amount_tokens || 0
-    const impressionBonusUSD = submission.social_impression_bonus_usd || 0
-    
-    // Convert impression bonus from USD to tokens using escrow rate
+    // Convert escrow rate for USD to token conversion
     const escrowTokens = job.escrow_amount_tokens || 0
     const budgetUSD = job.social_total_budget_usd || 0
     
@@ -264,6 +265,54 @@ export async function POST(
     }
     
     const usdToTokenRate = escrowTokens / budgetUSD
+    console.log(`[Retry Payment] USD to Token rate: ${usdToTokenRate}`)
+
+    // Try to use stored payment amounts first (check both fields)
+    let basePaymentUSD = submission.social_base_payment_amount_usd || submission.social_payment_amount_usd || 0
+    console.log(`[Retry Payment] Stored base payment (from social_base_payment_amount_usd): $${submission.social_base_payment_amount_usd}`)
+    console.log(`[Retry Payment] Stored payment (from social_payment_amount_usd): $${submission.social_payment_amount_usd}`)
+    console.log(`[Retry Payment] Using base payment: $${basePaymentUSD}`)
+    console.log(`[Retry Payment] Has follower tiers: ${job.social_follower_tiers ? 'YES' : 'NO'}`)
+    console.log(`[Retry Payment] Submission follower count: ${submission.social_follower_count}`)
+    console.log(`[Retry Payment] Submission follower count verified: ${submission.social_follower_count_verified}`)
+    
+    // If not stored, calculate from follower tier (for old submissions before the fix)
+    if (basePaymentUSD <= 0) {
+      console.log('[Retry Payment] No stored payment amount, attempting to calculate from follower tier...')
+      
+      if (job.social_follower_tiers && Array.isArray(job.social_follower_tiers)) {
+        console.log(`[Retry Payment] Found ${job.social_follower_tiers.length} follower tiers`)
+        
+        const { calculateFollowerTier } = await import('@/lib/social-media-jobs-follower-tiers')
+        const followerTiers = job.social_follower_tiers as any[]
+        const actualFollowerCount = submission.social_follower_count || 0
+        
+        console.log(`[Retry Payment] Calculating tier for ${actualFollowerCount} followers...`)
+        
+        if (actualFollowerCount > 0) {
+          const tier = calculateFollowerTier(actualFollowerCount, followerTiers)
+          if (tier) {
+            basePaymentUSD = tier.base_payment_usd
+            console.log(`[Retry Payment] ✓ Calculated payment from tier "${tier.tier_name}": $${basePaymentUSD} for ${actualFollowerCount} followers`)
+          } else {
+            console.error('[Retry Payment] No matching follower tier found')
+            throw new Error('No matching follower tier found for this submission')
+          }
+        } else {
+          console.error('[Retry Payment] Submission has 0 or null follower count')
+          throw new Error('Submission has no follower count - cannot calculate payment')
+        }
+      } else {
+        console.error('[Retry Payment] Job has no follower tiers configured')
+        throw new Error('Job does not have follower tiers configured')
+      }
+    }
+    
+    // Convert USD to tokens
+    const basePayment = basePaymentUSD * usdToTokenRate
+    
+    // Calculate impression bonus
+    const impressionBonusUSD = submission.social_impression_bonus_usd || 0
     const impressionBonus = impressionBonusUSD * usdToTokenRate
     
     const totalPayment = basePayment + impressionBonus
@@ -279,16 +328,16 @@ export async function POST(
     const totalFromEscrow = totalPayment + platformFee
 
     console.log(`[Retry Payment] Payment breakdown:`)
-    console.log(`  - Base: ${basePayment} tokens ($${submission.social_base_payment_amount_usd})`)
-    console.log(`  - Bonus: ${impressionBonus} tokens ($${impressionBonusUSD})`)
-    console.log(`  - Total: ${totalPayment} tokens`)
+    console.log(`  - Base: ${basePayment.toFixed(2)} tokens ($${basePaymentUSD})`)
+    console.log(`  - Bonus: ${impressionBonus.toFixed(2)} tokens ($${impressionBonusUSD})`)
+    console.log(`  - Total: ${totalPayment.toFixed(2)} tokens`)
     console.log(`  - Fee: ${platformFee.toFixed(2)} tokens`)
     console.log(`  - From escrow: ${totalFromEscrow.toFixed(2)} tokens`)
 
     if (totalPayment <= 0) {
-      console.error('[Retry Payment] Invalid stored payment amount')
+      console.error('[Retry Payment] Invalid payment amount - cannot pay $0')
       return NextResponse.json(
-        { error: 'Invalid payment amount stored in submission' },
+        { error: 'Invalid payment amount calculated' },
         { status: 500 }
       )
     }
@@ -333,8 +382,7 @@ export async function POST(
     const { error: lockError } = await supabaseAdmin
       .from('jobs')
       .update({
-        social_locked_budget_tokens: lockedBudget + totalFromEscrow,
-        updated_at: new Date().toISOString()
+        social_locked_budget_tokens: lockedBudget + totalFromEscrow
       })
       .eq('id', jobId)
 
@@ -357,8 +405,7 @@ export async function POST(
     const { error: updateError } = await supabaseAdmin
       .from('job_submissions')
       .update({
-        social_approval_status: 'approved_pending_payment',
-        updated_at: new Date().toISOString()
+        social_approval_status: 'approved_pending_payment'
       })
       .eq('id', submission_id)
 
@@ -369,8 +416,7 @@ export async function POST(
       await supabaseAdmin
         .from('jobs')
         .update({
-          social_locked_budget_tokens: lockedBudget,
-          updated_at: new Date().toISOString()
+          social_locked_budget_tokens: lockedBudget
         })
         .eq('id', jobId)
 
@@ -417,14 +463,13 @@ export async function POST(
       await supabaseAdmin
         .from('job_submissions')
         .update({
-          social_approval_status: 'approved',
-          social_payment_released: true,
-          social_payment_tx_signature: paymentResult.txSignature,
-          social_payment_amount_usd: totalPaymentUSD,
-          social_payment_amount_tokens: totalPayment,
-          social_payment_retry_count: currentRetryCount + (paymentResult.retryAttempts || 0),
-          social_payment_failed_reason: null, // Clear error message
-          updated_at: new Date().toISOString()
+        social_approval_status: 'approved',
+        social_payment_released: true,
+        social_payment_tx_signature: paymentResult.txSignature,
+        social_payment_amount_usd: totalPaymentUSD,
+        social_payment_amount_tokens: totalPayment,
+        social_payment_retry_count: currentRetryCount + (paymentResult.retryAttempts || 0),
+        social_payment_failed_reason: null // Clear error message
         })
         .eq('id', submission_id)
 
@@ -432,11 +477,10 @@ export async function POST(
       await supabaseAdmin
         .from('jobs')
         .update({
-          social_remaining_budget_tokens: remainingBudget - totalFromEscrow,
-          social_locked_budget_tokens: lockedBudget, // Unlock by not including the locked amount
-          social_approved_paid_count: (job.social_approved_paid_count || 0) + 1,
-          social_actual_budget_released: (job.social_actual_budget_released || 0) + totalFromEscrow,
-          updated_at: new Date().toISOString()
+        social_remaining_budget_tokens: remainingBudget - totalFromEscrow,
+        social_locked_budget_tokens: lockedBudget, // Unlock by not including the locked amount
+        social_approved_paid_count: (job.social_approved_paid_count || 0) + 1,
+        social_actual_budget_released: (job.social_actual_budget_released || 0) + totalFromEscrow
         })
         .eq('id', jobId)
 
@@ -499,8 +543,7 @@ export async function POST(
         .update({
           social_approval_status: 'approved_failed',
           social_payment_failed_reason: paymentResult.error,
-          social_payment_retry_count: newRetryCount,
-          updated_at: new Date().toISOString()
+          social_payment_retry_count: newRetryCount
         })
         .eq('id', submission_id)
 
@@ -508,8 +551,7 @@ export async function POST(
       await supabaseAdmin
         .from('jobs')
         .update({
-          social_locked_budget_tokens: lockedBudget, // Remove the locked amount
-          updated_at: new Date().toISOString()
+          social_locked_budget_tokens: lockedBudget // Remove the locked amount
         })
         .eq('id', jobId)
 
@@ -574,8 +616,7 @@ export async function POST(
           await supabaseAdmin
             .from('jobs')
             .update({
-              social_locked_budget_tokens: currentJob.social_locked_budget_tokens - lockedAmount,
-              updated_at: new Date().toISOString()
+              social_locked_budget_tokens: currentJob.social_locked_budget_tokens - lockedAmount
             })
             .eq('id', jobId)
 

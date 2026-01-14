@@ -259,14 +259,28 @@ export async function POST(
 
         // ==================== AWARD WORKER KARMA ====================
 
-        // Increment jobs completed count
+        const workerKarma = Math.floor((submission.social_payment_amount_usd || 0) * 10)
+
         try {
-          await supabaseAdmin.rpc('increment_karma_field', {
-            wallet_address: submission.worker_wallet,
-            field_name: 'jobs_completed_as_worker_count'
+          // Award completion karma (USD × 10)
+          await supabaseAdmin.rpc('increment_karma_field_by_amount_for_project', {
+            p_wallet_address: submission.worker_wallet,
+            p_project_id: job.project_id,
+            p_field_name: 'total_karma_points',
+            p_amount: workerKarma
           })
+          
+          // Increment jobs completed counter
+          await supabaseAdmin.rpc('increment_karma_field_by_amount_for_project', {
+            p_wallet_address: submission.worker_wallet,
+            p_project_id: job.project_id,
+            p_field_name: 'jobs_completed_as_worker_count',
+            p_amount: 1
+          })
+          
+          console.log(`[Confirm Payment] Awarded ${workerKarma} karma to worker ${submission.worker_wallet.slice(0,8)}...`)
         } catch (karmaError) {
-          console.error(`[Confirm Payment] Failed to increment jobs_completed for ${submission.worker_wallet}:`, karmaError)
+          console.error(`[Confirm Payment] Failed to award worker karma:`, karmaError)
         }
 
         // Increment tokens earned (by amount)
@@ -279,7 +293,6 @@ export async function POST(
             })
           } catch (karmaError) {
             console.error(`[Confirm Payment] Failed to increment tokens_earned for ${submission.worker_wallet}:`, karmaError)
-            // Fallback: try adding to total_karma_points as a number
           }
         }
 
@@ -310,17 +323,33 @@ export async function POST(
       console.log(`[Confirm Payment] ✅ Updated ${submissions.length} submissions`)
     }
 
-    // ==================== UPDATE POSTER KARMA ====================
+    // ==================== AWARD POSTER KARMA ====================
+
+    const totalUsdPaid = submissions.reduce((sum, s) => 
+      sum + (s.social_payment_amount_usd || 0), 0
+    )
+    const posterKarma = Math.floor(totalUsdPaid * 5)
 
     try {
-      // Increment poster's jobs completed count
-      await supabaseAdmin.rpc('increment_karma_field', {
-        wallet_address: job.poster_wallet,
-        field_name: 'jobs_posted_as_poster_count'
+      // Award poster completion karma (USD × 5)
+      await supabaseAdmin.rpc('increment_karma_field_by_amount_for_project', {
+        p_wallet_address: job.poster_wallet,
+        p_project_id: job.project_id,
+        p_field_name: 'total_karma_points',
+        p_amount: posterKarma
       })
-      console.log(`[Confirm Payment] ✅ Poster karma updated`)
+      
+      // Increment jobs posted counter (only once per job)
+      await supabaseAdmin.rpc('increment_karma_field_by_amount_for_project', {
+        p_wallet_address: job.poster_wallet,
+        p_project_id: job.project_id,
+        p_field_name: 'jobs_posted_as_poster_count',
+        p_amount: 1
+      })
+      
+      console.log(`[Confirm Payment] ✅ Awarded ${posterKarma} karma to poster ${job.poster_wallet.slice(0,8)}...`)
     } catch (karmaError) {
-      console.error('[Confirm Payment] Failed to update poster karma:', karmaError)
+      console.error('[Confirm Payment] Failed to award poster karma:', karmaError)
       // Non-critical, continue
     }
 
