@@ -89,12 +89,25 @@ export const isLocalhost(): boolean
    - Added conditional checkbox UI (only visible on localhost)
    - Styled with yellow warning box for visibility
 
+2. **`components/jobs/social/SocialJobCreationWizard.tsx`**
+   - Added `isLocalhost` import
+   - Added `publishToProduction` state
+   - Added `forceProduction` to social job API call
+   - Pass checkbox state to CampaignConfirmationModal
+   - Reset checkbox state on wizard reset
+
+3. **`components/jobs/social/CampaignConfirmationModal.tsx`**
+   - Added `isLocalhost` import
+   - Added checkbox props to interface
+   - Added conditional checkbox UI before action buttons
+   - Styled consistently with regular job modal
+
 **Checkbox Features**:
 - Only appears when `isLocalhost()` returns true
 - Defaults to unchecked (creates development records)
 - Yellow warning background (#FFF9E6) for visibility
 - Clear explanation text
-- Works for both regular jobs and contests
+- Works for regular jobs, contests, AND social media campaigns
 
 ---
 
@@ -259,7 +272,7 @@ CREATE INDEX idx_pending_assets_environment ON pending_assets(environment);
 - ✅ `lib/environment.ts`
 - ✅ `ENVIRONMENT_FILTERING_IMPLEMENTATION_COMPLETE.md` (this file)
 
-### Modified Files (7)
+### Modified Files (9)
 - ✅ `app/api/jobs/create/route.ts`
 - ✅ `app/api/jobs/social/create/route.ts`
 - ✅ `app/api/projects/create/route.ts`
@@ -267,6 +280,8 @@ CREATE INDEX idx_pending_assets_environment ON pending_assets(environment);
 - ✅ `lib/feed-queries.ts`
 - ✅ `lib/jobs.ts`
 - ✅ `components/CreateJobModal.tsx`
+- ✅ `components/jobs/social/SocialJobCreationWizard.tsx`
+- ✅ `components/jobs/social/CampaignConfirmationModal.tsx`
 
 ---
 
