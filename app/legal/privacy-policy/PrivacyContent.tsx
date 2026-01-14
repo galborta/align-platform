@@ -138,7 +138,15 @@ export default function PrivacyContent() {
           }}
         >
           <p className="mb-1"><strong>Orggly</strong></p>
-          <p className="mb-1">Email: hello@orggly.com</p>
+          <p className="mb-1">
+            Contact:{' '}
+            <a 
+              href="/contact" 
+              style={{ color: 'var(--accent-primary)', textDecoration: 'underline' }}
+            >
+              Contact Form
+            </a>
+          </p>
           <p className="mb-0">Location: Barcelona, Spain</p>
         </div>
       </section>
@@ -347,8 +355,14 @@ export default function PrivacyContent() {
           </div>
           
           <p className="mt-4 mb-0">
-            To exercise any right, email <strong>hello@orggly.com</strong> with your wallet address.
-            We will respond within 30 days.
+            To exercise any right, contact us via our{' '}
+            <a 
+              href="/contact" 
+              style={{ color: 'var(--accent-primary)', textDecoration: 'underline', fontWeight: 600 }}
+            >
+              contact form
+            </a>
+            {' '}with your wallet address. We will respond within 30 days.
           </p>
         </div>
       </section>
@@ -373,7 +387,15 @@ export default function PrivacyContent() {
           <p className="mb-3">To request account and data deletion:</p>
           
           <ol className="mb-4">
-            <li>Send an email to <strong>hello@orggly.com</strong></li>
+            <li>
+              Submit a request via our{' '}
+              <a 
+                href="/contact" 
+                style={{ color: 'var(--accent-primary)', textDecoration: 'underline', fontWeight: 600 }}
+              >
+                contact form
+              </a>
+            </li>
             <li>Include your wallet address for verification</li>
             <li>Sign a verification message (we&apos;ll provide instructions)</li>
             <li>We will process your request within 30 days</li>
@@ -457,7 +479,14 @@ export default function PrivacyContent() {
         <p>
           Orggly is not intended for users under 18 years of age. We do not knowingly 
           collect personal data from children. If you believe a child has provided us 
-          with personal data, please contact us immediately at hello@orggly.com.
+          with personal data, please{' '}
+          <a 
+            href="/contact" 
+            style={{ color: 'var(--accent-primary)', textDecoration: 'underline' }}
+          >
+            contact us immediately
+          </a>
+          .
         </p>
       </section>
 
@@ -509,9 +538,14 @@ export default function PrivacyContent() {
       <section id="complaints">
         <h2>18. Complaints</h2>
         <p>
-          If you have concerns about how we handle your data, please contact us first 
-          at hello@orggly.com. We take all complaints seriously and will work to 
-          resolve them.
+          If you have concerns about how we handle your data, please{' '}
+          <a 
+            href="/contact" 
+            style={{ color: 'var(--accent-primary)', textDecoration: 'underline' }}
+          >
+            contact us
+          </a>
+          {' '}first. We take all complaints seriously and will work to resolve them.
         </p>
         <p>
           EU/EEA residents also have the right to lodge a complaint with their local 
@@ -531,7 +565,15 @@ export default function PrivacyContent() {
             borderRadius: 'var(--radius-card-lg)'
           }}
         >
-          <p className="mb-1"><strong>Email:</strong> hello@orggly.com</p>
+          <p className="mb-1">
+            <strong>Contact:</strong>{' '}
+            <a 
+              href="/contact" 
+              style={{ color: 'var(--accent-primary)', textDecoration: 'underline', fontWeight: 600 }}
+            >
+              Contact Form
+            </a>
+          </p>
           <p className="mb-1"><strong>Subject Line:</strong> Privacy Request - [Your Wallet Address]</p>
           <p className="mb-0"><strong>Response Time:</strong> Within 30 days</p>
         </div>

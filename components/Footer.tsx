@@ -27,15 +27,14 @@ export function Footer() {
             <span className="hidden sm:inline" style={{ color: 'var(--text-muted)' }}>|</span>
             <span className="font-body hidden sm:inline">Built on Solana</span>
             <span className="hidden md:inline" style={{ color: 'var(--text-muted)' }}>|</span>
-            <a 
-              href="mailto:galborta@protonmail.com"
+            <Link 
+              href="/contact"
               className="flex items-center gap-1 hover:underline transition-colors font-body"
               style={{ color: 'var(--text-secondary)' }}
             >
               <EmailIcon sx={{ fontSize: 14 }} />
-              <span className="hidden sm:inline">Contact</span>
-              <span className="sm:hidden">Contact</span>
-            </a>
+              <span>Contact Us</span>
+            </Link>
           </div>
 
           {/* Right: Legal Links */}

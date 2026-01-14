@@ -195,7 +195,7 @@ export default function TermsContent() {
           <li>Attempt to manipulate the Sentinel AI system</li>
           <li>Use the Platform for illegal activities</li>
           <li>Impersonate other users or create fake accounts</li>
-          <li>Exploit bugs or vulnerabilities (report them to hello@orggly.com)</li>
+          <li>Exploit bugs or vulnerabilities (report them via our <a href="/contact" style={{ color: 'var(--accent-primary)', textDecoration: 'underline' }}>contact form</a>)</li>
         </ul>
       </section>
 
@@ -301,7 +301,7 @@ export default function TermsContent() {
 
         <h3>Data Rights:</h3>
         <ul>
-          <li>Request data deletion by emailing hello@orggly.com</li>
+          <li>Request data deletion via our <a href="/contact" style={{ color: 'var(--accent-primary)', textDecoration: 'underline' }}>contact form</a></li>
           <li>Data deleted within 30 days of verified request</li>
           <li>Blockchain data cannot be deleted (immutable ledger)</li>
           <li>See <a href="/legal/privacy-policy">Privacy Policy</a> for full details</li>
@@ -361,7 +361,14 @@ export default function TermsContent() {
       <section id="contact">
         <h2>16. Contact</h2>
         <p>
-          For questions, disputes, or data requests: <strong>hello@orggly.com</strong>
+          For questions, disputes, or data requests, please visit our{' '}
+          <a 
+            href="/contact" 
+            style={{ color: 'var(--accent-primary)', textDecoration: 'underline', fontWeight: 600 }}
+          >
+            contact page
+          </a>
+          .
         </p>
       </section>
 

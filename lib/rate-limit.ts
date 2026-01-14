@@ -21,7 +21,8 @@ export const RATE_LIMITS = {
   admin: { requests: 20, window: 60000 },    // 20 requests per minute
   mutation: { requests: 30, window: 60000 }, // 30 requests per minute
   submission: { requests: 10, window: 60000 }, // 10 submissions per minute
-  tip: { requests: 20, window: 60000 }       // 20 tips per minute
+  tip: { requests: 20, window: 60000 },      // 20 tips per minute
+  contact: { requests: 3, window: 3600000 }  // 3 requests per hour
 } as const
 
 export type RateLimitType = keyof typeof RATE_LIMITS

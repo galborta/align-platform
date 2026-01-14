@@ -5,6 +5,7 @@ import AdminNotification from '@/emails/templates/AdminNotification';
 import ProjectApproved from '@/emails/templates/ProjectApproved';
 import ProjectRejected from '@/emails/templates/ProjectRejected';
 import SubmissionReceived from '@/emails/templates/SubmissionReceived';
+import ContactForm from '@/emails/templates/ContactForm';
 
 const FROM_EMAIL = process.env.EMAIL_FROM || 'Orggly <notifications@orggly.com>';
 
@@ -22,19 +23,23 @@ function getResendClient() {
 // without needing to make HTTP requests
 
 export interface SendEmailParams {
-  type: 'admin_notification' | 'project_approved' | 'project_rejected' | 'submission_received';
+  type: 'admin_notification' | 'project_approved' | 'project_rejected' | 'submission_received' | 'contact_form';
   to: string | string[];
   data: {
     submitterName?: string;
     submitterEmail?: string;
-    tokenSymbol: string;
-    tokenName: string;
+    tokenSymbol?: string;
+    tokenName?: string;
     contractAddress?: string;
     role?: string;
     message?: string;
     submittedAt?: string;
     conversationUrl?: string;
     creationLink?: string;
+    // Contact form specific fields
+    name?: string;
+    email?: string;
+    subject?: string;
   };
 }
 
@@ -163,6 +168,28 @@ export async function sendEmailDirect(params: SendEmailParams): Promise<SendEmai
           })
         );
         break;
+      
+      case 'contact_form':
+        if (!data.name || !data.email || !data.subject || !data.message) {
+          return {
+            success: false,
+            error: 'Missing required fields for contact_form'
+          };
+        }
+        subject = `Contact Form: ${data.subject}`;
+        emailHtml = await render(
+          ContactForm({
+            name: data.name,
+            email: data.email,
+            subject: data.subject,
+            message: data.message,
+            submittedAt: data.submittedAt || new Date().toLocaleString('en-US', {
+              dateStyle: 'long',
+              timeStyle: 'short'
+            })
+          })
+        );
+        break;
         
       default:
         return {
@@ -188,12 +215,22 @@ export async function sendEmailDirect(params: SendEmailParams): Promise<SendEmai
     console.log('[Email] HTML length:', emailHtml.length, 'characters');
     
     const resend = getResendClient();
-    const result = await resend.emails.send({
+    
+    // Prepare email options with optional replyTo for contact forms
+    const emailOptions: any = {
       from: FROM_EMAIL,
       to: Array.isArray(to) ? to : [to],
       subject,
       html: emailHtml,
-    });
+    };
+    
+    // Add replyTo header for contact form submissions
+    if (type === 'contact_form' && data.email) {
+      emailOptions.replyTo = data.email;
+      console.log('[Email] Reply-To:', data.email);
+    }
+    
+    const result = await resend.emails.send(emailOptions);
     
     if (result.error) {
       console.error('[Email] ❌ Resend API error:');
