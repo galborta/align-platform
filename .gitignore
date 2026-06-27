@@ -39,3 +39,5 @@ next-env.d.ts
 # Playwright test artifacts
 playwright-report/
 test-results/
+node_modules/
+.next/
